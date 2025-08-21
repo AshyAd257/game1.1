@@ -83,8 +83,8 @@ public class ChunkRenderer {
         if (!vertices.isEmpty()) {
             Geometry blockGeom = createBlockGeometry(vertices, normals, texCoords, indices);
             if (blockGeom != null) {
-                // 使用简单的材质
-                Material mat = createSimpleMaterial();
+                // 使用纹理材质
+                Material mat = textureManager.createBlockMaterial("dirt");
                 blockGeom.setMaterial(mat);
                 chunkNode.attachChild(blockGeom);
                 System.out.println("✅ 添加方块几何体 (面数: " + indices.size()/6 + ")");
@@ -97,14 +97,6 @@ public class ChunkRenderer {
         return chunkNode;
     }
 
-    /**
-     * 创建简单材质
-     */
-    private Material createSimpleMaterial() {
-        Material material = new Material(assetManager, "Common/MatDefs/Misc/Unshaded.j3md");
-        material.setColor("Color", ColorRGBA.Brown); // 棕色代表泥土
-        return material;
-    }
 
     /**
      * 判断某个面是否需要渲染

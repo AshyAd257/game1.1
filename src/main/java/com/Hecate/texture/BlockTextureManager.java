@@ -34,29 +34,29 @@ public class BlockTextureManager {
      */
     public void initializeDefaultTextures() {
         System.out.println("🎨 定义方块纹理: stone -> SINGLE");
-        defineBlockTexture("stone", BlockTextureDefinition.singleTexture("Textures/blocks/dirt.png"));
+        defineBlockTexture("stone", BlockTextureDefinition.singleTexture("textures/blocks/dirt.png"));
 
         System.out.println("🎨 定义方块纹理: dirt -> SINGLE");
-        defineBlockTexture("dirt", BlockTextureDefinition.singleTexture("Textures/blocks/dirt.png"));
+        defineBlockTexture("dirt", BlockTextureDefinition.singleTexture("textures/blocks/dirt.png"));
 
         System.out.println("🎨 定义方块纹理: glass -> SINGLE");
-        defineBlockTexture("glass", BlockTextureDefinition.singleTexture("Textures/blocks/dirt.png"));
+        defineBlockTexture("glass", BlockTextureDefinition.singleTexture("textures/blocks/dirt.png"));
 
         System.out.println("🎨 定义方块纹理: cobblestone -> SINGLE");
-        defineBlockTexture("cobblestone", BlockTextureDefinition.singleTexture("Textures/blocks/dirt.png"));
+        defineBlockTexture("cobblestone", BlockTextureDefinition.singleTexture("textures/blocks/dirt.png"));
 
         System.out.println("🎨 定义方块纹理: wood -> SINGLE");
-        defineBlockTexture("wood", BlockTextureDefinition.singleTexture("Textures/blocks/dirt.png"));
+        defineBlockTexture("wood", BlockTextureDefinition.singleTexture("textures/blocks/dirt.png"));
 
         System.out.println("🎨 定义方块纹理: grass -> THREE_TEXTURE");
         defineBlockTexture("grass", BlockTextureDefinition.threeTexture(
-                "Textures/blocks/dirt.png",  // 顶部
-                "Textures/blocks/dirt.png",  // 侧面
-                "Textures/blocks/dirt.png"   // 底部
+                "textures/blocks/dirt.png",  // 顶部
+                "textures/blocks/dirt.png",  // 侧面
+                "textures/blocks/dirt.png"   // 底部
         ));
 
         System.out.println("🎨 定义方块纹理: air -> SINGLE");
-        defineBlockTexture("air", BlockTextureDefinition.singleTexture("Textures/blocks/dirt.png"));
+        defineBlockTexture("air", BlockTextureDefinition.singleTexture("textures/blocks/dirt.png"));
     }
 
     /**

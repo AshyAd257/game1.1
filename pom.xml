@@ -18,14 +18,11 @@
     <repositories>
         <repository>
             <id>central</id>
-            <url>https://repo.maven.apache.org/maven2</url>
+            <url>https://repo1.maven.org/maven2</url>
         </repository>
         <repository>
-            <id>jitpack.io</id>
-            <url>https://jitpack.io</url>
-        </repository>
-        <repository>
-            <id>maven-central-https</id>
+            <id>jmonkeyengine-central</id>
+            <name>Maven Central for jMonkeyEngine</name>
             <url>https://repo1.maven.org/maven2</url>
         </repository>
     </repositories>
@@ -51,12 +48,7 @@
         <!-- 物理引擎 -->
         <dependency>
             <groupId>org.jmonkeyengine</groupId>
-            <artifactId>jme3-bullet</artifactId>
-            <version>${jme3.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>org.jmonkeyengine</groupId>
-            <artifactId>jme3-bullet-native</artifactId>
+            <artifactId>jme3-jbullet</artifactId>
             <version>${jme3.version}</version>
         </dependency>
 

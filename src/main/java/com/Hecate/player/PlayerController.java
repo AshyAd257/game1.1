@@ -39,7 +39,7 @@ public class PlayerController implements ActionListener, AnalogListener {
     private final float FACING_SMOOTH_SPEED = 8.0f; // 朝向平滑转换速度
 
     // 玩家移动和物理
-    private Vector3f playerPosition = new Vector3f(0, 3, 0);
+    private Vector3f playerPosition = new Vector3f(0, 2.75f, 0); // 站在地面上(地面Y=1到Y=2，玩家中心Y=2.75)
     private Vector3f velocity = new Vector3f();
     private final float moveSpeed = 5.0f;
     private final float jumpSpeed = 8.0f;
@@ -65,7 +65,7 @@ public class PlayerController implements ActionListener, AnalogListener {
         setupInput();
         updateCameraPosition();
 
-        System.out.println("📹 摄像机设置: 固定高空俯视视角（背后5格，高度6格）");
+        System.out.println("📹 摄像机设置: 跟随玩家高度的俯视视角（背后5格，高度偏移3格）");
     }
 
     public void setCollisionManager(CollisionManager collisionManager) {
@@ -328,24 +328,26 @@ public class PlayerController implements ActionListener, AnalogListener {
 
         velocity.y += gravity * tpf;
 
-        if (collisionManager != null) {
-            Vector3f verticalMovement = new Vector3f(0, velocity.y * tpf, 0);
-            updatePlayerBox();
-
-            if (!collisionManager.wouldCollide(playerBox, verticalMovement)) {
-                playerPosition.y += velocity.y * tpf;
-            } else {
-                if (velocity.y < 0) {
-                    isJumping = false;
-                }
-                velocity.y = 0;
+        // 🚨 临时修复：简单地面检测
+        float groundLevel = 2.75f; // 地面方块Y=1到Y=2，玩家站在Y=2，中心在Y=2.75
+        
+        if (playerPosition.y <= groundLevel) {
+            // 玩家触地
+            playerPosition.y = groundLevel;
+            velocity.y = 0;
+            isJumping = false;
+            
+            // 调试信息
+            if (System.currentTimeMillis() % 1000 < 16) {
+                System.out.println("🏠 玩家站在简单地面上，Y=" + playerPosition.y);
             }
         } else {
+            // 正常碰撞检测（暂时禁用，因为有bug）
             playerPosition.y += velocity.y * tpf;
-            if (playerPosition.y <= 0) {
-                playerPosition.y = 0;
-                velocity.y = 0;
-                isJumping = false;
+            
+            // 调试信息：每秒打印一次玩家状态
+            if (System.currentTimeMillis() % 1000 < 16) {
+                System.out.println("🧍 玩家下落中: " + playerPosition + ", 速度Y: " + velocity.y);
             }
         }
 

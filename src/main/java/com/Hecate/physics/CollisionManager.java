@@ -45,12 +45,19 @@ public class CollisionManager {
         // 获取需要检查的方块范围
         Vector3f min = newBox.getMinPoint();
         Vector3f max = newBox.getMaxPoint();
+        
+        // 调试信息：显示碰撞检测范围
+        int minY = (int) Math.floor(min.y);
+        int maxY = (int) Math.floor(max.y);
+        
+        // 只在玩家接近地面时打印
+        if (minY <= 3 && maxY >= -1) {
+            System.out.println("🔍 碰撞检测范围: Y=" + minY + " 到 Y=" + maxY + " (地面在Y=1)");
+        }
 
         int minX = (int) Math.floor(min.x);
-        int minY = (int) Math.floor(min.y);
         int minZ = (int) Math.floor(min.z);
         int maxX = (int) Math.floor(max.x);
-        int maxY = (int) Math.floor(max.y);
         int maxZ = (int) Math.floor(max.z);
 
         // 检查范围内的所有方块
@@ -242,6 +249,7 @@ public class CollisionManager {
      */
     private boolean isBlockSolid(int x, int y, int z) {
         if (chunkManager == null) {
+            System.out.println("⚠️ ChunkManager为null！位置(" + x + "," + y + "," + z + ")");
             // 没有ChunkManager时的简单测试逻辑
             return y <= 0; // 地面以下都是固体
         }
@@ -266,7 +274,14 @@ public class CollisionManager {
 
             // 使用你的Chunk.getBlockId方法
             String blockId = chunk.getBlockId(localX, localY, localZ);
-            return blockId != null && !blockId.equals("air");
+            boolean isSolid = blockId != null && !blockId.equals("air");
+            
+            // 调试信息：打印玩家周围的方块检测
+            if (x >= -1 && x <= 1 && y >= 0 && y <= 2 && z >= -1 && z <= 1) {
+                System.out.println("🔍 检测方块(" + x + "," + y + "," + z + ") -> 区块(" + chunkX + "," + chunkY + "," + chunkZ + ") -> " + blockId + " (固体:" + isSolid + ")");
+            }
+            
+            return isSolid;
 
         } catch (Exception e) {
             System.err.println("检查方块固体状态时出错: " + e.getMessage());

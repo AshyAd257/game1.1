@@ -8,6 +8,8 @@ import com.jme3.renderer.RenderManager;
 import com.jme3.scene.Geometry;
 import com.jme3.scene.shape.Box;
 import com.jme3.system.AppSettings;
+import com.jme3.light.AmbientLight;
+import com.jme3.light.DirectionalLight;
 
 // 导入模块系统
 import com.Hecate.module.world.WorldModule;
@@ -58,8 +60,11 @@ public class Main extends SimpleApplication {
         System.out.println("🚀 Hecate游戏启动中...");
 
         // 设置相机初始位置
-        // cam.setLocation(new Vector3f(0, 10, 10));
-        // cam.lookAt(new Vector3f(0, 0, 0), Vector3f.UNIT_Y);
+        cam.setLocation(new Vector3f(0, 15, 15));
+        cam.lookAt(new Vector3f(0, 1, 0), Vector3f.UNIT_Y);
+
+        // 设置光照
+        setupLighting();
 
         // 隐藏统计信息（可选）
         setDisplayStatView(false);
@@ -259,6 +264,24 @@ public class Main extends SimpleApplication {
      */
     public WorldModule getWorldModule() {
         return worldModule;
+    }
+
+    /**
+     * 设置光照系统
+     */
+    private void setupLighting() {
+        // 环境光（整体亮度）
+        AmbientLight ambient = new AmbientLight();
+        ambient.setColor(ColorRGBA.White.mult(0.3f)); // 30%环境光
+        rootNode.addLight(ambient);
+
+        // 方向光（太阳光）
+        DirectionalLight sun = new DirectionalLight();
+        sun.setDirection(new Vector3f(-1f, -1f, -1f).normalizeLocal());
+        sun.setColor(ColorRGBA.White.mult(0.8f)); // 80%方向光
+        rootNode.addLight(sun);
+
+        System.out.println("💡 光照系统已设置: 环境光30% + 方向光80%");
     }
 
     /**

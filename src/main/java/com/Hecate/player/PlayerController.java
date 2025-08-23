@@ -11,6 +11,7 @@ import com.jme3.input.controls.MouseAxisTrigger;
 import com.jme3.material.Material;
 import com.jme3.math.ColorRGBA;
 import com.jme3.math.FastMath;
+import com.jme3.math.Quaternion;
 import com.jme3.math.Vector3f;
 import com.jme3.renderer.Camera;
 import com.jme3.scene.Geometry;
@@ -29,8 +30,9 @@ public class PlayerController implements ActionListener, AnalogListener {
     private final Camera camera;
     private final InputManager inputManager;
 
-    // 玩家方块
-    private Geometry playerBlock;
+    // 玩家模型系统
+    private PlayerModel playerModel;
+    private PlayerAnimator playerAnimator;
     private Node playerNode;
 
     // 🧭 玩家朝向系统
@@ -46,6 +48,7 @@ public class PlayerController implements ActionListener, AnalogListener {
     private final float gravity = -20.0f;
     private boolean[] moveDirection = new boolean[4]; // W, A, S, D
     private boolean isJumping = false;
+    private boolean isMoving = false; // 玩家是否正在移动（用于动画）
 
     // 碰撞相关
     private static final float PLAYER_WIDTH = 1;
@@ -74,10 +77,10 @@ public class PlayerController implements ActionListener, AnalogListener {
     }
 
     /**
-     * 🎨 初始化玩家方块（带朝向标识）
+     * 🎨 初始化玩家模型（Minecraft Steve风格）
      */
     private void initializePlayer() {
-        System.out.println("🔍 正在创建带朝向的玩家方块...");
+        System.out.println("🔍 正在创建Minecraft Steve风格玩家模型...");
 
         Node existingPlayer = (Node) app.getRootNode().getChild("Player");
         if (existingPlayer != null) {
@@ -87,39 +90,20 @@ public class PlayerController implements ActionListener, AnalogListener {
 
         playerNode = new Node("Player");
 
-        // 创建玩家方块
-        Box playerBoxGeom = new Box(PLAYER_WIDTH/2, PLAYER_HEIGHT/2, PLAYER_WIDTH/2);
-        playerBlock = new Geometry("PlayerBlock", playerBoxGeom);
-
-        // 🎨 创建多面材质（正面不同颜色）
-        createPlayerMaterials();
+        // 创建Steve风格玩家模型
+        playerModel = new PlayerModel(app);
+        playerAnimator = new PlayerAnimator(playerModel);
 
         playerNode.setLocalTranslation(playerPosition);
-        playerNode.attachChild(playerBlock);
+        playerNode.attachChild(playerModel.getModelNode());
         app.getRootNode().attachChild(playerNode);
 
         updatePlayerBox();
 
-        System.out.println("✅ 带朝向的玩家方块已创建，位置: " + playerPosition);
+        System.out.println("✅ Minecraft Steve风格玩家模型已创建，位置: " + playerPosition);
         System.out.println("🧭 玩家初始朝向: 北方 (0°)");
     }
 
-    /**
-     * 🎨 创建玩家材质（正面高亮）
-     */
-    private void createPlayerMaterials() {
-        // 基础材质（身体颜色）
-        Material bodyMat = new Material(app.getAssetManager(), "Common/MatDefs/Light/Lighting.j3md");
-        bodyMat.setColor("Diffuse", new ColorRGBA(0.2f, 0.5f, 1.0f, 1.0f)); // 蓝色身体
-        bodyMat.setColor("Specular", ColorRGBA.White);
-        bodyMat.setFloat("Shininess", 16f);
-
-        // 暂时使用单一材质，后续可以改为多材质方块
-        playerBlock.setMaterial(bodyMat);
-
-        // TODO: 未来可以使用 MatParam 或多个 Geometry 来实现不同面的颜色
-        System.out.println("🎨 玩家材质已设置（正面标识待优化）");
-    }
 
     /**
      * 🧭 更新玩家朝向（根据移动方向）
@@ -137,7 +121,7 @@ public class PlayerController implements ActionListener, AnalogListener {
             currentMovement.normalizeLocal();
 
             // 计算目标朝向角度
-            float targetFacing = FastMath.atan2(currentMovement.x, -currentMovement.z);
+            float targetFacing = FastMath.atan2(currentMovement.x, currentMovement.z);
 
             // 平滑转向目标角度
             float angleDiff = targetFacing - playerFacing;
@@ -156,8 +140,10 @@ public class PlayerController implements ActionListener, AnalogListener {
             lastMovementDirection.set(currentMovement);
         }
 
-        // 🔄 更新玩家方块的旋转
-        playerNode.setLocalRotation(playerNode.getLocalRotation().fromAngleAxis(playerFacing, Vector3f.UNIT_Y));
+        // 🔄 更新玩家模型的旋转
+        Quaternion rotation = new Quaternion();
+        rotation.fromAngleAxis(playerFacing, Vector3f.UNIT_Y);
+        playerNode.setLocalRotation(rotation);
     }
 
     /**
@@ -167,7 +153,7 @@ public class PlayerController implements ActionListener, AnalogListener {
         return new Vector3f(
                 FastMath.sin(playerFacing),  // X分量
                 0,                           // Y分量（水平朝向）
-                -FastMath.cos(playerFacing)  // Z分量
+                FastMath.cos(playerFacing)   // Z分量
         );
     }
 
@@ -303,6 +289,9 @@ public class PlayerController implements ActionListener, AnalogListener {
         if (moveDirection[2]) movement.x -= 1; // A
         if (moveDirection[3]) movement.x += 1; // D
 
+        // 更新移动状态（用于动画）
+        isMoving = movement.lengthSquared() > 0;
+
         if (movement.lengthSquared() > 0) {
             movement.normalizeLocal();
             movement.multLocal(moveSpeed * tpf);
@@ -353,6 +342,12 @@ public class PlayerController implements ActionListener, AnalogListener {
 
         updatePlayerBox();
         playerNode.setLocalTranslation(playerPosition);
+        
+        // 🎬 更新玩家模型动画
+        if (playerAnimator != null) {
+            playerAnimator.update(tpf, velocity, isMoving);
+        }
+        
         updateCameraPosition();
     }
 

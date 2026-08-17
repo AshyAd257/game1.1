@@ -1,0 +1,40 @@
+3月 11, 2026 10:59:24 下午 com.jme3.system.JmeDesktopSystem initialize
+信息: Running on jMonkeyEngine 3.5.2-stable
+ * Branch: HEAD
+ * Git Hash: 8ab3d24
+ * Build Date: 2022-04-21
+3月 11, 2026 10:59:25 下午 com.jme3.system.lwjgl.LwjglContext printContextInitInfo
+信息: LWJGL 3.3.1 build 7 context running on thread jME3 Main
+ * Graphics Adapter: GLFW 3.4.0 Win32 WGL Null EGL OSMesa VisualC DLL
+3月 11, 2026 10:59:25 下午 com.jme3.renderer.opengl.GLRenderer loadCapabilitiesCommon
+信息: OpenGL Renderer Information
+ * Vendor: ATI Technologies Inc.
+ * Renderer: AMD Radeon 780M Graphics
+ * OpenGL Version: 4.6.0 Compatibility Profile Context 26.2.2.260209
+ * GLSL Version: 4.60
+ * Profile: Compatibility
+3月 11, 2026 10:59:25 下午 com.jme3.renderer.opengl.GLRenderer setMainFrameBufferSrgb
+警告: Driver claims that default framebuffer is not sRGB capable. Enabling anyway.
+3月 11, 2026 10:59:25 下午 com.jme3.app.LegacyApplication handleError
+严重: Uncaught exception thrown in Thread[jME3 Main,5,main]
+java.lang.NoClassDefFoundError: de/jarnbjo/ogg/PhysicalOggStream
+	at java.base/java.lang.Class.forName0(Native Method)
+	at java.base/java.lang.Class.forName(Class.java:375)
+	at com.jme3.asset.AssetConfig.acquireClass(AssetConfig.java:62)
+	at com.jme3.asset.AssetConfig.loadText(AssetConfig.java:87)
+	at com.jme3.asset.DesktopAssetManager.loadConfigFile(DesktopAssetManager.java:96)
+	at com.jme3.asset.DesktopAssetManager.<init>(DesktopAssetManager.java:89)
+	at com.jme3.system.JmeSystemDelegate.newAssetManager(JmeSystemDelegate.java:127)
+	at com.jme3.system.JmeSystem.newAssetManager(JmeSystem.java:148)
+	at com.jme3.app.LegacyApplication.initAssetManager(LegacyApplication.java:221)
+	at com.jme3.app.LegacyApplication.initialize(LegacyApplication.java:634)
+	at com.jme3.app.SimpleApplication.initialize(SimpleApplication.java:198)
+	at com.jme3.system.lwjgl.LwjglWindow.initInThread(LwjglWindow.java:548)
+	at com.jme3.system.lwjgl.LwjglWindow.run(LwjglWindow.java:662)
+	at java.base/java.lang.Thread.run(Thread.java:840)
+Caused by: java.lang.ClassNotFoundException: de.jarnbjo.ogg.PhysicalOggStream
+	at java.base/jdk.internal.loader.BuiltinClassLoader.loadClass(BuiltinClassLoader.java:641)
+	at java.base/jdk.internal.loader.ClassLoaders$AppClassLoader.loadClass(ClassLoaders.java:188)
+	at java.base/java.lang.ClassLoader.loadClass(ClassLoader.java:525)
+	... 14 more
+

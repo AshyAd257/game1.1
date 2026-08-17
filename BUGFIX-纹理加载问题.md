@@ -3,22 +3,22 @@
 ## 问题描述
 地面没有正确显示贴图纹理，而是显示粉红色的缺失纹理或纯棕色。
 
-## 问题原因分析
+ 问题原因分析
 
-### 1. 主要问题：路径大小写不匹配
+ 1. 主要问题：路径大小写不匹配
 - **错误路径**：`Textures/blocks/dirt.png`（大写T）
 - **期望路径**：`textures/blocks/dirt.png`（小写t）
 - **错误信息**：`Asset name doesn't match requirements`
 
-### 2. ChunkRenderer使用纯色材质
+ 2. ChunkRenderer使用纯色材质
 - ChunkRenderer.java 第87行使用 `createSimpleMaterial()`
 - 该方法创建纯棕色材质而非纹理材质
 
-### 3. 资源文件夹命名不一致
+ 3. 资源文件夹命名不一致
 - 资源文件夹使用大写 `Textures`
 - 代码中引用小写 `textures`
 
-## 修复方案
+ 修复方案
 
 ### 1. 修复BlockTextureManager路径
 ```java

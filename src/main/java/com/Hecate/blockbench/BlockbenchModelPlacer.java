@@ -1,34 +1,23 @@
 package com.Hecate.blockbench;
 
+import com.Hecate.placer.AbstractModelPlacer;
+import com.Hecate.utils.LogUtils;
 import com.jme3.math.Vector3f;
-import com.jme3.scene.Node;
 import com.jme3.scene.Spatial;
 
 /**
  * Blockbench模型放置器
  */
-public class BlockbenchModelPlacer {
-    private final Node rootNode;
-    private final BlockbenchModelRegistry registry;
+public class BlockbenchModelPlacer extends AbstractModelPlacer<BlockbenchModel, BlockbenchModelRegistry> {
 
-    public BlockbenchModelPlacer(Node rootNode) {
-        this.rootNode = rootNode;
-        this.registry = BlockbenchModelRegistry.getInstance();
+    public BlockbenchModelPlacer(com.jme3.scene.Node rootNode) {
+        super(rootNode, BlockbenchModelRegistry.getInstance());
     }
 
-    /**
-     * 在指定位置放置Blockbench模型
-     */
-    public boolean placeModel(String modelId, Vector3f position) {
-        BlockbenchModel model = registry.getModel(modelId);
-
+    @Override
+    public Boolean placeModel(String modelId, Vector3f position) {
+        BlockbenchModel model = getAndValidateModel(modelId);
         if (model == null) {
-            System.err.println("模型不存在: " + modelId);
-            return false;
-        }
-
-        if (!model.isLoaded()) {
-            System.err.println("模型未加载: " + modelId);
             return false;
         }
 
@@ -43,16 +32,19 @@ public class BlockbenchModelPlacer {
             modelInstance.setName("blockbench_" + modelId + "_" + position.toString());
 
             // 添加到场景
-            rootNode.attachChild(modelInstance);
+            worldNode.attachChild(modelInstance);
 
-            System.out.println("放置Blockbench模型: " + modelId + " 在位置 " + position);
             return true;
 
         } catch (Exception e) {
-            System.err.println("放置模型失败: " + modelId + " - " + e.getMessage());
-            e.printStackTrace();
+
             return false;
         }
+    }
+
+    @Override
+    protected boolean isModelLoaded(BlockbenchModel model) {
+        return model.isLoaded();
     }
 
     /**
@@ -63,18 +55,17 @@ public class BlockbenchModelPlacer {
             // 查找并移除指定位置的模型
             String targetName = "blockbench_.*_" + position.toString();
 
-            for (int i = rootNode.getQuantity() - 1; i >= 0; i--) {
-                Spatial child = rootNode.getChild(i);
+            for (int i = worldNode.getQuantity() - 1; i >= 0; i--) {
+                Spatial child = worldNode.getChild(i);
                 if (child.getName() != null && child.getName().matches(targetName)) {
-                    rootNode.detachChild(child);
-                    System.out.println("移除Blockbench模型在位置: " + position);
+                    worldNode.detachChild(child);
+
                     return true;
                 }
             }
-
             return false;
         } catch (Exception e) {
-            System.err.println("移除模型失败在位置: " + position + " - " + e.getMessage());
+            LogUtils.error(getClass(), "移除模型失败在位置: " + position, e);
             return false;
         }
     }
@@ -84,15 +75,14 @@ public class BlockbenchModelPlacer {
      */
     public void clearAllModels() {
         try {
-            for (int i = rootNode.getQuantity() - 1; i >= 0; i--) {
-                Spatial child = rootNode.getChild(i);
+            for (int i = worldNode.getQuantity() - 1; i >= 0; i--) {
+                Spatial child = worldNode.getChild(i);
                 if (child.getName() != null && child.getName().startsWith("blockbench_")) {
-                    rootNode.detachChild(child);
+                    worldNode.detachChild(child);
                 }
             }
-            System.out.println("清除所有Blockbench模型");
         } catch (Exception e) {
-            System.err.println("清除模型失败: " + e.getMessage());
+            LogUtils.error(getClass(), "清除模型失败", e);
         }
     }
 }

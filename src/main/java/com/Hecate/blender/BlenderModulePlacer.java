@@ -1,5 +1,7 @@
 package com.Hecate.blender;
 
+import com.Hecate.placer.AbstractModelPlacer;
+import com.Hecate.utils.LogUtils;
 import com.jme3.math.Vector3f;
 import com.jme3.math.Quaternion;
 import com.jme3.scene.Node;
@@ -11,15 +13,22 @@ import java.util.UUID;
  * Blender模型放置工具
  * 用于在世界中放置和管理Blender模型实例
  */
-public class BlenderModulePlacer {
-    private final Node worldNode;
-    private final BlenderModelRegistry registry;
+public class BlenderModulePlacer extends AbstractModelPlacer<BlenderModel, BlenderModelRegistry> {
     private final Map<String, Node> placedModels; // 实例ID -> 模型节点
 
     public BlenderModulePlacer(Node worldNode) {
-        this.worldNode = worldNode;
-        this.registry = BlenderModelRegistry.getInstance();
+        super(worldNode, BlenderModelRegistry.getInstance());
         this.placedModels = new HashMap<>();
+    }
+
+    @Override
+    public Node placeModel(String modelId, Vector3f position) {
+        return placeModel(modelId, position, 1.0f);
+    }
+
+    @Override
+    protected boolean isModelLoaded(BlenderModel model) {
+        return model.isLoaded();
     }
 
     /**
@@ -30,14 +39,8 @@ public class BlenderModulePlacer {
      * @return 放置的模型节点，如果失败返回null
      */
     public Node placeModel(String modelId, Vector3f position, float scale) {
-        BlenderModel model = registry.getModel(modelId);
+        BlenderModel model = getAndValidateModel(modelId);
         if (model == null) {
-            System.err.println("模型不存在: " + modelId);
-            return null;
-        }
-
-        if (!model.isLoaded()) {
-            System.err.println("模型未加载: " + modelId);
             return null;
         }
 
@@ -55,25 +58,10 @@ public class BlenderModulePlacer {
             worldNode.attachChild(modelInstance);
             placedModels.put(instanceId, modelInstance);
 
-            System.out.println("放置模型: " + modelId + " 在位置 " + position + " (实例ID: " + instanceId + ")");
             return modelInstance;
         }
 
         return null;
-    }
-
-    /**
-     * 在指定位置放置模型（默认缩放1.0）
-     */
-    public Node placeModel(String modelId, Vector3f position) {
-        return placeModel(modelId, position, 1.0f);
-    }
-
-    /**
-     * 在指定坐标放置模型
-     */
-    public Node placeModel(String modelId, float x, float y, float z) {
-        return placeModel(modelId, new Vector3f(x, y, z));
     }
 
     /**
@@ -103,7 +91,6 @@ public class BlenderModulePlacer {
         if (modelNode != null) {
             worldNode.detachChild(modelNode);
             placedModels.remove(modelNode.getName());
-            System.out.println("移除模型实例: " + modelNode.getName());
         }
     }
 
@@ -124,7 +111,6 @@ public class BlenderModulePlacer {
         placedModels.entrySet().removeIf(entry -> {
             if (entry.getKey().startsWith(modelId + "_")) {
                 worldNode.detachChild(entry.getValue());
-                System.out.println("移除模型实例: " + entry.getKey());
                 return true;
             }
             return false;

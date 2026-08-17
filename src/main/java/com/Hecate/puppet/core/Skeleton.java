@@ -1,0 +1,180 @@
+package com.Hecate.puppet.core;
+
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * 骨骼树
+ * 管理整个木偶的骨骼结构
+ */
+public class Skeleton {
+
+    private final String name;
+    private Bone rootBone;
+    private final Map<String, Bone> boneMap;
+    private final List<Bone> allBones;
+    private GroupManager groupManager;  // 分组管理器
+
+    public Skeleton(String name) {
+        this.name = name;
+        this.boneMap = new HashMap<>();
+        this.allBones = new ArrayList<>();
+        this.groupManager = new GroupManager(this);  // 初始化分组管理器
+    }
+
+    /**
+     * 设置根骨骼
+     */
+    public void setRootBone(Bone root) {
+        this.rootBone = root;
+        rebuildBoneList();
+    }
+
+    /**
+     * 根据名称查找骨骼
+     */
+    public Bone findBone(String boneName) {
+        return boneMap.get(boneName);
+    }
+
+    /**
+     * 添加骨骼到索引
+     */
+    public void addBone(Bone bone) {
+        boneMap.put(bone.getName(), bone);
+        if (!allBones.contains(bone)) {
+            allBones.add(bone);
+        }
+    }
+
+    /**
+     * 移除骨骼
+     */
+    public void removeBone(String boneName) {
+        Bone bone = boneMap.get(boneName);
+        if (bone == null) {
+            return;
+        }
+
+        // 从父骨骼的子列表中移除
+        Bone parent = bone.getParent();
+        if (parent != null) {
+            parent.removeChild(bone);
+        }
+
+        // 从索引中移除
+        boneMap.remove(boneName);
+        allBones.remove(bone);
+    }
+
+    /**
+     * 清空所有骨骼
+     */
+    public void clear() {
+        rootBone = null;
+        boneMap.clear();
+        allBones.clear();
+    }
+
+    /**
+     * 重命名骨骼
+     * 注意：这只更新索引，不会修改Bone对象本身的名称（因为name是final）
+     * 需要创建新的Bone对象来真正重命名
+     */
+    public void updateBoneIndex(String oldName, String newName, Bone bone) {
+        if (boneMap.containsKey(oldName)) {
+            boneMap.remove(oldName);
+            boneMap.put(newName, bone);
+        }
+    }
+
+    /**
+     * 直接更新根骨骼引用，不触发rebuildBoneList
+     * 用于重命名等场景，避免丢失不在骨骼树中的独立骨骼
+     */
+    public void updateRootBoneReference(Bone newRoot) {
+        this.rootBone = newRoot;
+    }
+
+    /**
+     * 重建骨骼列表（深度优先遍历）
+     */
+    private void rebuildBoneList() {
+        boneMap.clear();
+        allBones.clear();
+
+        if (rootBone != null) {
+            collectBonesRecursive(rootBone);
+        }
+    }
+
+    /**
+     * 递归收集所有骨骼
+     */
+    private void collectBonesRecursive(Bone bone) {
+        boneMap.put(bone.getName(), bone);
+        allBones.add(bone);
+
+        for (Bone child : bone.getChildren()) {
+            collectBonesRecursive(child);
+        }
+    }
+
+    /**
+     * 重置所有骨骼到Rest姿势
+     */
+    public void resetToRestPose() {
+        for (Bone bone : allBones) {
+            bone.resetToRestPose();
+        }
+    }
+
+    /**
+     * 更新所有骨骼的变换矩阵
+     * 注意：Bone使用延迟计算，世界变换在getWorldTransform()时按需计算
+     */
+    public void updateTransforms() {
+        // Bone类使用延迟计算策略，无需显式更新
+        // 世界变换会在需要时通过getWorldTransform()递归计算
+    }
+
+    /**
+     * 获取所有骨骼列表（按层级顺序）
+     */
+    public List<Bone> getAllBones() {
+        return new ArrayList<>(allBones);
+    }
+
+    /**
+     * 获取骨骼数量
+     */
+    public int getBoneCount() {
+        return allBones.size();
+    }
+
+    // ========== Getters ==========
+
+    public String getName() {
+        return name;
+    }
+
+    public Bone getRootBone() {
+        return rootBone;
+    }
+
+    /**
+     * 获取分组管理器
+     */
+    public GroupManager getGroupManager() {
+        return groupManager;
+    }
+
+    /**
+     * 设置分组管理器（用于反序列化）
+     */
+    public void setGroupManager(GroupManager groupManager) {
+        this.groupManager = groupManager;
+    }
+}

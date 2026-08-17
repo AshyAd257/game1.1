@@ -1,65 +1,68 @@
 package com.Hecate.blockbench;
 
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Set;
+import com.Hecate.registry.AbstractModelRegistry;
 
 /**
  * Blockbench模型注册表
+ *
+ * 重构为支持依赖注入，同时保持向后兼容。
+ *
+ * 迁移指南：
+ * - 旧代码: BlockbenchModelRegistry.getInstance() (仍可用)
+ * - 新代码: new BlockbenchModelRegistry() (推荐，用于依赖注入)
  */
-public class BlockbenchModelRegistry {
-    private static BlockbenchModelRegistry instance;
-    private final Map<String, BlockbenchModel> models = new HashMap<>();
+public class BlockbenchModelRegistry extends AbstractModelRegistry<BlockbenchModel> {
+    // 默认实例（向后兼容）
+    private static BlockbenchModelRegistry defaultInstance;
 
-    private BlockbenchModelRegistry() {}
-
-    public static synchronized BlockbenchModelRegistry getInstance() {
-        if (instance == null) {
-            instance = new BlockbenchModelRegistry();
-        }
-        return instance;
+    /**
+     * Public constructor - 支持创建独立实例
+     */
+    public BlockbenchModelRegistry() {
+        // 允许创建多个实例
     }
 
     /**
-     * 注册一个Blockbench模型
+     * 获取默认实例（向后兼容）
+     *
+     * @deprecated 推荐使用依赖注入：通过构造器传递 BlockbenchModelRegistry
+     */
+    @Deprecated
+    public static synchronized BlockbenchModelRegistry getInstance() {
+        if (defaultInstance == null) {
+            defaultInstance = new BlockbenchModelRegistry();
+        }
+        return defaultInstance;
+    }
+
+    /**
+     * 获取默认实例（语义更清晰的方法名）
+     */
+    public static synchronized BlockbenchModelRegistry getDefaultInstance() {
+        return getInstance();
+    }
+
+    /**
+     * 创建新的独立实例（用于测试、编辑器、多世界等场景）
+     */
+    public static BlockbenchModelRegistry createInstance() {
+        return new BlockbenchModelRegistry();
+    }
+
+    /**
+     * 注册Blockbench模型（便捷方法）
      */
     public void registerModel(BlockbenchModel model) {
-        models.put(model.getId(), model);
-        System.out.println("注册Blockbench模型: " + model.getId() + " - " + model.getName());
+        registerModel(model.getId(), model);
     }
 
-    /**
-     * 根据ID获取模型
-     */
-    public BlockbenchModel getModel(String id) {
-        return models.get(id);
+    @Override
+    protected boolean isModelLoaded(BlockbenchModel model) {
+        return model.isLoaded();
     }
 
-    /**
-     * 获取所有注册的模型ID
-     */
-    public Set<String> getAllModelIds() {
-        return models.keySet();
-    }
-
-    /**
-     * 检查模型是否存在
-     */
-    public boolean hasModel(String id) {
-        return models.containsKey(id);
-    }
-
-    /**
-     * 获取已加载的模型数量
-     */
-    public int getLoadedModelCount() {
-        return (int) models.values().stream().filter(BlockbenchModel::isLoaded).count();
-    }
-
-    /**
-     * 获取总模型数量
-     */
-    public int getTotalModelCount() {
-        return models.size();
+    @Override
+    protected String getModelTypeName() {
+        return "Blockbench";
     }
 }

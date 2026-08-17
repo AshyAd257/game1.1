@@ -1,0 +1,53 @@
+MaterialDef Terrain Patchwork {
+    MaterialParameters {
+        // 泥土纹理（3张）
+        Texture2D Dirt1Texture
+        Texture2D Dirt2Texture
+        Texture2D Dirt3Texture
+
+        // 草地纹理（10张）
+        Texture2D Grs1Texture
+        Texture2D Grs2Texture
+        Texture2D Grs3Texture
+        Texture2D Grs4Texture
+        Texture2D Grs5Texture
+        Texture2D Grs6Texture
+        Texture2D Grs7Texture
+        Texture2D Grs8Texture
+        Texture2D Grs9Texture
+        Texture2D Grs10Texture
+
+        // 其他材质
+        Texture2D SandTexture
+        Texture2D WaterTexture
+
+        // 材质类型 (0=DIRT, 1=SAND, 2=WATER)
+        Int MaterialType
+
+        // 拼布效果参数
+        Float PatchScale : 4.0
+        Float DecorationDensity : 0.3
+        Float DecorationScale : 16.0
+
+        // 水流动画参数
+        Float Time : 0.0
+        Float WaterFlowSpeed : 0.1
+    }
+
+    Technique {
+        VertexShader GLSL150:   Shaders/TerrainPatchwork.vert
+        FragmentShader GLSL150: Shaders/TerrainPatchwork.frag
+
+        WorldParameters {
+            WorldViewProjectionMatrix
+            WorldMatrix
+            NormalMatrix
+        }
+
+        Defines {
+            HAS_DIRT_TEXTURES : Dirt1Texture
+            HAS_SAND_TEXTURE : SandTexture
+            HAS_WATER_TEXTURE : WaterTexture
+        }
+    }
+}

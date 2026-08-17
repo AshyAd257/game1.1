@@ -1,70 +1,68 @@
 package com.Hecate.blender;
 
+import com.Hecate.registry.AbstractModelRegistry;
+import com.Hecate.utils.LogUtils;
 import com.jme3.asset.AssetManager;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Set;
 
 /**
  * Blender模型注册表
+ *
+ * 重构为支持依赖注入，同时保持向后兼容。
+ *
+ * 迁移指南：
+ * - 旧代码: BlenderModelRegistry.getInstance() (仍可用)
+ * - 新代码: new BlenderModelRegistry() (推荐，用于依赖注入)
  */
-public class BlenderModelRegistry {
-    private static BlenderModelRegistry instance;
-    private final Map<String, BlenderModel> models = new HashMap<>();
+public class BlenderModelRegistry extends AbstractModelRegistry<BlenderModel> {
+    // 默认实例（向后兼容）
+    private static BlenderModelRegistry defaultInstance;
 
-    private BlenderModelRegistry() {}
-
-    public static synchronized BlenderModelRegistry getInstance() {
-        if (instance == null) {
-            instance = new BlenderModelRegistry();
-        }
-        return instance;
+    /**
+     * Public constructor - 支持创建独立实例
+     */
+    public BlenderModelRegistry() {
+        // 允许创建多个实例
     }
 
     /**
-     * 注册Blender模型
+     * 获取默认实例（向后兼容）
+     *
+     * @deprecated 推荐使用依赖注入：通过构造器传递 BlenderModelRegistry
+     */
+    @Deprecated
+    public static synchronized BlenderModelRegistry getInstance() {
+        if (defaultInstance == null) {
+            defaultInstance = new BlenderModelRegistry();
+        }
+        return defaultInstance;
+    }
+
+    /**
+     * 获取默认实例（语义更清晰的方法名）
+     */
+    public static synchronized BlenderModelRegistry getDefaultInstance() {
+        return getInstance();
+    }
+
+    /**
+     * 创建新的独立实例（用于测试、编辑器、多世界等场景）
+     */
+    public static BlenderModelRegistry createInstance() {
+        return new BlenderModelRegistry();
+    }
+
+    /**
+     * 注册Blender模型（便捷方法）
      */
     public void registerModel(BlenderModel model) {
-        models.put(model.getModelId(), model);
-        System.out.println("注册Blender模型: " + model.getModelId());
-    }
-
-    /**
-     * 获取模型
-     */
-    public BlenderModel getModel(String modelId) {
-        return models.get(modelId);
-    }
-
-    /**
-     * 获取所有模型ID
-     */
-    public Set<String> getAllModelIds() {
-        return models.keySet();
-    }
-
-    /**
-     * 检查模型是否存在
-     */
-    public boolean hasModel(String modelId) {
-        return models.containsKey(modelId);
-    }
-
-    /**
-     * 移除模型
-     */
-    public void removeModel(String modelId) {
-        BlenderModel removed = models.remove(modelId);
-        if (removed != null) {
-            System.out.println("移除Blender模型: " + modelId);
-        }
+        registerModel(model.getModelId(), model);
     }
 
     /**
      * 加载所有注册的模型
      */
     public void loadAllModels(AssetManager assetManager) {
-        System.out.println("开始加载所有Blender模型...");
+
         int successCount = 0;
         int totalCount = models.size();
 
@@ -74,27 +72,15 @@ public class BlenderModelRegistry {
             }
         }
 
-        System.out.println("Blender模型加载完成: " + successCount + "/" + totalCount + " 成功");
     }
 
-    /**
-     * 获取已加载的模型数量
-     */
-    public int getLoadedModelCount() {
-        int count = 0;
-        for (BlenderModel model : models.values()) {
-            if (model.isLoaded()) {
-                count++;
-            }
-        }
-        return count;
+    @Override
+    protected boolean isModelLoaded(BlenderModel model) {
+        return model.isLoaded();
     }
 
-    /**
-     * 清空所有模型
-     */
-    public void clear() {
-        models.clear();
-        System.out.println("清空所有Blender模型");
+    @Override
+    protected String getModelTypeName() {
+        return "Blender";
     }
 }

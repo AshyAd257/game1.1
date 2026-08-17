@@ -1,0 +1,318 @@
+package com.Hecate.puppet.editor;
+
+import com.jme3.app.SimpleApplication;
+import com.jme3.font.BitmapFont;
+import com.jme3.font.BitmapText;
+import com.jme3.math.ColorRGBA;
+import com.jme3.scene.Node;
+import com.Hecate.puppet.Bone;
+import com.Hecate.puppet.PuppetPartRenderer;
+
+/**
+ * Inspector检查器面板（简化版）
+ * 只显示选中骨骼的信息，不包含编辑控件
+ */
+public class InspectorPanel {
+
+    private final SimpleApplication app;
+    private final BitmapFont font;
+    private final Node rootNode;
+
+    private Bone currentBone;
+    private PuppetPartRenderer currentPartRenderer;
+
+    private BitmapText titleText;
+    private BitmapText parentText;
+    private BitmapText sizeText;
+    private BitmapText positionText;
+    private BitmapText rotationText;
+    private BitmapText scaleText;
+    private BitmapText priorityText;
+    private BitmapText textureText;
+
+    private final int x, y, width, height;
+
+    public InspectorPanel(SimpleApplication app, BitmapFont font, int x, int y, int width, int height) {
+        this.app = app;
+        this.font = font;
+        this.x = x;
+        this.y = y;
+        this.width = width;
+        this.height = height;
+
+        this.rootNode = new Node("InspectorPanel");
+        initializePanel();
+    }
+
+    /**
+     * 初始化面板
+     */
+    private void initializePanel() {
+        int currentY = app.getCamera().getHeight() - y - 20;
+
+        // 标题
+        titleText = new BitmapText(font);
+        titleText.setText("=== Inspector ===");
+        titleText.setSize(font.getCharSet().getRenderedSize() * 2.0f);
+        titleText.setColor(ColorRGBA.Yellow);
+        titleText.setLocalTranslation(x + 10, currentY, 0);
+        rootNode.attachChild(titleText);
+        currentY -= 50;
+
+        // 父骨骼信息
+        BitmapText parentLabel = new BitmapText(font);
+        parentLabel.setText("Parent:");
+        parentLabel.setSize(font.getCharSet().getRenderedSize() * 1.5f);
+        parentLabel.setColor(ColorRGBA.Orange);
+        parentLabel.setLocalTranslation(x + 10, currentY, 0);
+        rootNode.attachChild(parentLabel);
+        currentY -= 25;
+
+        parentText = new BitmapText(font);
+        parentText.setText("None");
+        parentText.setSize(font.getCharSet().getRenderedSize() * 1.3f);
+        parentText.setColor(ColorRGBA.Cyan);
+        parentText.setLocalTranslation(x + 20, currentY, 0);
+        rootNode.attachChild(parentText);
+        currentY -= 40;
+
+        // 纹理信息
+        BitmapText textureLabel = new BitmapText(font);
+        textureLabel.setText("Texture:");
+        textureLabel.setSize(font.getCharSet().getRenderedSize() * 1.5f);
+        textureLabel.setColor(ColorRGBA.Orange);
+        textureLabel.setLocalTranslation(x + 10, currentY, 0);
+        rootNode.attachChild(textureLabel);
+        currentY -= 25;
+
+        textureText = new BitmapText(font);
+        textureText.setText("None");
+        textureText.setSize(font.getCharSet().getRenderedSize() * 1.2f);
+        textureText.setColor(ColorRGBA.Cyan);
+        textureText.setLocalTranslation(x + 20, currentY, 0);
+        rootNode.attachChild(textureText);
+        currentY -= 40;
+
+        // 尺寸信息
+        BitmapText sizeLabel = new BitmapText(font);
+        sizeLabel.setText("Size:");
+        sizeLabel.setSize(font.getCharSet().getRenderedSize() * 1.5f);
+        sizeLabel.setColor(ColorRGBA.Orange);
+        sizeLabel.setLocalTranslation(x + 10, currentY, 0);
+        rootNode.attachChild(sizeLabel);
+        currentY -= 25;
+
+        sizeText = new BitmapText(font);
+        sizeText.setText("-");
+        sizeText.setSize(font.getCharSet().getRenderedSize() * 1.3f);
+        sizeText.setColor(ColorRGBA.Cyan);
+        sizeText.setLocalTranslation(x + 20, currentY, 0);
+        rootNode.attachChild(sizeText);
+        currentY -= 40;
+
+        // 优先级信息
+        BitmapText priorityLabel = new BitmapText(font);
+        priorityLabel.setText("Priority:");
+        priorityLabel.setSize(font.getCharSet().getRenderedSize() * 1.5f);
+        priorityLabel.setColor(ColorRGBA.Orange);
+        priorityLabel.setLocalTranslation(x + 10, currentY, 0);
+        rootNode.attachChild(priorityLabel);
+        currentY -= 25;
+
+        priorityText = new BitmapText(font);
+        priorityText.setText("0");
+        priorityText.setSize(font.getCharSet().getRenderedSize() * 1.3f);
+        priorityText.setColor(ColorRGBA.Cyan);
+        priorityText.setLocalTranslation(x + 20, currentY, 0);
+        rootNode.attachChild(priorityText);
+        currentY -= 40;
+
+        // 位置信息
+        BitmapText positionLabel = new BitmapText(font);
+        positionLabel.setText("Position:");
+        positionLabel.setSize(font.getCharSet().getRenderedSize() * 1.5f);
+        positionLabel.setColor(ColorRGBA.Orange);
+        positionLabel.setLocalTranslation(x + 10, currentY, 0);
+        rootNode.attachChild(positionLabel);
+        currentY -= 25;
+
+        positionText = new BitmapText(font);
+        positionText.setText("-");
+        positionText.setSize(font.getCharSet().getRenderedSize() * 1.3f);
+        positionText.setColor(ColorRGBA.Cyan);
+        positionText.setLocalTranslation(x + 20, currentY, 0);
+        rootNode.attachChild(positionText);
+        currentY -= 40;
+
+        // 旋转信息
+        BitmapText rotationLabel = new BitmapText(font);
+        rotationLabel.setText("Rotation:");
+        rotationLabel.setSize(font.getCharSet().getRenderedSize() * 1.5f);
+        rotationLabel.setColor(ColorRGBA.Orange);
+        rotationLabel.setLocalTranslation(x + 10, currentY, 0);
+        rootNode.attachChild(rotationLabel);
+        currentY -= 25;
+
+        rotationText = new BitmapText(font);
+        rotationText.setText("-");
+        rotationText.setSize(font.getCharSet().getRenderedSize() * 1.3f);
+        rotationText.setColor(ColorRGBA.Green);
+        rotationText.setLocalTranslation(x + 20, currentY, 0);
+        rootNode.attachChild(rotationText);
+        currentY -= 40;
+
+        // 缩放信息
+        BitmapText scaleLabel = new BitmapText(font);
+        scaleLabel.setText("Scale:");
+        scaleLabel.setSize(font.getCharSet().getRenderedSize() * 1.5f);
+        scaleLabel.setColor(ColorRGBA.Orange);
+        scaleLabel.setLocalTranslation(x + 10, currentY, 0);
+        rootNode.attachChild(scaleLabel);
+        currentY -= 25;
+
+        scaleText = new BitmapText(font);
+        scaleText.setText("-");
+        scaleText.setSize(font.getCharSet().getRenderedSize() * 1.3f);
+        scaleText.setColor(ColorRGBA.Magenta);
+        scaleText.setLocalTranslation(x + 20, currentY, 0);
+        rootNode.attachChild(scaleText);
+    }
+
+    /**
+     * 设置显示的骨骼和渲染器
+     */
+    public void setBone(Bone bone, PuppetPartRenderer partRenderer) {
+        this.currentBone = bone;
+        this.currentPartRenderer = partRenderer;
+        updateDisplay();
+    }
+
+    /**
+     * 更新显示内容
+     */
+    public void updateDisplay() {
+        if (currentBone == null) {
+            clear();
+            return;
+        }
+
+        // 更新标题
+        titleText.setText("=== " + currentBone.getName() + " ===");
+
+        // 更新父骨骼
+        if (currentBone.getParent() != null) {
+            parentText.setText(currentBone.getParent().getName());
+        } else {
+            parentText.setText("None");
+        }
+
+        // 更新纹理信息
+        if (currentPartRenderer != null && currentPartRenderer.getTexture() != null) {
+            String texturePath = currentPartRenderer.getTexture().getKey().getName();
+            String fileName = getFileName(texturePath);
+            textureText.setText(fileName);
+        } else {
+            textureText.setText("None");
+        }
+
+        // 更新尺寸
+        if (currentPartRenderer != null) {
+            sizeText.setText(String.format("W:%.2f H:%.2f",
+                currentPartRenderer.getWidth(),
+                currentPartRenderer.getHeight()));
+        } else {
+            sizeText.setText("-");
+        }
+
+        // 更新优先级
+        priorityText.setText(String.valueOf(currentBone.getPriority()));
+
+        // 更新位置
+        com.jme3.math.Vector3f pos = currentBone.getLocalPosition();
+        positionText.setText(String.format("X:%.2f Y:%.2f Z:%.2f", pos.x, pos.y, pos.z));
+
+        // 更新旋转
+        com.jme3.math.Quaternion rot = currentBone.getLocalRotation();
+        float[] angles = rot.toAngles(new float[3]);
+        rotationText.setText(String.format("X:%.1f° Y:%.1f° Z:%.1f°",
+            Math.toDegrees(angles[0]),
+            Math.toDegrees(angles[1]),
+            Math.toDegrees(angles[2])));
+
+        // 更新缩放
+        com.jme3.math.Vector3f scale = currentBone.getLocalScale();
+        scaleText.setText(String.format("X:%.2f Y:%.2f Z:%.2f", scale.x, scale.y, scale.z));
+    }
+
+    /**
+     * 清空显示
+     */
+    public void clear() {
+        titleText.setText("=== Inspector ===");
+        parentText.setText("None");
+        textureText.setText("None");
+        sizeText.setText("-");
+        priorityText.setText("-");
+        positionText.setText("-");
+        rotationText.setText("-");
+        scaleText.setText("-");
+    }
+
+    /**
+     * 从完整路径中提取文件名
+     */
+    private String getFileName(String path) {
+        if (path == null) return "";
+        int lastSlash = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
+        if (lastSlash >= 0 && lastSlash < path.length() - 1) {
+            String fileName = path.substring(lastSlash + 1);
+            if (fileName.length() > 30) {
+                return fileName.substring(0, 27) + "...";
+            }
+            return fileName;
+        }
+        return path;
+    }
+
+    /**
+     * 更新（简化版不需要做任何事）
+     */
+    public void update(float tpf) {
+        // 简化版没有交互控件，不需要更新
+    }
+
+    /**
+     * 处理鼠标点击（简化版不需要处理）
+     */
+    public boolean handleMouseClick(int mouseX, int mouseY) {
+        return false;
+    }
+
+    /**
+     * 处理鼠标拖动（简化版不需要处理）
+     */
+    public boolean handleMouseDrag(int mouseX, int mouseY) {
+        return false;
+    }
+
+    /**
+     * 处理鼠标释放（简化版不需要处理）
+     */
+    public boolean handleMouseRelease(int mouseX, int mouseY) {
+        return false;
+    }
+
+    // ========== Getters ==========
+
+    public Node getRootNode() {
+        return rootNode;
+    }
+
+    public Bone getCurrentBone() {
+        return currentBone;
+    }
+
+    public PuppetPartRenderer getCurrentPartRenderer() {
+        return currentPartRenderer;
+    }
+}

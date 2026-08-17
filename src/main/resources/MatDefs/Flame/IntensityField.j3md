@@ -1,0 +1,20 @@
+MaterialDef IntensityField {
+    MaterialParameters {
+        // 粒子参数（通过uniform传递）
+        Vector2 CirclePosition
+        Float CircleRadius
+        Float CircleIntensity
+        Float CircleSoftness
+    }
+
+    Technique {
+        VertexShader GLSL150: MatDefs/Flame/IntensityField.vert
+        FragmentShader GLSL150: MatDefs/Flame/IntensityField.frag
+
+        WorldParameters {
+        }
+
+        Defines {
+        }
+    }
+}

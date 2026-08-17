@@ -1,0 +1,1654 @@
+package com.Hecate.puppet.editor.core;
+
+import com.jme3.app.SimpleApplication;
+import com.jme3.material.Material;
+import com.jme3.material.RenderState;
+import com.jme3.math.ColorRGBA;
+import com.jme3.math.Quaternion;
+import com.jme3.math.Vector3f;
+import com.jme3.renderer.queue.RenderQueue;
+import com.jme3.scene.Geometry;
+import com.jme3.scene.Node;
+import com.jme3.scene.Spatial;
+import com.jme3.scene.shape.Quad;
+import com.jme3.texture.Texture;
+
+/**
+ * 鏈ㄥ伓閮ㄤ欢娓叉煋锟?
+ * 璐熻矗娓叉煋鍗曚釜楠ㄩ閮ㄤ欢
+ */
+public class EditorPuppetPartRenderer {
+
+    private final SimpleApplication app;
+    private final EditorBone bone;
+    private final Node parentNode;
+    private EditorPuppetRenderer parentRenderer;  // 閻栬埖瑕嗛弻鎾虫珤寮曠敤锛堢簿鏁ゆ禍搴ｇ埠涓€billboard锟?
+
+    private Geometry partGeometry;
+    private Material partMaterial;
+    private Quad partQuad;
+    private com.jme3.scene.control.BillboardControl billboardControl;
+
+    // 閫変腑楂樺厜閿涘牊鏁兼稉楦跨珶濡楀棛鍤庨弶鈽呯礆
+    private Node highlightNode;
+    private Geometry topLine, bottomLine, leftLine, rightLine;
+    private Material highlightMaterial;
+    private boolean isSelected = false;
+
+    // 閮ㄤ欢灏哄
+    private float width;
+    private float height;
+
+    // 绾圭悊
+    private Texture texture;
+    private String texturePath;  // 绾圭悊鏂囦欢鐠侯垰锟?
+
+    // UV鍧愭爣锛堢簿姹楅悶鍡楁禈闂嗗棗鍨忛悧鍥风礆
+    private float uvOffsetX = 0.0f;
+    private float uvOffsetY = 0.0f;
+    private float uvScaleX = 1.0f;
+    private float uvScaleY = 1.0f;
+
+    // 缃戞牸绯荤粺閰嶇疆
+    private boolean gridEnabled = false;
+    private boolean gridHorizontal = true;
+    private boolean gridVertical = true;
+    private float gridSize = 32f;  // 缃戞牸澶у皬閿涘牆鍎氱槐鐙呯礆
+    private boolean snapToGrid = false;
+
+    //
+    private boolean initialized = false;
+
+    //
+    private final Vector3f offset = new Vector3f(0f, 0f, 0f);
+
+    //
+    private final Vector3f pivotPoint = new Vector3f(0f, 0f, 0f);
+
+    //
+    private Geometry pivotMarker;
+    private boolean showPivotMarker = false;
+
+    // 閼奉亜鐣炬稊澶嬫鏉烆剝顫楀害
+    private float customRotationX = 0f; // X鏉炲瓨妫嗘潪顒婄礄鐠虹柉璐╅弶澶哥瑐娑撳鎲滈崝顭掔礆
+    private float customRotationY = 0f; // Y鏉炲瓨妫嗘潪顒婄礄宸﹀彸鏉烆剙鎮滐紙
+    private float customRotationZ = 0f; // Z鏉炲瓨妫嗘潪顒婄礄骞抽潰閸愬懏妫嗘潪顒婄礆
+
+    // 璐村浘鏃嬭浆瑙掑害
+    private float textureRotation = 0f;
+
+    // 鏍囪浣跨敤鏂瑰悜鏃嬭浆
+    private boolean useAnimationRotation = false;
+
+    // 鍥哄畾鐨勮皟璇曢鑹诧紙閬垮厤闂儊锟?
+    private final ColorRGBA debugColor;
+
+    public EditorPuppetPartRenderer(SimpleApplication app, EditorBone bone, Node parentNode, float width, float height) {
+        this.app = app;
+        this.bone = bone;
+        this.parentNode = parentNode;
+        this.width = width;
+        this.height = height;
+        // 涓烘瘡涓儴浠剁敓鎴愪竴涓浐瀹氱殑闅忔満璋冭瘯棰滆壊
+        this.debugColor = ColorRGBA.randomColor();
+    }
+
+    /**
+     * 閸掓繂顫愰崠鏍ㄨ閺屾挸锟?
+     */
+    public void initialize() {
+        if (initialized) {
+            return;
+        }
+
+        // 閸掓稑缂撶仦鍛厬閻ㄥ嫬娲撴潏鐟拌埌閿涘牅濞囬悽銊ュ叡閸戔偓閻ㄥ嚜esh閿涘奔绗変娇鐢≦uad閺嬪嫰鈧姴鍤遍弫甯礆
+        partQuad = createCenteredQuad(width, height);
+        partGeometry = new Geometry(bone.getName() + "_Part", partQuad);
+
+        // 銆愰槾妲捐ぐ鍙樼喘閸栨牓鈧垶婀崑鍫曞劥娴犺泛褰ч幒銉︽暪闂冩潙濂栭敍灞肩瑝閹舵洖鐨犻敍鍫ヤ缉閸忓秷袙娴ｆ捇妲捐ぐ鎲嬬礆
+        // 缁熶竴閻ㄥ嫰妲捐ぐ杈╂暠PuppetRenderer娑擃厾娈憇hadowCaster閹舵洖锟?
+        partGeometry.setShadowMode(com.jme3.renderer.queue.RenderQueue.ShadowMode.Receive);
+
+        // 閸掓稑缂撻弶鎰窛
+        createMaterial();
+
+        // 鐠佸墽鐤嗘覆鏌撶仦鐐粹偓?
+        setupRenderProperties();
+
+        // 濞ｈ濮瀊illboard閹貉冨煑閿涘矁顔€閮ㄤ欢婵绮撻棃銏犳倻閹藉嫬鍎氶張?
+        billboardControl = new com.jme3.scene.control.BillboardControl();
+        billboardControl.setAlignment(com.jme3.scene.control.BillboardControl.Alignment.Screen);
+        partGeometry.addControl(billboardControl);
+
+        // 濞ｈ濮為崚鎵煑閼哄倻锟?
+        parentNode.attachChild(partGeometry);
+
+        // 閸掓稑缂撻€変腑楂樺厜
+        createHighlight();
+
+        // 閸掓稑缂撴稉顓炵妇閻愯鐖ｈ
+        createPivotMarker();
+
+        // 閸旂姾娴囩汗鐞嗛敍鍫滅喘閸忓牅濞囬悽銊︽煙閸氭垼鍒涢崶鎾呯礆
+        updateTextureFromBone();
+
+        // 鐏忓棗鍨垫慨瀣啍鎼达箑鎷版妯哄娣囨繂鐡ㄩ崚鐧噊ne閻ㄥ嫬缍嬮崜宥嗘煙閸氭埊绱欑憰鍡欐磰娴犺缍嶉弮褍鈧》锟?
+        bone.setDirectionWidth(bone.getCurrentDirection(), width);
+        bone.setDirectionHeight(bone.getCurrentDirection(), height);
+
+        initialized = true;
+    }
+
+    /**
+     * 鍒涘缓鏉愯川
+     */
+    private void createMaterial() {
+        // 銆愮紪杈戝櫒妯″紡銆戜娇鐢║nshaded鏉愯川锛屼笉闇€瑕佸厜鐓?        partMaterial = new Material(app.getAssetManager(), "Common/MatDefs/Misc/Unshaded.j3md");
+        partMaterial.getAdditionalRenderState().setBlendMode(RenderState.BlendMode.Alpha);
+        partMaterial.setTransparent(true);
+        partMaterial.setColor("Color", ColorRGBA.White);
+        partMaterial.setFloat("AlphaDiscardThreshold", 0.5f);
+        partGeometry.setMaterial(partMaterial);
+    }
+
+    /**
+     *
+     */
+    private void setupRenderProperties() {
+        //
+        partGeometry.setQueueBucket(RenderQueue.Bucket.Transparent);
+
+
+        // 缁熶竴
+        partGeometry.setShadowMode(RenderQueue.ShadowMode.Receive);
+
+        // 鍚敤娣卞害鍐欏叆锛堢敤浜庤В鍐崇┛妯￠棶棰橈級
+        partMaterial.getAdditionalRenderState().setDepthWrite(true);
+
+        // 閸氼垳鏁ゅǎ鍗炲濞村鐦敍鍫滄叏婢跺秶鈹涘Ο锟犳６妫版﹫锟?
+        // 闁板秴鎮巔riority鍋忕Щ绯荤粺閿涘瞼鈥樻穱婵嬬彯priority閮ㄤ欢閹粯妲搁崷銊ュ锟?
+        partMaterial.getAdditionalRenderState().setDepthTest(true);
+
+        // 銆愪慨澶嶉棯鐑併€戝惎鐢ㄨ儗闈㈠墧闄わ紝鍙覆鏌撴锟?
+        // Billboard鎬绘槸闈㈠悜鎽勫儚鏈猴紝鍙渶瑕佹覆鏌撴闈紝閬垮厤姝ｅ弽闈㈠啿绐佸鑷撮棯锟?
+        partMaterial.getAdditionalRenderState().setFaceCullMode(RenderState.FaceCullMode.Back);
+
+        // 閸氼垳鏁ら柅蹇旀濞ｅ嘲锟?
+        partMaterial.getAdditionalRenderState().setBlendMode(RenderState.BlendMode.Alpha);
+
+        // 閸掓繂顫愰崠鏍ь樋鏉堢懓鑸板亸绉伙紙绮炬暏娴滃孩绻佹惔锔剧处閸愭彃鍨庣仦鍌︾礉闁灝鍘-fighting锟?
+        // 鏉╂瑤閲滈崐闂寸窗閸︹暠pdateTransform()娑擃厽鐗撮幑鐣價iority閸斻劍鈧浇鐨熸暟
+        partMaterial.getAdditionalRenderState().setPolyOffset(0f, 0f);
+    }
+
+    /**
+     * 閸旂姾娴囩汗锟?
+     */
+public void loadTexture(String texturePath) {
+        // 銆愮紦瀛樹紭鍖栥€戝鏋滅汗鐞嗚矾寰勪笌褰撳墠宸插姞杞界殑璺緞鐩稿悓锛岃烦杩囧姞杞?        if (texturePath != null && texturePath.equals(this.texturePath) && texture != null) {
+            return;
+        }
+
+        try {
+            // 妫€鏌ユ槸鍚︽槸缁濆鏂囦欢璺緞锛坒ile:/// 鎴?缁濆璺緞锛?            if (texturePath.startsWith("file:///") || new java.io.File(texturePath).isAbsolute()) {
+                // 缁濆璺緞锛氫娇鐢?ImageIO 鐩存帴鍔犺浇
+                String filePath = texturePath;
+                if (filePath.startsWith("file:///")) {
+                    filePath = filePath.substring(8); // 绉婚櫎 "file:///"
+                }
+
+                java.io.File imageFile = new java.io.File(filePath);
+                if (!imageFile.exists()) {
+                    throw new java.io.FileNotFoundException("File not found: " + filePath);
+                }
+
+                // 浣跨敤 ImageIO 鍔犺浇鍥剧墖
+                java.awt.image.BufferedImage bufferedImage = javax.imageio.ImageIO.read(imageFile);
+                if (bufferedImage == null) {
+                    throw new java.io.IOException("Cannot read image: " + filePath);
+                }
+
+                // 杞崲涓?jMonkeyEngine 鐨?Image
+                com.jme3.texture.Image jmeImage = convertBufferedImageToJmeImage(bufferedImage);
+
+                // 鍒涘缓绾圭悊
+                texture = new com.jme3.texture.Texture2D(jmeImage);
+                texture.setMagFilter(Texture.MagFilter.Nearest);
+                texture.setMinFilter(Texture.MinFilter.NearestNoMipMaps);
+                texture.setWrap(Texture.WrapMode.Clamp);
+
+
+            } else {
+
+                texture = app.getAssetManager().loadTexture(texturePath);
+                texture.setMagFilter(Texture.MagFilter.Nearest);
+                texture.setMinFilter(Texture.MinFilter.NearestNoMipMaps);
+
+            }
+
+            partMaterial.setTexture("ColorMap", texture);
+            partMaterial.setColor("Color", ColorRGBA.White);
+            this.texturePath = texturePath;
+
+        } catch (Exception e) {
+
+            e.printStackTrace();
+            setDebugColor(ColorRGBA.Magenta);
+            texture = null;
+        }
+    }
+
+
+    private com.jme3.texture.Image convertBufferedImageToJmeImage(java.awt.image.BufferedImage bufferedImage) {
+        int width = bufferedImage.getWidth();
+        int height = bufferedImage.getHeight();
+
+        // 鍒涘缓瀛楄妭缂撳啿鍖猴紙RGBA 鏍煎紡锛?        java.nio.ByteBuffer byteBuffer = java.nio.ByteBuffer.allocateDirect(width * height * 4);
+
+        // 浠?BufferedImage 璇诲彇鍍忕礌鏁版嵁
+        for (int y = 0; y < height; y++) {
+            for (int x = 0; x < width; x++) {
+                int argb = bufferedImage.getRGB(x, y);
+
+                // 鎻愬彇 ARGB 鍒嗛噺
+                int alpha = (argb >> 24) & 0xFF;
+                int red = (argb >> 16) & 0xFF;
+                int green = (argb >> 8) & 0xFF;
+                int blue = argb & 0xFF;
+
+                // 鍐欏叆 RGBA 鏍煎紡
+                byteBuffer.put((byte) red);
+                byteBuffer.put((byte) green);
+                byteBuffer.put((byte) blue);
+                byteBuffer.put((byte) alpha);
+            }
+        }
+
+        byteBuffer.flip();
+
+        // 鍒涘缓 jMonkeyEngine Image
+        return new com.jme3.texture.Image(
+            com.jme3.texture.Image.Format.RGBA8,
+            width,
+            height,
+            byteBuffer,
+            com.jme3.texture.image.ColorSpace.sRGB
+        );
+    }
+
+    /**
+     * 娴犲叮one閺囧瓨鏌婄汗鐞嗛敍鍫熺壌閹诡喖缍嬮崜宥嗘煙閸氭垵濮炴潪钘夘嚠鎼存棁鍒涢崶鎾呯礆
+     * 閸氬本妞傞幁銏狀槻鐠囥儲鏌熼崥鎴犳畱閹碘偓閺堝鐫橀幀褝绱橴V閵嗕礁鏄傜€垫悶鈧礁浜哥粔姹団偓浣规鏉烆兙鈧椒绱崗鍫㈤獓锟?
+     */
+    public void updateTextureFromBone() {
+        String textureToLoad = bone.getCurrentDirectionTexture();
+
+        if (textureToLoad != null && !textureToLoad.isEmpty()) {
+            loadTexture(textureToLoad);
+        } else {
+            // 姒涙顓绘０婊嗗閿涘牐鐨熺拠鏇犳暏锟?
+            setDebugColor(debugColor);
+        }
+
+        // 閹垹顦茶ぐ鎾冲鏂瑰悜閻ㄥ垊V鍧愭爣
+        float[] directionUV = bone.getCurrentDirectionUV();
+        if (directionUV != null && directionUV.length == 4) {
+            // 娑撳秷袝閸欐唶ave閿涘瞼娲块幒銉啎缂冾喖锟?
+            this.uvOffsetX = directionUV[0];
+            this.uvOffsetY = directionUV[1];
+            this.uvScaleX = directionUV[2];
+            this.uvScaleY = directionUV[3];
+            updateTexCoords();
+        }
+
+        // 閹垹顦茶ぐ鎾冲鏂瑰悜閻ㄥ嫬鏄傚
+        Float dirWidth = bone.getCurrentDirectionWidth();
+        Float dirHeight = bone.getCurrentDirectionHeight();
+        if (dirWidth != null) {
+            this.width = dirWidth;
+            if (partQuad != null) {
+                partQuad.setBuffer(com.jme3.scene.VertexBuffer.Type.Position, 3, new float[]{
+                    -width/2, -height/2, 0,
+                    width/2, -height/2, 0,
+                    width/2, height/2, 0,
+                    -width/2, height/2, 0
+                });
+                partQuad.updateBound();
+                updateHighlightBorderSize();
+            }
+        }
+        if (dirHeight != null) {
+            this.height = dirHeight;
+            if (partQuad != null) {
+                partQuad.setBuffer(com.jme3.scene.VertexBuffer.Type.Position, 3, new float[]{
+                    -width/2, -height/2, 0,
+                    width/2, -height/2, 0,
+                    width/2, height/2, 0,
+                    -width/2, height/2, 0
+                });
+                partQuad.updateBound();
+                updateHighlightBorderSize();
+            }
+        }
+
+        // 閹垹顦茶ぐ鎾冲鏂瑰悜閻ㄥ嫪缍呯純顔间焊锟?
+        float[] dirOffset = bone.getCurrentDirectionOffset();
+        if (dirOffset != null && dirOffset.length == 3) {
+            this.offset.set(dirOffset[0], dirOffset[1], dirOffset[2]);
+        }
+
+        // 閹垹顦茶ぐ鎾冲鏂瑰悜閻ㄥ嫭妫嗚酱
+        float[] dirRotation = bone.getCurrentDirectionRotation();
+        if (dirRotation != null && dirRotation.length >= 3) {
+            this.customRotationX = dirRotation[0];
+            this.customRotationY = dirRotation[1];
+            this.customRotationZ = dirRotation[2];
+        } else if (dirRotation != null && dirRotation.length == 2) {
+            // 閸氭垵鎮楅崗鐓庮啇閺冄勬殶閹诡噯绱欓崣顏呮箒X閸滃锟?
+            this.customRotationX = dirRotation[0];
+            this.customRotationY = 0f;
+            this.customRotationZ = dirRotation[1];
+        }
+
+        // 濞夈劍鍓伴敍姝眗iority娑撳秹娓剁憰浣告躬鏉╂瑩鍣烽幁銏狀槻閿涘苯娲滄稉鍝勭暊鐎涙ê鍋嶉崷藱one娑擃叏锟?
+        // updateTransform()娴兼氨娲块幒銉ょ矤bone.getCurrentDirectionPriority()鐠囪锟?
+    }
+
+    /**
+     * 鐠佸墽鐤嗚ぐ鎾冲鏂瑰悜楠炶埖娲块弬鎷屽垱锟?
+     * 閸︺劌鍨忛幑銏℃煙閸氭垵澧犳穱婵嗙摠瑜版挸澧犳柟鍚戦惃鍕閺堝鐫橀幀?
+     */
+    public void setDirection(EditorBone.Direction direction) {
+        // 娣囨繂鐡ㄨぐ鎾冲鏂瑰悜閻ㄥ嫭澧嶉張澶婄潣锟?
+        saveCurrentDirectionProperties();
+
+        // 閸掑洦宕叉柟锟?
+        bone.setCurrentDirection(direction.getKey());
+
+        // 閸旂姾娴囬弬鐗堟煙閸氭垹娈戠汗鐞嗛崪灞惧閺堝鐫橀幀?
+        updateTextureFromBone();
+    }
+
+    /**
+     * 鐠佸墽鐤嗚ぐ鎾冲鏂瑰悜楠炶埖娲块弬鎷屽垱閸ユ拝绱欑€涙顑佹稉鐬渆y锟?
+     * 閸︺劌鍨忛幑銏℃煙閸氭垵澧犳穱婵嗙摠瑜版挸澧犳柟鍚戦惃鍕閺堝鐫橀幀?
+     */
+    public void setDirection(String directionKey) {
+        // 娣囨繂鐡ㄨぐ鎾冲鏂瑰悜閻ㄥ嫭澧嶉張澶婄潣锟?
+        saveCurrentDirectionProperties();
+
+        // 閸掑洦宕叉柟锟?
+        bone.setCurrentDirection(directionKey);
+
+        // 閸旂姾娴囬弬鐗堟煙閸氭垹娈戠汗鐞嗛崪灞惧閺堝鐫橀幀?
+        updateTextureFromBone();
+    }
+
+    /**
+     * 娣囨繂鐡ㄨぐ鎾冲鏂瑰悜閻ㄥ嫭澧嶉張澶婄潣閹冨煂Bone
+     * 閸栧懏瀚璘V鍧愭爣閵嗕礁鏄傜€垫悶鈧椒缍呯純顔间焊缁夋眹鈧焦妫嗘潪顑锯偓浣风喘閸忓牏锟?
+     */
+    private void saveCurrentDirectionProperties() {
+        String currentDirection = bone.getCurrentDirection();
+
+        // 娣囨繂鐡║V鍧愭爣
+        bone.setDirectionUV(currentDirection, uvOffsetX, uvOffsetY, uvScaleX, uvScaleY);
+
+        // 娣囨繂鐡ㄥ昂瀵割嚟
+        bone.setDirectionWidth(currentDirection, width);
+        bone.setDirectionHeight(currentDirection, height);
+
+        // 娣囨繂鐡ㄦ担宥囩枂鍋忕Щ
+        bone.setDirectionOffset(currentDirection, offset.x, offset.y, offset.z);
+
+        // 娣囨繂鐡ㄦ棆锟?
+        bone.setDirectionRotation(currentDirection, customRotationX, customRotationY, customRotationZ);
+
+        // 娣囨繂鐡ㄦ导妯哄帥缁狙嶇礄閺傛澘顤冿紙
+        bone.setDirectionPriority(currentDirection, bone.getPriority());
+    }
+
+    /**
+     * 娣囨繂鐡ㄨぐ鎾冲鏂瑰悜閻ㄥ垊V鍧愭爣閸掔檱one閿涘牅绻氶悾娆戞暏娴滃骸鎮滈崥搴″悑鐎圭櫢锟?
+     */
+    private void saveCurrentDirectionUV() {
+        String currentDirection = bone.getCurrentDirection();
+        bone.setDirectionUV(currentDirection, uvOffsetX, uvOffsetY, uvScaleX, uvScaleY);
+    }
+
+    /**
+     * 閼惧嘲褰囪ぐ鎾冲鏂瑰悜
+     */
+    public String getCurrentDirection() {
+        return bone.getCurrentDirection();
+    }
+
+    /**
+     * 閼惧嘲褰囩汗鐞嗙捄顖氱窞
+     */
+    public String getTexturePath() {
+        return texturePath;
+    }
+
+    /**
+     * 閼惧嘲褰囩汗鐞嗙€电锟?
+     */
+    public Texture getTexture() {
+        return texture;
+    }
+
+    /**
+     * 鐠佸墽鐤嗙拫鍐槸妫版粏澹婇敍鍫熸￥绾圭悊閺冩湹濞囬悽顭掔礆
+     */
+    public void setDebugColor(ColorRGBA color) {
+        partMaterial.clearParam("ColorMap");  // Unshaded.j3md uses ColorMap
+        partMaterial.setColor("Color", color);
+    }
+
+    /**
+     * 閺囧瓨鏌婇儴浠堕惃鍕瑯閻ｅ苯褰夋嵁
+     */
+    public void updateTransform() {
+        if (!initialized) {
+            return;
+        }
+
+        // 娴犲酣顎囨鑹板箯閸欐牔绗橀悾灞藉綁锟?
+        Vector3f worldPos = new Vector3f();
+        Quaternion worldRot = new Quaternion();
+        Vector3f worldScale = new Vector3f();
+        bone.getWorldTransform(worldPos, worldRot, worldScale);
+
+        // 娴犲叮one鐠囪褰囪ぐ鎾冲鏂瑰悜閻ㄥ嫬顔旀惔锕€鎷版妯哄閿涘牆顩ч弸婊勬箒鐠佸墽鐤嗭紙
+        // 濞夈劍鍓伴敍姘涧閸︺劌鈧偐婀″锝嗘暭閸欐ɑ妞傞幍宥嗘纯閺傚府绱欓柆鍨帳鐟曞棛娲婇悽銊﹀煕閹靛濮╃拋鍓х枂閻ㄥ嫬鈧》锟?
+        Float dirWidth = bone.getCurrentDirectionWidth();
+        Float dirHeight = bone.getCurrentDirectionHeight();
+
+        // 閸欘亝婀佽ぐ鎻僶ne娑擃厼鐡ㄩ崒銊ф畱閸婇棿绗岃ぐ鎾冲閸婇棿绗夐崥灞炬閹靛秵娲挎柟
+        // 鏉╂瑥鍘戠拋鍝ユ暏閹撮攱澧滈崝銊ゆ叏閺€鐟邦啍搴︽妯哄閿涘矁鈧奔绗夋导姘愁潶濮ｅ繐鎶氶柌宥囩枂
+        if (dirWidth != null && Math.abs(dirWidth - width) > 0.001f) {
+            // 閸愬懘鍎撮弴瀛樻煀閿涘奔绗夐崘宥勭箽鐎涙ê娲朆one閿涘牓浼╅崗宥呮儕閻滎垽锟?
+            this.width = dirWidth;
+            if (partQuad != null) {
+                partQuad.setBuffer(com.jme3.scene.VertexBuffer.Type.Position, 3, new float[]{
+                    -width/2, -height/2, 0,
+                    width/2, -height/2, 0,
+                    width/2, height/2, 0,
+                    -width/2, height/2, 0
+                });
+                partQuad.updateBound();
+                updateHighlightBorderSize();
+            }
+        }
+        if (dirHeight != null && Math.abs(dirHeight - height) > 0.001f) {
+            // 閸愬懘鍎撮弴瀛樻煀閿涘奔绗夐崘宥勭箽鐎涙ê娲朆one閿涘牓浼╅崗宥呮儕閻滎垽锟?
+            this.height = dirHeight;
+            if (partQuad != null) {
+                partQuad.setBuffer(com.jme3.scene.VertexBuffer.Type.Position, 3, new float[]{
+                    -width/2, -height/2, 0,
+                    width/2, -height/2, 0,
+                    width/2, height/2, 0,
+                    -width/2, height/2, 0
+                });
+                partQuad.updateBound();
+                updateHighlightBorderSize();
+            }
+        }
+
+        // 娴犲叮one鐠囪褰囪ぐ鎾冲鏂瑰悜閻ㄥ嫭妫嗘潪顒婄礄婵″倹鐏夐張澶庮啎缂冾噯锟?
+        float[] dirRotation = bone.getCurrentDirectionRotation();
+        float currentRotX = customRotationX;
+        float currentRotY = customRotationY;
+        float currentRotZ = customRotationZ;
+
+        if (dirRotation != null) {
+            if (dirRotation.length >= 3) {
+                currentRotX = dirRotation[0];
+                currentRotY = dirRotation[1];
+                currentRotZ = dirRotation[2];
+            } else if (dirRotation.length == 2) {
+                // 閸氭垵鎮楅崗鐓庮啇閿涙碍妫弫鐗堝祦閸欘亝婀乆閸滃
+                currentRotX = dirRotation[0];
+                currentRotY = 0f;
+                currentRotZ = dirRotation[1];
+            }
+        }
+
+        // 1. 鐠侊紕鐣婚懛顏勭暰娑斿妫嗘潪顒婄礄閸︺劑鍎存禒鍓佹畱鐏炩偓闁劌娼楅弽鍥╅兇娑擃叏锟?
+        Quaternion customRot = new Quaternion();
+        boolean hasCustomRotation = (currentRotX != 0f || currentRotY != 0f || currentRotZ != 0f);
+
+        if (hasCustomRotation) {
+            // 鐠侊紕鐣婚儴浠堕惃鍕湰闁劌娼楁爣璁伴叡閿涘牐绐￠梾蹇曠剨閻ㄥ嫭婀為崥鎴礆
+            Vector3f localAxisX = worldRot.mult(Vector3f.UNIT_X); // 鐏炩偓闁劍铆鏉炶揪绱欑捄鐤穿閺夎儻閰憋紙
+            Vector3f localAxisY = worldRot.mult(Vector3f.UNIT_Y); // 鐏炩偓闁劎鐝潪杈剧礄宸﹀彸鏉烆剙鎮滄潪杈剧礆
+            Vector3f localAxisZ = worldRot.mult(Vector3f.UNIT_Z); // 鐏炩偓闁劍纭剁痪鑳叡閿涘牆鐎惄瀵哥剨闂堫澁锟?
+
+            // 閸忓牆绨查悽鈺旀潪瀛樻鏉烆剨绱欒贩璺锋澘- 缂佹洖鐪柈銊γ潪杈剧礆
+            Quaternion rotX = new Quaternion();
+            if (currentRotX != 0f) {
+                float radiansX = currentRotX * com.jme3.math.FastMath.DEG_TO_RAD;
+                rotX.fromAngleAxis(radiansX, localAxisX);
+            }
+
+            // 閸愬秴绨查悽鈺曟潪瀛樻鏉烆剨绱欏乏鍙虫潪顒€锟?- 缂佹洖鐪柈銊х彨鏉炶揪锟?
+            Quaternion rotY = new Quaternion();
+            if (currentRotY != 0f) {
+                float radiansY = currentRotY * com.jme3.math.FastMath.DEG_TO_RAD;
+                rotY.fromAngleAxis(radiansY, localAxisY);
+            }
+
+            // 閺堚偓閸氬骸绨查悽鈺栨潪瀛樻鏉烆剨绱欏钩闈㈤崘鍛版祮锟?- 缂佹洖鐪柈銊︾《缁捐儻閰憋紙
+            Quaternion rotZ = new Quaternion();
+            if (currentRotZ != 0f) {
+                float radiansZ = currentRotZ * com.jme3.math.FastMath.DEG_TO_RAD;
+                rotZ.fromAngleAxis(radiansZ, localAxisZ);
+            }
+
+            // 缂佸嫬鎮庢棆杞敍姘帥X閸氬痘閸氬都
+            customRot = rotX.mult(rotY).mult(rotZ);
+        }
+
+        // 2. 缂佹挸鎮庨楠碱€涙棆杞崪宀冨殰鐎规矮绠熸棆锟?
+        Quaternion finalRot = customRot.mult(worldRot);
+
+        // 3. 鐠侊紕鐣婚張鈧紒鍫滅秴锟? 閸忓牆绨查悽銊﹀閸斻劍妫嗘潪顒€鍩岄楠碱€涢惃鍕斧婵绗橀悾灞肩秴锟?
+        Vector3f finalPos = worldPos.clone();
+
+        // 閵嗘劕鍙ч柨顔绘叏婢跺秲鈧垵鍘涙惔鏃傛暏閹靛濮╂棆杞崚浼搭€囨鑲╂畱閸樼喎顫愭担宥囩枂閿涘苯鍟€鎼存梻鏁ら崗鏈电铂鍋忕Щ
+        // bone.getWorldTransform() 鏉╂柨娲栭惃鍕Ц鐩稿顕禍搴㈡躬閸嬫儼濡悙鍦畱娴ｅ秶鐤嗛敍宀勬付鐟曚浇娴嗛幑銏犲煂娑撴牜鏅粚娲？
+        if (parentRenderer != null) {
+            float manualRotation = parentRenderer.getManualRotationAngle();
+            if (Math.abs(manualRotation) > 0.001f) {
+                // 楠ㄩ鐨剋orldPos鏄浉瀵逛簬鏈ㄥ伓鑺傜偣鐨勪綅缃紝鐩存帴浣滀负鍋忕Щ鍚戦噺浣跨敤
+                // 涓嶉渶瑕佸噺鍘籶uppetCenter锛屽洜涓哄畠浠湪涓嶅悓鐨勫潗鏍囩郴
+                Vector3f boneOffset = worldPos.clone();
+
+                // 鍒涘缓缁昚杞存棆杞殑鍥涘厓锟?
+                Quaternion rotation = new Quaternion();
+                rotation.fromAngleAxis(manualRotation, Vector3f.UNIT_Y);
+
+                // 鏃嬭浆鍋忕Щ鍚戦噺
+                Vector3f rotatedOffset = rotation.mult(boneOffset);
+
+                // 璁＄畻鏃嬭浆鍚庣殑楠ㄩ浣嶇疆锛堝湪涓栫晫绌洪棿涓級
+                finalPos = rotatedOffset;
+
+                // 鍚屾椂鏃嬭浆楠ㄩ鐨勬湞鍚戯紝浣垮亸绉绘柟鍚戞锟?
+                worldRot = rotation.mult(worldRot);
+            }
+        }
+
+        // 娴犲叮one鐠囪褰囪ぐ鎾冲鏂瑰悜閻ㄥ嫪缍呯純顔间焊缁変紮绱欐俊鍌涚亯閺堝顔曠純顕嗙礆
+        float[] dirOffset = bone.getCurrentDirectionOffset();
+        Vector3f currentOffset = (dirOffset != null) ?
+            new Vector3f(dirOffset[0], dirOffset[1], dirOffset[2]) : offset;
+
+        // 鎼存梻鏁ffset
+        if (!currentOffset.equals(Vector3f.ZERO)) {
+            Vector3f rotatedOffset = worldRot.mult(currentOffset);
+            finalPos.addLocal(rotatedOffset);
+        }
+
+        // 鎼存梻鏁ら崘鍛啇娑擃厼绺惧亸绉伙紙绮炬暏娴滃骸顕鎰垱閸ュ彞鑵戦棃鐐茬湷娑擃厾娈戠€圭偤妾崘鍛啇锟?
+        float[] contentCenter = bone.getCurrentDirectionContentCenter();
+        if (contentCenter != null && (contentCenter[0] != 0f || contentCenter[1] != 0f)) {
+            // 閸愬懎顔愭稉顓炵妇鍋忕Щ鐩稿顕禍宸晆ad閻ㄥ嫬鏄傜€甸潻绱濋棁鈧憰浣风娴犮儱鐤勯梽鍛啍锟?
+            // 鍋忕Щ閸婅壈瀵栧洓-0.5 锟?0.5閿涘矂娓剁憰浣风娴狀櫧idth閸滃eight鏉烆剚宕叉稉杞扮瑯閻ｅ瞼鈹栭梻纾嬬獩锟?
+            Vector3f contentOffset = new Vector3f(
+                contentCenter[0] * width,  // X鏂瑰悜鍋忕Щ
+                contentCenter[1] * height, // Y鏂瑰悜鍋忕Щ
+                0f                          // Z鏂瑰悜娑撳秴浜哥粔浼欑礄quad鏄疍骞抽潰锟?
+            );
+
+            // 鐏忓棗鐪柈銊ユ綏閺嶅洨閮存稉顓犳畱鍋忕Щ鏉烆剚宕查崚棰佺瑯閻ｅ苯娼楅弽鍥╅兇
+            Vector3f rotatedContentOffset = worldRot.mult(contentOffset);
+            finalPos.addLocal(rotatedContentOffset);
+        }
+
+        // 鎼存梻鏁ゆ导妯哄帥缁狙冧焊缁変紮绱欐慨瀣矒濞屾寧鎲氶崓蹇旀簚鐟欏棛鍤庢柟鍚戯紙
+        //
+        // 缁涙牜鏆愰敍姘焊缁夌粯鏌熼崥鎴濐潗缂佸牅濞囬悽銊ョ唨绾偓billboard閺堟繂鎮滈敍鍫ユ桨閸氭垶鎲氶崓蹇旀簚閿涘绱濋懓灞肩瑝閺勵垶鍎存禒鍓佹畱閺堚偓缂佸牊妫嗚酱
+        // 鏉╂瑦鐗遍崡鍏呭▏閮ㄤ欢閸︹晳P/DOWN鏂瑰悜闊搫閽╅敍灞戒焊缁夎绮涢悞鑸垫Ц閸撳秴鎮楁柟鍚戦敍灞肩瑝娴兼艾鐎惄纾嬓掍綅
+        //
+        // 閸忔娊鏁悙鐧哥窗
+        // 1. 鐎甸€涚艾Billboard濡€崇础閿涙矮濞囬悽銊ョ唨绾偓billboard閺堟繂鎮滈敍鍫熸弓鎼存梻鏁P/DOWN鏃嬭浆锟?
+        // 2. 鐎甸€涚艾3D濡€崇础閿涙矮濞囬悽銊╁劥娴犳儼鍤滈煬顐ゆ畱娑撴牜鏅棆杞柟锟?
+        // 3. UP/DOWN鏂瑰悜閺冭绱板亸绉讳娇鐢ㄩ崺铏诡攨閺堟繂鎮滈敍宀冣偓灞肩瑝閺勵垵姹夐獮鍐叉倵閻ㄥ嫭婀炲悜
+        // 4. 鏈ㄥ伓鏃嬭浆閺冭绱板亸绉绘柟鍚戠捄鐔兼鏈ㄥ伓鏃嬭浆閿涘牅绗夋导姘承掓担鎿勭礆
+        // 5. 閹藉嫬鍎氶張鐑樻鏉烆剚妞傞敍姘焊缁夌粯鏌熼崥鎴滅箽閹镐胶娴夌€佃婀崑鏈电瑝閸欐﹫绱欐稉宥勭窗缁屽灝搴滐紙
+
+        int currentPriority = bone.getCurrentDirectionPriority();
+
+        // 绾喖鐣惧亸绉绘柟鍚戦敍姘潗缂佸牅濞囬悽銊ョ唨绾偓閺堟繂鎮滈敍鍫ユ桨閸氭垶鎲氶崓蹇旀簚閻ㄥ嫭鏌熼崥鎴礆
+        Vector3f offsetDirection;
+
+        // 濡偓閺岊檲illboard濡€崇础閿涘牅濞囬悽銊ょ瑝閸氬瞼娈戦崣姗€鍣洪崥宥変缉閸忓秴鍟跨粣渚婄礆
+        boolean isBillboardEnabled = bone.isBillboardEnabled();
+        EditorPuppetRenderer.BillboardMode currentBillboardMode = (parentRenderer != null) ?
+            parentRenderer.getBillboardMode() : EditorPuppetRenderer.BillboardMode.UNIFIED;
+
+        if (isBillboardEnabled && currentBillboardMode == EditorPuppetRenderer.BillboardMode.UNIFIED) {
+            // 缁熶竴Billboard濡€崇础閿涙矮濞囬悽銊ョ唨绾偓billboard閺堟繂鎮滈敍鍫熸弓鎼存梻鏁P/DOWN鏃嬭浆锟?
+            // 鏉╂瑦鐗遍崡鍏呭▏閮ㄤ欢闊搫閽╅敍灞戒焊缁夎绮涢悞鑸垫Ц閸撳秴鎮楁柟鍚戦敍灞肩瑝娴兼艾鐎惄鏉戝瀻锟?
+            Quaternion baseBillboardRot = parentRenderer.getUnifiedBillboardRotation();
+            offsetDirection = baseBillboardRot.mult(Vector3f.UNIT_Z);
+        } else {
+            // 3D濡€崇础閹存牜瀚粩濠llboard閿涙矮濞囬悽銊╁劥娴犳儼鍤滈煬顐ゆ畱娑撴牜鏅棆锟?
+            // 鏉╂瑦鐗卞亸绉绘导姘崇闂呭繘鍎存禒鍓佹畱鏃嬭浆閿涘奔绻氶幐浣烘祲鐎甸€涚秴缂冾喚菙锟?
+            offsetDirection = worldRot.mult(Vector3f.UNIT_Z);
+        }
+
+        // 鐠侊紕鐣诲亸绉婚柌蹇ョ窗priority鐡掑﹪鐝敍灞鹃儴閺堟繂鎮滄柟鍚戝亸绉荤搾濠傤樋
+        // 浣跨敤閸ュ搫鐣鹃惃鍕焊缁夎崵閮存暟0.1f
+        float offsetAmount = currentPriority * 0.1f;
+
+        // 鎼存梻鏁ゅ亸锟?
+        
+        // ==================== Live2D椋庢牸鐩告満璺熼殢鍋忕Щ ====================
+        // 鏍规嵁鐩告満鏃嬭浆瑙掑害鍜岄儴浠剁殑鑷敱搴︼紝璁＄畻棰濆鐨勪綅缃亸绉?        // 杩欎細璁╂煇浜涢儴浠讹紙濡傚ご鍙戙€侀グ鍝侊級鍦ㄧ浉鏈烘棆杞椂浜х敓鏇村ぇ鐨勭Щ鍔ㄥ箙搴?
+        float cameraFollowFreedomX = bone.getCameraFollowFreedomX();
+        float cameraFollowFreedomY = bone.getCameraFollowFreedomY();
+
+        // 鍙湁褰撹嚜鐢卞害澶т簬0鏃舵墠璁＄畻鐩告満璺熼殢鍋忕Щ
+        if ((cameraFollowFreedomX > 0.001f || cameraFollowFreedomY > 0.001f) && parentRenderer != null) {
+            // 鑾峰彇鐩告満浣嶇疆鍜屾湪鍋朵腑蹇冧綅缃?            Vector3f camPos = app.getCamera().getLocation();
+            Vector3f puppetCenter = parentRenderer.getPuppetNode().getWorldTranslation();
+
+            // 璁＄畻浠庢湪鍋朵腑蹇冩寚鍚戠浉鏈虹殑鏂瑰悜鍚戦噺
+            Vector3f toCam = camPos.subtract(puppetCenter);
+            float distance = toCam.length();
+
+            if (distance > 0.001f) {
+                toCam.normalizeLocal();
+
+                // 璁＄畻鐩告満鍦ㄦ按骞抽潰涓婄殑鎶曞奖鏂瑰悜锛堢敤浜庢按骞冲亸绉伙級
+                Vector3f camHorizontal = new Vector3f(toCam.x, 0, toCam.z);
+                float horizontalDist = camHorizontal.length();
+
+                if (horizontalDist > 0.001f) {
+                    camHorizontal.normalizeLocal();
+
+                    // 璁＄畻姘村钩鍋忕Щ锛氱浉鏈鸿秺鍋忓悜渚ч潰锛屽亸绉昏秺澶?                    // 浣跨敤X鍒嗛噺浣滀负宸﹀彸鍋忕Щ鐨勬寚鏍囷紙-1鍒?锛?                    float horizontalFactor = camHorizontal.x;
+
+                    // 璁＄畻姘村钩鍋忕Щ鍚戦噺锛堟部鐫€涓栫晫X杞达級
+                    Vector3f horizontalOffset = new Vector3f(
+                        horizontalFactor * cameraFollowFreedomX * 2.0f,  // 涔樹互2.0f澧炲姞鍋忕Щ骞呭害
+                        0,
+                        0
+                    );
+
+                    finalPos.addLocal(horizontalOffset);
+                }
+
+                // 璁＄畻鍨傜洿鍋忕Щ锛氱浉鏈鸿秺鍋忓悜涓婁笅锛屽亸绉昏秺澶?                // 浣跨敤Y鍒嗛噺浣滀负涓婁笅鍋忕Щ鐨勬寚鏍囷紙-1鍒?锛?                float verticalFactor = toCam.y;
+
+                // 璁＄畻鍨傜洿鍋忕Щ鍚戦噺锛堟部鐫€涓栫晫Y杞达級
+                Vector3f verticalOffset = new Vector3f(
+                    0,
+                    verticalFactor * cameraFollowFreedomY * 2.0f,  // 涔樹互2.0f澧炲姞鍋忕Щ骞呭害
+                    0
+                );
+
+                finalPos.addLocal(verticalOffset);
+            }
+        }
+
+
+        // 婵″倹鐏夐張澶庡殰鐎规矮绠熸棆杞稉鏃€婀佹稉顓炵妇閻愮櫢绱濋棁鈧憰浣告纯缂佹洑鑵戣箛鍐仯鏃嬭浆閮ㄤ欢
+        if (hasCustomRotation && !pivotPoint.equals(Vector3f.ZERO)) {
+            // 娑擃厼绺鹃悙鐟版躬娑撴牜鏅粚娲？閻ㄥ嫪缍呯疆
+            Vector3f rotatedPivot = worldRot.mult(pivotPoint);
+            Vector3f pivotWorldPos = worldPos.add(rotatedPivot);
+
+            // 閮ㄤ欢鐩稿顕禍搴濊厬韫囧啰鍋ｉ惃鍕焊锟?
+            Vector3f toPart = finalPos.subtract(pivotWorldPos);
+
+            // 鏃嬭浆鏉╂瑤閲滃亸锟?
+            Vector3f rotatedToPart = customRot.mult(toPart);
+
+            // 閺堚偓缂佸牅缍呯疆= 娑擃厼绺剧偣+ 鏃嬭浆閸氬海娈戝亸锟?
+            finalPos = pivotWorldPos.add(rotatedToPart);
+        }
+
+        // 閺嶈宓丅illboard濡€崇础閸滃矁鍤滅€规矮绠熸棆杞弶銉ュ枀鐎规碍妫嗘潪顒佹煙锟?
+        // 娴兼ê鍘涗娇鐢˙one閻ㄥ嫮瀚粩濯宨llboard鐠佸墽鐤嗛敍宀€鍔ч崥搴㈠閺勵垰鍙忕仦鈧珺illboard濡€崇础
+        EditorPuppetRenderer.BillboardMode billboardMode = (parentRenderer != null) ?
+            parentRenderer.getBillboardMode() : EditorPuppetRenderer.BillboardMode.UNIFIED;
+
+        // 濡偓閺岊檲one閻ㄥ嫮瀚粩濯宨llboard鐠佸墽锟?
+        boolean useBillboard = bone.isBillboardEnabled();
+
+        if (hasCustomRotation) {
+            // 閺堝鍤滅€规矮绠熸棆杞弮璁圭礉缁備胶鏁illboard閹貉冨煑閿涘奔濞囬悽銊﹀灉娴狀剛娈戞棆锟?
+            billboardControl.setEnabled(false);
+            partGeometry.setLocalRotation(finalRot);
+        } else if (!useBillboard) {
+            // 婵″倹鐏塀one缁備胶鏁ゆ禍鍝筰llboard閿涘苯鍨穱婵囧瘮閸ュ搫鐣鹃張婵嗘倻锛圖濡€崇础锟?
+            billboardControl.setEnabled(false);
+            // 浣跨敤楠ㄩ顎涢惃鍕瑯閻ｅ本妫嗘潪顒婄礉娑撳秴浠涙禒璁崇秿billboard鐠嬪啯锟?
+            partGeometry.setLocalRotation(worldRot);
+        } else if (billboardMode == EditorPuppetRenderer.BillboardMode.DISABLED) {
+            // 閸忋劌鐪粋浣烘暏Billboard濡€崇础閿涙岸鍎存禒鏈电箽閹镐礁娴愮€规碍婀為崥鎴礉闁倸锟?D缁斿缍嬪Ο鈥筹拷?
+            billboardControl.setEnabled(false);
+            // 浣跨敤楠ㄩ顎涢惃鍕瑯閻ｅ本妫嗘潪顒婄礉娑撳秴浠涙禒璁崇秿billboard鐠嬪啯锟?
+            partGeometry.setLocalRotation(worldRot);
+        } else if (billboardMode == EditorPuppetRenderer.BillboardMode.UNIFIED) {
+            // 缁熶竴billboard濡€崇础閿涙碍澧嶉張澶愬劥娴犳湹濞囬悽銊ф祲閸氬瞼娈戞棆杞敍灞藉剼缁鹃晲姹変竴閺嶉攱鏆ｆ担鎾存篂閸氭垹娴夐張?
+            billboardControl.setEnabled(false);
+
+            // 閼惧嘲褰囬崺铏诡攨閻ㄥ垺illboard鏃嬭浆閿涘牓娼伴崥鎴炴啔閸嶅繑婧€锟?
+            Quaternion baseBillboardRot = parentRenderer.getUnifiedBillboardRotation();
+
+            // 濡偓閺屻儱缍嬮崜宥嗘煙锟?
+            String currentDirection = bone.getCurrentDirection();
+            Quaternion finalBillboardRot;
+
+            if ("up".equals(currentDirection) || "down".equals(currentDirection)) {
+                // UP/DOWN鏂瑰悜閿涙氨娲块幒銉ょ矤閹藉嫬鍎氶張鐑樻煙閸氭垼顓哥粻妤佹鏉烆剨绱濇稉宥勫▏閻劎绮轰竴billboard
+                // 鏉╂瑦鐗遍崣顖欎簰闁灝鍘ゅ潗鏍囩化璇插瀼閹广垹顕遍懛瀵告畱娑撳秷绻涚紒顓熲偓褔妫舵０?
+
+                // 閼惧嘲褰囬幗鍕剼閺堣桨缍呯純顔兼嫲閮ㄤ欢娴ｅ秶锟?
+                Vector3f camPos = app.getCamera().getLocation();
+                Vector3f partPos = partGeometry.getWorldTranslation();
+
+                // 鐠侊紕鐣绘禒搴ㄥ劥娴犺埖瀵氶崥鎴炴啔閸嶅繑婧€閻ㄥ嫭鏌熷悜
+                Vector3f toCam = camPos.subtract(partPos);
+                if (toCam.lengthSquared() < 0.0001f) {
+                    finalBillboardRot = baseBillboardRot;
+                } else {
+                    toCam.normalizeLocal();
+
+                    // 闁瀚ㄩ崥鍫モ偓鍌滄畱"涓嶆柟锟?
+                    Vector3f up;
+                    if ("up".equals(currentDirection)) {
+                        // UP鏂瑰悜閿涙矮濞囬悽銊ょ瑯閻ｅ鏉炲娈戦崣宥嗘煙閸氭垳缍斾笉锟?
+                        up = Vector3f.UNIT_Y.negate();
+                    } else {
+                        // DOWN鏂瑰悜閿涙矮濞囬悽銊ょ瑯閻ｅ鏉炵繝缍斾笉锟?
+                        up = Vector3f.UNIT_Y;
+                    }
+
+                    // 鐠侊紕鐣荤仦鈧柈銊ユ綏閺嶅洨锟?
+                    Vector3f left = up.cross(toCam);
+                    if (left.lengthSquared() < 0.0001f) {
+                        // 婵″倹鐏夐崣澶夌缂佹挻鐏夋稉娲祩閿涘奔濞囬悽銊ヮ槵閻劏锟?
+                        left = Vector3f.UNIT_X;
+                    } else {
+                        left.normalizeLocal();
+                    }
+                    Vector3f realUp = toCam.cross(left).normalizeLocal();
+
+                    // 閺嬪嫬缂撴棆杞敍姘愁唨Z鏉炲瓨瀵氶崥鎴炴啔閸嶅繑婧€
+                    finalBillboardRot = new Quaternion();
+                    finalBillboardRot.fromAxes(left, realUp, toCam);
+                }
+            } else {
+                // 閸撳秴鎮楀乏鍙虫柟鍚戦敍姘▏閻劎绮轰竴billboard鏃嬭浆
+                finalBillboardRot = baseBillboardRot;
+            }
+
+            partGeometry.setLocalRotation(finalBillboardRot);
+        } else {
+            // 閻欘剛鐝沚illboard濡€崇础閿涙碍鐦℃稉顏堝劥娴犲墎瀚粩瀣篂閸氭垶鎲氶崓蹇旀簚
+            billboardControl.setEnabled(true);
+            // billboard娴兼俺鍤滈崝銊啎缂冾喗妫嗘潪顒婄礉娑撳秹娓剁憰浣瑰閸斻劏顔曠疆
+        }
+
+        // 鎼存梻鏁ゆ担宥囩枂閸滃瞼缂夋敼
+        partGeometry.setLocalTranslation(finalPos);
+        partGeometry.setLocalScale(worldScale);
+
+        // 閺囧瓨鏌婇珮鍏夋担宥囩枂閸滃本妫嗚酱
+        updateHighlightTransform(finalPos, finalRot, worldScale, hasCustomRotation);
+
+        // 閺囧瓨鏌婃稉顓炵妇閻愯鐖ｇ拋棰佺秴锟?
+        updatePivotMarkerPosition();
+    }
+
+    /**
+     * 閺囧瓨鏌婇珮鍏夐惃鍕秴缂冾喖鎷版棆锟?
+     */
+    private void updateHighlightTransform(Vector3f position, Quaternion rotation, Vector3f scale, boolean hasCustomRotation) {
+        if (!initialized || highlightNode == null) {
+            return;
+        }
+
+        // 楂樺厜鐠虹喖娈㈤儴浠堕惃鍕綁锟?
+        highlightNode.setLocalTranslation(position);
+        highlightNode.setLocalScale(scale);
+
+        // 閺嶈宓侀弰顖氭儊閺堝鍤滅€规矮绠熸棆杞弶銉ュ枀鐎规岸鐝崗澶屾畱billboard閹貉冨煑
+        com.jme3.scene.control.BillboardControl highlightBillboard =
+            highlightNode.getControl(com.jme3.scene.control.BillboardControl.class);
+
+        if (highlightBillboard != null) {
+            if (hasCustomRotation) {
+                highlightBillboard.setEnabled(false);
+                highlightNode.setLocalRotation(rotation);
+            } else {
+                highlightBillboard.setEnabled(true);
+            }
+        }
+    }
+
+    /**
+     * 鐠佸墽鐤嗛€変腑閻樿埖锟?
+     */
+    public void setSelected(boolean selected) {
+        this.isSelected = selected;
+        if (highlightNode != null) {
+            highlightNode.setCullHint(selected ?
+                Geometry.CullHint.Never :
+                Geometry.CullHint.Always);
+        }
+    }
+
+    /**
+     * 閼惧嘲褰囬€変腑閻樿埖锟?
+     */
+    public boolean isSelected() {
+        return isSelected;
+    }
+
+    /**
+     * 鐠佸墽鐤嗛崣顖濐潌锟?
+     */
+    public void setVisible(boolean visible) {
+        if (initialized) {
+            partGeometry.setCullHint(visible ?
+                    Geometry.CullHint.Never :
+                    Geometry.CullHint.Always);
+
+            // 楂樺厜閸欘亜婀€変腑娑撴柨褰茬憴浣规閺勫墽锟?
+            if (highlightNode != null) {
+                highlightNode.setCullHint((visible && isSelected) ?
+                    Geometry.CullHint.Never :
+                    Geometry.CullHint.Always);
+            }
+
+            // 閸氬本妞傞梾鎰/閺勫墽銇氭稉顓炵妇閻愯鐖ｈ
+            if (pivotMarker != null) {
+                pivotMarker.setCullHint(visible ?
+                    (showPivotMarker ? Geometry.CullHint.Never : Geometry.CullHint.Always) :
+                    Geometry.CullHint.Always);
+            }
+        }
+    }
+
+    /**
+     * 濞撳懐鎮婄挧鍕爱
+     */
+    public void cleanup() {
+        // System.out.println("[EditorPuppetPartRenderer.cleanup] 濞撳懐鎮婄挧鍕爱: " + bone.getName());
+        if (partGeometry != null) {
+            partGeometry.removeFromParent();
+            // System.out.println("[EditorPuppetPartRenderer.cleanup] 缁夊锟?partGeometry");
+        }
+        if (highlightNode != null) {
+            // 閺囩顕涚紒鍡欐畱閺冦儱锟?
+            // System.out.println("[EditorPuppetPartRenderer.cleanup] highlightNode閸氬秶袨: " + highlightNode.getName());
+            // System.out.println("[EditorPuppetPartRenderer.cleanup] highlightNode閻栨儼濡偣 " + highlightNode.getParent());
+            // System.out.println("[EditorPuppetPartRenderer.cleanup] highlightNode CullHint: " + highlightNode.getCullHint());
+
+            // 閸忓牆宸遍崚鍫曟閽樺骏绱欓梼鍙夘剾娴犲秶鍔х悮顐ｈ閺屾搫锟?
+            highlightNode.setCullHint(Spatial.CullHint.Always);
+
+            // 瀵搫鍩梔etach閹碘偓閺堝鐡欓懞鍌滃仯
+            highlightNode.detachAllChildren();
+
+            // 娴犲海鍩楅懞鍌滃仯缁夊锟?
+            highlightNode.removeFromParent();
+
+            // System.out.println("[EditorPuppetPartRenderer.cleanup] highlightNode缁夊娅庨崥搴ｆ畱閻栨儼濡偣 " + highlightNode.getParent());
+            // System.out.println("[EditorPuppetPartRenderer.cleanup] highlightNode缁夊娅庨崥搴ｆ畱CullHint: " + highlightNode.getCullHint());
+        }
+        if (pivotMarker != null) {
+            pivotMarker.removeFromParent();
+            // System.out.println("[EditorPuppetPartRenderer.cleanup] 缁夊锟?pivotMarker");
+        }
+
+        // 濞撳懐鈹栧紩锟?
+        partGeometry = null;
+        highlightNode = null;
+        pivotMarker = null;
+
+        initialized = false;
+    }
+
+    /**
+     * 閸斻劍鈧椒鎱ㄩ弨褰掑劥娴犺泛鏄傚
+     */
+    public void setSize(float newWidth, float newHeight) {
+        if (!initialized) {
+            return;
+        }
+
+        this.width = newWidth;
+        this.height = newHeight;
+
+        // 闁插秵鏌婄拋鍓х枂妞ゅ墎鍋ｆ担宥囩枂閿涘牆鐪虫稉顓ㄧ礆
+        partQuad.setBuffer(com.jme3.scene.VertexBuffer.Type.Position, 3, new float[]{
+            -width/2, -height/2, 0,
+            width/2, -height/2, 0,
+            width/2, height/2, 0,
+            -width/2, height/2, 0
+        });
+
+        // 閺囧瓨鏌婃潏鍦櫕
+        partQuad.updateBound();
+
+        // 閸氬本妞傞弴瀛樻煀楂樺厜杈规顢嬪ぇ锟?
+        updateHighlightBorderSize();
+    }
+
+    /**
+     * 鐠嬪啯鏆ｇ€硅棄锟?
+     */
+    public void adjustWidth(float delta) {
+        setSize(Math.max(0.1f, width + delta), height);
+    }
+
+    /**
+     * 鐠嬪啯鏆ｆ妯哄
+     */
+    public void adjustHeight(float delta) {
+        setSize(width, Math.max(0.1f, height + delta));
+    }
+
+    // ========== Getters ==========
+
+    public EditorBone getBone() {
+        return bone;
+    }
+
+    public Geometry getGeometry() {
+        return partGeometry;
+    }
+
+    public boolean isInitialized() {
+        return initialized;
+    }
+
+    public float getWidth() {
+        return width;
+    }
+
+    public void setWidth(float width) {
+        this.width = width;
+        // 閺囧瓨鏌婇崙鐘辩秿锟?
+        if (partQuad != null) {
+            partQuad.setBuffer(com.jme3.scene.VertexBuffer.Type.Position, 3, new float[]{
+                -width/2, -height/2, 0,
+                width/2, -height/2, 0,
+                width/2, height/2, 0,
+                -width/2, height/2, 0
+            });
+            partQuad.updateBound();
+            updateHighlightBorderSize();
+        }
+        // 娣囨繂鐡ㄩ崚鏉跨秼閸撳秵鏌熷悜
+        bone.setDirectionWidth(bone.getCurrentDirection(), width);
+    }
+
+    public float getHeight() {
+        return height;
+    }
+
+    public void setHeight(float height) {
+        this.height = height;
+        // 閺囧瓨鏌婇崙鐘辩秿锟?
+        if (partQuad != null) {
+            partQuad.setBuffer(com.jme3.scene.VertexBuffer.Type.Position, 3, new float[]{
+                -width/2, -height/2, 0,
+                width/2, -height/2, 0,
+                width/2, height/2, 0,
+                -width/2, height/2, 0
+            });
+            partQuad.updateBound();
+            updateHighlightBorderSize();
+        }
+        // 娣囨繂鐡ㄩ崚鏉跨秼閸撳秵鏌熷悜
+        bone.setDirectionHeight(bone.getCurrentDirection(), height);
+    }
+
+    public void setOffset(float offsetX, float offsetY) {
+        this.offset.set(offsetX, offsetY, 0f);
+        // 娣囨繂鐡ㄩ崚鏉跨秼閸撳秵鏌熷悜
+        bone.setDirectionOffset(bone.getCurrentDirection(), offset.x, offset.y, offset.z);
+    }
+
+    public void setOffsetX(float offsetX) {
+        this.offset.x = offsetX;
+        // 娣囨繂鐡ㄩ崚鏉跨秼閸撳秵鏌熷悜
+        bone.setDirectionOffset(bone.getCurrentDirection(), offset.x, offset.y, offset.z);
+    }
+
+    public void setOffsetY(float offsetY) {
+        this.offset.y = offsetY;
+        // 娣囨繂鐡ㄩ崚鏉跨秼閸撳秵鏌熷悜
+        bone.setDirectionOffset(bone.getCurrentDirection(), offset.x, offset.y, offset.z);
+    }
+
+    public void setOffsetZ(float offsetZ) {
+        this.offset.z = offsetZ;
+        // 娣囨繂鐡ㄩ崚鏉跨秼閸撳秵鏌熷悜
+        bone.setDirectionOffset(bone.getCurrentDirection(), offset.x, offset.y, offset.z);
+    }
+
+    public Vector3f getOffset() {
+        return offset.clone();
+    }
+
+    // 缃戞牸閰嶇疆閻ㄥ埀etter閸滃etter
+    public boolean isGridEnabled() {
+        return gridEnabled;
+    }
+
+    public void setGridEnabled(boolean gridEnabled) {
+        this.gridEnabled = gridEnabled;
+    }
+
+    public boolean isGridHorizontal() {
+        return gridHorizontal;
+    }
+
+    public void setGridHorizontal(boolean gridHorizontal) {
+        this.gridHorizontal = gridHorizontal;
+    }
+
+    public boolean isGridVertical() {
+        return gridVertical;
+    }
+
+    public void setGridVertical(boolean gridVertical) {
+        this.gridVertical = gridVertical;
+    }
+
+    public float getGridSize() {
+        return gridSize;
+    }
+
+    public void setGridSize(float gridSize) {
+        this.gridSize = gridSize;
+    }
+
+    public boolean isSnapToGrid() {
+        return snapToGrid;
+    }
+
+    public void setSnapToGrid(boolean snapToGrid) {
+        this.snapToGrid = snapToGrid;
+    }
+
+    /**
+     * 閼惧嘲褰囩拠銉╁劥娴犲墎娈態illboard閸氼垳鏁ら悩鑸碘偓渚婄礄娴犲叮one鐠囪褰囷紙
+     */
+    public boolean isBillboardEnabled() {
+        return bone.isBillboardEnabled();
+    }
+
+    /**
+     * 鐠佸墽鐤嗙拠銉╁劥娴犲墎娈態illboard閸氼垳鏁ら悩鑸碘偓渚婄礄閸愭瑥鍙咮one锟?
+     */
+    public void setBillboardEnabled(boolean enabled) {
+        bone.setBillboardEnabled(enabled);
+    }
+
+    /**
+     * 閼惧嘲褰囬儴浠堕惃鍕付缂佸牅绗橀悾灞肩秴缂冾噯绱欓崠鍛楠ㄩ顎涢崣妯诲床閸滃苯浜哥粔浼欑礆
+     */
+    public Vector3f getFinalWorldPosition() {
+        if (partGeometry == null) {
+            // 婵″倹鐏夋潻妯荤梾閸掓繂顫愰崠鏍电礉鏉╂柨娲栭楠碱€涢惃鍕瑯閻ｅ奔缍呯疆
+            Vector3f worldPos = new Vector3f();
+            Quaternion tempRot = new Quaternion();
+            Vector3f tempScale = new Vector3f();
+            bone.getWorldTransform(worldPos, tempRot, tempScale);
+            return worldPos;
+        }
+        return partGeometry.getWorldTranslation();
+    }
+
+    /**
+     * 閸掓稑缂撻€変腑楂樺厜閿涘牅鑵戠粚楦跨珶濡楀棴锟?
+     */
+    private void createHighlight() {
+        // 楂樺厜濮ｆ柨甯慨瀣劥娴犲墎鈼㈡径?
+        float highlightPadding = 0.15f;
+        float highlightWidth = width + highlightPadding * 2;
+        float highlightHeight = height + highlightPadding * 2;
+        float lineThickness = 0.1f;
+
+        // 閸掓稑缂撻珮鍏夐懞鍌滃仯
+        highlightNode = new Node(bone.getName() + "_Highlight");
+
+        // 閸掓稑缂撹竟妗嗩攱閺夋劘宸濓紙绮炬閼硅绱濇稉宥夆偓蹇旀锟?
+        highlightMaterial = new Material(app.getAssetManager(), "Common/MatDefs/Misc/Unshaded.j3md");
+        highlightMaterial.setColor("Color", new ColorRGBA(1f, 1f, 1f, 1.0f)); // 閻у€熷
+        highlightMaterial.getAdditionalRenderState().setDepthWrite(false);
+        highlightMaterial.getAdditionalRenderState().setDepthTest(false);
+
+        // 閸掓稑锟?閺壜ょ珶濡楀棛锟?
+        // 妞ゆ儼锟?
+        Quad topQuad = new Quad(highlightWidth, lineThickness);
+        topLine = new Geometry("TopLine", topQuad);
+        topLine.setMaterial(highlightMaterial);
+        topLine.setLocalTranslation(-highlightWidth/2, highlightHeight/2 - lineThickness, 0.01f);
+        highlightNode.attachChild(topLine);
+
+        // 鎼存洝锟?
+        Quad bottomQuad = new Quad(highlightWidth, lineThickness);
+        bottomLine = new Geometry("BottomLine", bottomQuad);
+        bottomLine.setMaterial(highlightMaterial);
+        bottomLine.setLocalTranslation(-highlightWidth/2, -highlightHeight/2, 0.01f);
+        highlightNode.attachChild(bottomLine);
+
+        // 瀹革箒锟?
+        Quad leftQuad = new Quad(lineThickness, highlightHeight);
+        leftLine = new Geometry("LeftLine", leftQuad);
+        leftLine.setMaterial(highlightMaterial);
+        leftLine.setLocalTranslation(-highlightWidth/2, -highlightHeight/2, 0.01f);
+        highlightNode.attachChild(leftLine);
+
+        // 閸欏疇锟?
+        Quad rightQuad = new Quad(lineThickness, highlightHeight);
+        rightLine = new Geometry("RightLine", rightQuad);
+        rightLine.setMaterial(highlightMaterial);
+        rightLine.setLocalTranslation(highlightWidth/2 - lineThickness, -highlightHeight/2, 0.01f);
+        highlightNode.attachChild(rightLine);
+
+        // 鐠佸墽鐤嗘覆鏌撻梼鐔峰灙
+        highlightNode.setQueueBucket(RenderQueue.Bucket.Transparent);
+
+        // 濞ｈ濮瀊illboard閹貉冨煑閸掓媽濡偣
+        com.jme3.scene.control.BillboardControl highlightBillboard =
+            new com.jme3.scene.control.BillboardControl();
+        highlightBillboard.setAlignment(com.jme3.scene.control.BillboardControl.Alignment.Screen);
+        highlightNode.addControl(highlightBillboard);
+
+        // 濞ｈ濮為崚鎵煑閼哄倻锟?
+        parentNode.attachChild(highlightNode);
+
+        // 姒涙顓婚梾鎰
+        highlightNode.setCullHint(Spatial.CullHint.Always);
+    }
+
+    /**
+     * 閸掓稑缂撴稉顓炵妇閻愮顫嬬憴澶嬬垼锟?
+     */
+    private void createPivotMarker() {
+        // 閸掓稑缂撶亸蹇撳磩鐎涙鐖ｈ
+        float markerSize = 0.15f;
+        Quad markerQuad = new Quad(markerSize, markerSize);
+
+        // 鐏炲懍锟?
+        markerQuad.setBuffer(com.jme3.scene.VertexBuffer.Type.Position, 3, new float[]{
+            -markerSize/2, -markerSize/2, 0,
+            markerSize/2, -markerSize/2, 0,
+            markerSize/2, markerSize/2, 0,
+            -markerSize/2, markerSize/2, 0
+        });
+
+        pivotMarker = new Geometry(bone.getName() + "_Pivot", markerQuad);
+
+        // 閸掓稑缂撻弶鎰窛 - 缁俱垼澹婇崡浣哥摟
+        Material markerMat = new Material(app.getAssetManager(), "Common/MatDefs/Misc/Unshaded.j3md");
+        markerMat.setColor("Color", new ColorRGBA(1f, 0f, 0f, 1f)); // 缁俱垼锟?
+        markerMat.getAdditionalRenderState().setBlendMode(RenderState.BlendMode.Alpha);
+        markerMat.getAdditionalRenderState().setDepthTest(false); // 閹粯妲搁弰鍓с仛閸︺劌澧犻棃?
+        pivotMarker.setMaterial(markerMat);
+
+        // 鐠佸墽鐤嗘覆鏌撻梼鐔峰灙
+        pivotMarker.setQueueBucket(RenderQueue.Bucket.Translucent);
+
+        // 濞ｈ濮瀊illboard閹貉冨煑
+        com.jme3.scene.control.BillboardControl pivotBillboard =
+            new com.jme3.scene.control.BillboardControl();
+        pivotBillboard.setAlignment(com.jme3.scene.control.BillboardControl.Alignment.Screen);
+        pivotMarker.addControl(pivotBillboard);
+
+        // 濞ｈ濮為崚鎵煑閼哄倻锟?
+        parentNode.attachChild(pivotMarker);
+
+        // 姒涙顓婚梾鎰
+        pivotMarker.setCullHint(showPivotMarker ?
+            Geometry.CullHint.Never : Geometry.CullHint.Always);
+    }
+
+    /**
+     * 鐠佸墽鐤嗘稉顓炵妇閻愰€涚秴缂冾噯绱欑浉瀵诡嚠娴滃酣鍎存禒鏈佃厬韫囧喛锟?
+     */
+    public void setPivotPoint(float x, float y) {
+        this.pivotPoint.set(x, y, 0f);
+        updatePivotMarkerPosition();
+    }
+
+    /**
+     * 鐠佸墽鐤嗘稉顓炵妇閻愰€涚秴缂冾噯绱橵ector3f锟?
+     */
+    public void setPivotPoint(Vector3f pivot) {
+        this.pivotPoint.set(pivot);
+        updatePivotMarkerPosition();
+    }
+
+    /**
+     * 閼惧嘲褰囨稉顓炵妇閻愰€涚秴锟?
+     */
+    public Vector3f getPivotPoint() {
+        return pivotPoint.clone();
+    }
+
+    /**
+     * 鐠佸墽鐤嗛弰顖氭儊閺勫墽銇氭稉顓炵妇閻愯鐖ｈ
+     */
+    public void setShowPivotMarker(boolean show) {
+        this.showPivotMarker = show;
+        if (pivotMarker != null) {
+            pivotMarker.setCullHint(show ?
+                Geometry.CullHint.Never : Geometry.CullHint.Always);
+        }
+    }
+
+    /**
+     * 鐠佸墽鐤嗛懛顏勭暰娑斿鏉炲瓨妫嗘潪顒冾潡鎼达讣绱欐惔锔芥殶锟?鐠虹柉璐╅弶澶哥瑐娑撳鎲滈崝?
+     */
+    public void setCustomRotationX(float degrees) {
+        this.customRotationX = degrees;
+        // 娣囨繂鐡ㄩ崚鏉跨秼閸撳秵鏌熷悜
+        bone.setDirectionRotation(bone.getCurrentDirection(), customRotationX, customRotationY, customRotationZ);
+    }
+
+    /**
+     * 閼惧嘲褰囬懛顏勭暰娑斿鏉炲瓨妫嗘潪顒冾潡鎼达讣绱欐惔锔芥殶锟?
+     */
+    public float getCustomRotationX() {
+        return customRotationX;
+    }
+
+    /**
+     * 鐠佸墽鐤嗛懛顏勭暰娑斿鏉炲瓨妫嗘潪顒冾潡鎼达讣绱欐惔锔芥殶锟?宸﹀彸鏉烆剙锟?
+     */
+    public void setCustomRotationY(float degrees) {
+        this.customRotationY = degrees;
+        // 娣囨繂鐡ㄩ崚鏉跨秼閸撳秵鏌熷悜
+        bone.setDirectionRotation(bone.getCurrentDirection(), customRotationX, customRotationY, customRotationZ);
+    }
+
+    /**
+     * 閼惧嘲褰囬懛顏勭暰娑斿鏉炲瓨妫嗘潪顒冾潡鎼达讣绱欐惔锔芥殶锟?
+     */
+    public float getCustomRotationY() {
+        return customRotationY;
+    }
+
+    /**
+     * 鐠佸墽鐤嗛懛顏勭暰娑斿鏉炲瓨妫嗘潪顒冾潡鎼达讣绱欐惔锔芥殶锟?骞抽潰閸愬懏妫嗚酱
+     */
+    public void setCustomRotationZ(float degrees) {
+        this.customRotationZ = degrees;
+        // 娣囨繂鐡ㄩ崚鏉跨秼閸撳秵鏌熷悜
+        bone.setDirectionRotation(bone.getCurrentDirection(), customRotationX, customRotationY, customRotationZ);
+    }
+
+    /**
+     * 閼惧嘲褰囬懛顏勭暰娑斿鏉炲瓨妫嗘潪顒冾潡鎼达讣绱欐惔锔芥殶锟?
+     */
+    public float getCustomRotationZ() {
+        return customRotationZ;
+    }
+
+    /**
+     * 鐠佸墽鐤嗚创鍥炬棆杞搴﹂敍鍫濆閺佸府绱濋弨顖涘瘮澶氬湀鏃嬭浆锟?
+     */
+    public void setTextureRotation(float degrees) {
+        this.textureRotation = degrees;
+        this.useAnimationRotation = true;  // 鏍囪顔囨稉杞板▏閻劌濮╅悽缁樻锟?
+        updateTexCoords();
+    }
+
+    /**
+     * 鐠佸墽鐤嗚创鍥炬棆杞搴﹂敍鍫濆敶闁劍鏌熷▔鏇礉娑撳秵鏁奸崣姒皊eAnimationRotation閺嶅洤绻旓紙
+     * 鐢ㄤ簬鍔ㄧ敾绯荤粺閸︺劑娼幘顓熸杹閻樿埖鈧椒绗呮惔鏃傛暏閸忔娊鏁敮褍锟?
+     */
+    public void setTextureRotationInternal(float degrees) {
+        this.textureRotation = degrees;
+        // 娑撳秳鎱ㄩ弨绠剆eAnimationRotation閺嶅洤绻旈敍灞肩箽閹镐箒I閹貉冨煑锟?
+        updateTexCoords();
+    }
+
+    /**
+     * 閼惧嘲褰囪创鍥炬棆杞搴﹂敍鍫濆閺佸府锟?
+     */
+    public float getTextureRotation() {
+        return textureRotation;
+    }
+
+    /**
+     * 閼惧嘲褰囬弰顖氭儊濮濓絽婀娇鐢ㄥ姩鐢绘棆锟?
+     * @return true=浣跨敤鍔ㄧ敾鏃嬭浆閿涘畺alse=浣跨敤鏂瑰悜鏃嬭浆
+     */
+    public boolean isUsingAnimationRotation() {
+        return useAnimationRotation;
+    }
+
+    /**
+     * 鐠佸墽鐤嗛弰顖氭儊浣跨敤鍔ㄧ敾鏃嬭浆
+     * @param useAnimationRotation true=浣跨敤textureRotation閿涘畺alse=浣跨敤鏂瑰悜鏃嬭浆
+     */
+    public void setUseAnimationRotation(boolean useAnimationRotation) {
+        this.useAnimationRotation = useAnimationRotation;
+        updateTexCoords();
+    }
+
+    /**
+     * 闁插秶鐤嗗姩鐢绘棆杞弽鍥х箶锛堢簿鏁ゆ禍搴″瀼閹广垹娲栨柟鍚戞棆杞紙
+     */
+    public void resetAnimationRotation() {
+        this.useAnimationRotation = false;
+        updateTexCoords();
+    }
+
+    /**
+     * 閺囧瓨鏌婃稉顓炵妇閻愯鐖ｇ拋棰佺秴锟?
+     */
+    private void updatePivotMarkerPosition() {
+        if (!initialized || pivotMarker == null) {
+            return;
+        }
+
+        // 閼惧嘲褰囬儴浠堕惃鍕瑯閻ｅ苯褰夋嵁
+        Vector3f worldPos = new Vector3f();
+        Quaternion worldRot = new Quaternion();
+        Vector3f worldScale = new Vector3f();
+        bone.getWorldTransform(worldPos, worldRot, worldScale);
+
+        // 鐠侊紕鐣绘稉顓炵妇閻愬湱娈戞稉鏍櫕娴ｅ秶锟?
+        // 閸忓牆绨查悽鈺玣fset閿涘苯鍟€鎼存梻鏁ivotPoint
+        Vector3f totalOffset = offset.add(pivotPoint);
+        Vector3f rotatedOffset = worldRot.mult(totalOffset);
+        Vector3f pivotWorldPos = worldPos.add(rotatedOffset);
+
+        pivotMarker.setLocalTranslation(pivotWorldPos);
+    }
+
+    /**
+     * 閺囧瓨鏌婄汗鐞嗗潗鏍囬敍鍦睼鍧愭爣锟?
+     *
+     * **闁插秷顩﹂柅鏄忕帆**锟?
+     * - 閻╁瓨甯翠娇鐢ㄩ悽銊﹀煕閸︺劑顣╃憴鍫滆厬闁瀚ㄩ惃鍒刅鍧愭爣
+     * - 娑撳秴浠涙禒璁崇秿閼奉亜濮╃拫鍐╂殻閿涘瞼鈥樻穱婵嬵暕鐟欏牆鎷扮€圭偤妾覆鏌撶€瑰苯鍙忎竴锟?
+     * - 婵″倹鐏夐儴浠剁€逛粙鐝В鏂挎嫲UV闁瀚ㄩ惃鍕剼缁辩姴灏崺鐔奉啍妤傛ɑ鐦稉宥勭閼疯揪绱濈汗鐞嗘导姘辨祲鎼存梹濯烘导?閸樺锟?
+     *   閿涘牐绻栭弰顖滄暏閹撮娈戦柅澶嬪閿涘奔绮禒顒€褰叉禒銉┾偓姘崇箖鐠嬪啯鏆ｉ儴浠剁€逛粙鐝幋鏈闁瀚ㄩ弶銉﹀付閸掕锟?
+     * - 閺€顖涘瘮璐村浘鏃嬭浆閿涘牊鐦℃稉顏呮煙閸氭垵褰叉禒銉︽箒閻欘剛鐝涢惃鍕鏉烆剝顫楁惔锔肩礆
+     */
+    private void updateTexCoords() {
+        if (partQuad == null) {
+            return;
+        }
+
+        // 閻╁瓨甯翠娇鐢ㄩ悽銊﹀煕闁瀚ㄩ惃鍒刅鍧愭爣閿涘奔绗夐崑姘崲娴ｆ洝鐨熸暟
+        float u0 = uvOffsetX;
+        float v0 = uvOffsetY;
+        float u1 = uvOffsetX + uvScaleX;
+        float v1 = uvOffsetY + uvScaleY;
+
+        // 閼惧嘲褰囪创鍥炬棆杞锟?
+        // 婵″倹鐏夋爣璁邦唶娑撹桨濞囬悽銊ュЗ閻㈢粯妫嗘潪顒婄礉浣跨敤textureRotation閿涙稑鎯侀崚娆庡▏閻劍鏌熼崥鎴ｅ垱閸ョ偓妫嗚酱
+        float rotationDegrees;
+        if (useAnimationRotation) {
+            rotationDegrees = textureRotation;
+        } else {
+            rotationDegrees = bone.getCurrentDirectionTextureRotation();
+        }
+
+        // 婵″倹鐏夐張澶嬫鏉烆剨绱濇惔鏃傛暏鏃嬭浆閸欐ɑ锟?
+        float[] texCoords;
+        if (Math.abs(rotationDegrees) > 0.001f) {
+            // 鐠侊紕鐣籙V娑擃厼绺剧偣
+            float centerU = (u0 + u1) / 2.0f;
+            float centerV = (v0 + v1) / 2.0f;
+
+            // 鏉烆剚宕叉稉鍝勫К鎼达讣绱欐い鐑樻闁藉牊妫嗘潪顒婄礉閹碘偓娴犮儱褰囩拹鐕傜礆
+            float angleRad = (float) Math.toRadians(-rotationDegrees);
+            float cos = (float) Math.cos(angleRad);
+            float sin = (float) Math.sin(angleRad);
+
+            // 鏃嬭浆4娑擃亪銆婇悙鍦畱UV鍧愭爣
+            // 瀹革缚绗呰
+            float u0_rot = centerU + (u0 - centerU) * cos - (v0 - centerV) * sin;
+            float v0_rot = centerV + (u0 - centerU) * sin + (v0 - centerV) * cos;
+
+            // 閸欏厖绗呰
+            float u1_rot = centerU + (u1 - centerU) * cos - (v0 - centerV) * sin;
+            float v1_rot = centerV + (u1 - centerU) * sin + (v0 - centerV) * cos;
+
+            // 閸欏厖绗傝
+            float u2_rot = centerU + (u1 - centerU) * cos - (v1 - centerV) * sin;
+            float v2_rot = centerV + (u1 - centerU) * sin + (v1 - centerV) * cos;
+
+            // 瀹革缚绗傝
+            float u3_rot = centerU + (u0 - centerU) * cos - (v1 - centerV) * sin;
+            float v3_rot = centerV + (u0 - centerU) * sin + (v1 - centerV) * cos;
+
+            texCoords = new float[]{
+                u0_rot, v0_rot,  // 瀹革缚锟?
+                u1_rot, v1_rot,  // 閸欏厖锟?
+                u2_rot, v2_rot,  // 閸欏厖锟?
+                u3_rot, v3_rot   // 瀹革缚锟?
+            };
+        } else {
+            // 閺冪姵妫嗘潪顒婄礉浣跨敤閸樼喎顫怳V鍧愭爣
+            texCoords = new float[]{
+                u0, v0,  // 瀹革缚锟?
+                u1, v0,  // 閸欏厖锟?
+                u1, v1,  // 閸欏厖锟?
+                u0, v1   // 瀹革缚锟?
+            };
+        }
+
+        // 鐠佸墽鐤嗙汗鐞嗗潗鏍囬敍鍫濐嚠搴︽稉顏堛€婇悙鐧哥窗瀹革缚绗呴妴浣稿礁娑撳鈧礁褰告稉濞库偓浣镐箯娑撳锟?
+        partQuad.setBuffer(com.jme3.scene.VertexBuffer.Type.TexCoord, 2, texCoords);
+    }
+
+    /**
+     * 鐠佸墽鐤哢V鍧愭爣
+     * 閸氬本妞傛穱婵嗙摠閸掓澘缍嬮崜宥嗘煙閸氭垹娈慤V閺佺増锟?
+     */
+    public void setUV(float offsetX, float offsetY, float scaleX, float scaleY) {
+        this.uvOffsetX = offsetX;
+        this.uvOffsetY = offsetY;
+        this.uvScaleX = scaleX;
+        this.uvScaleY = scaleY;
+        updateTexCoords();
+
+        // 娣囨繂鐡ㄩ崚鏉跨秼閸撳秵鏌熷悜
+        saveCurrentDirectionUV();
+    }
+
+    /**
+     * 閼惧嘲褰嘦V鍋忕ЩX
+     */
+    public float getUvOffsetX() {
+        return uvOffsetX;
+    }
+
+    /**
+     * 鐠佸墽鐤哢V鍋忕ЩX
+     * 閸氬本妞傛穱婵嗙摠閸掓澘缍嬮崜宥嗘煙锟?
+     */
+    public void setUvOffsetX(float uvOffsetX) {
+        this.uvOffsetX = uvOffsetX;
+        updateTexCoords();
+        saveCurrentDirectionUV();
+    }
+
+    /**
+     * 閼惧嘲褰嘦V鍋忕ЩY
+     */
+    public float getUvOffsetY() {
+        return uvOffsetY;
+    }
+
+    /**
+     * 鐠佸墽鐤哢V鍋忕ЩY
+     * 閸氬本妞傛穱婵嗙摠閸掓澘缍嬮崜宥嗘煙锟?
+     */
+    public void setUvOffsetY(float uvOffsetY) {
+        this.uvOffsetY = uvOffsetY;
+        updateTexCoords();
+        saveCurrentDirectionUV();
+    }
+
+    /**
+     * 閼惧嘲褰嘦V缂傗晜鏂乆
+     */
+    public float getUvScaleX() {
+        return uvScaleX;
+    }
+
+    /**
+     * 鐠佸墽鐤哢V缂傗晜鏂乆
+     * 閸氬本妞傛穱婵嗙摠閸掓澘缍嬮崜宥嗘煙锟?
+     */
+    public void setUvScaleX(float uvScaleX) {
+        this.uvScaleX = uvScaleX;
+        updateTexCoords();
+        saveCurrentDirectionUV();
+    }
+
+    /**
+     * 閼惧嘲褰嘦V缂傗晜鏂乊
+     */
+    public float getUvScaleY() {
+        return uvScaleY;
+    }
+
+    /**
+     * 鐠佸墽鐤哢V缂傗晜鏂乊
+     * 閸氬本妞傛穱婵嗙摠閸掓澘缍嬮崜宥嗘煙锟?
+     */
+    public void setUvScaleY(float uvScaleY) {
+        this.uvScaleY = uvScaleY;
+        updateTexCoords();
+        saveCurrentDirectionUV();
+    }
+
+    /**
+     * 閺囧瓨鏌婇珮鍏夎竟妗嗩攱澶у皬
+     */
+    private void updateHighlightBorderSize() {
+        if (topLine == null || bottomLine == null || leftLine == null || rightLine == null) {
+            return;
+        }
+
+        float highlightPadding = 0.15f;
+        float highlightWidth = width + highlightPadding * 2;
+        float highlightHeight = height + highlightPadding * 2;
+        float lineThickness = 0.1f;
+
+        // 閺囧瓨鏌婃い鎯扮珶
+        ((Quad)topLine.getMesh()).updateGeometry(highlightWidth, lineThickness);
+        topLine.setLocalTranslation(-highlightWidth/2, highlightHeight/2 - lineThickness, 0.01f);
+
+        // 閺囧瓨鏌婃惔鏇＄珶
+        ((Quad)bottomLine.getMesh()).updateGeometry(highlightWidth, lineThickness);
+        bottomLine.setLocalTranslation(-highlightWidth/2, -highlightHeight/2, 0.01f);
+
+        // 閺囧瓨鏌婂锕佺珶
+        ((Quad)leftLine.getMesh()).updateGeometry(lineThickness, highlightHeight);
+        leftLine.setLocalTranslation(-highlightWidth/2, -highlightHeight/2, 0.01f);
+
+        // 閺囧瓨鏌婇崣瀹犵珶
+        ((Quad)rightLine.getMesh()).updateGeometry(lineThickness, highlightHeight);
+        rightLine.setLocalTranslation(highlightWidth/2 - lineThickness, -highlightHeight/2, 0.01f);
+    }
+
+    /**
+     * 閸掓稑缂撲竴娑擃亜鐪虫稉顓犳畱Quad mesh閿涘牆鐣崗銊﹀閸斻劌鍨卞鐚寸礉绾喕绻氭い鍓佸仯閸滃V鐎瑰苯鍙忕€电懓绨诧紙
+     *
+     * **闁插秷顩﹂敍姝玀E3閻ㄥ嚥uad妞ゅ墎鍋ｆい鍝勭碍閸滃瞼鍌ㄥ紩*
+     * 浣跨敤閺嶅洤鍣惃鍕磽鏉堢懓鑸版い鍓佸仯鐢啫鐪紙
+     * 妞ゅ墎鍋ｆい鍝勭碍閿涙瓟0]瀹革缚锟? [1]閸欏厖锟? [2]閸欏厖锟? [3]瀹革缚锟?
+     * 娑撳顫楄ぐ銏㈠偍瀵洩绱癧0,1,2] 锟?[0,2,3] 閿涘牓鈧棙妞傞柦鍫㈢搏鎼村骏锟?
+     *
+     * **OpenGL UV鍧愭爣锟?锟?
+     * - U鏉炶揪绱欏Ο顏勬倻閿涘锟?=瀹革讣锟?=锟?
+     * - V鏉炶揪绱欑痪闈涙倻閿涘锟?=娑撳锟?=锟?
+     *
+     * **閮ㄤ欢閸戠姳缍嶅潗鏍囩郴*锟?
+     * - X鏉炶揪绱欏Ο顏勬倻閿涘绱扮拹?瀹革讣绱濆?锟?
+     * - Y鏉炶揪绱欑痪闈涙倻閿涘绱扮拹?娑撳绱濆?锟?
+     * - Z鏉炶揪绱欏ǎ鍗炲閿涘锟?=骞抽潰
+     */
+    private Quad createCenteredQuad(float w, float h) {
+        // 娑撳秳濞囬悽鈮ad閺嬪嫰鈧姴鍤遍弫甯礉閻╁瓨甯撮崚娑樼紦Mesh
+        com.jme3.scene.Mesh mesh = new com.jme3.scene.Mesh();
+
+        // 鐠佸墽鐤嗘い鍓佸仯娴ｅ秶鐤嗛敍鍫濈湷娑擃叏绱漍-Y骞抽潰锟?
+        // 妞ゅ墎鍋ｆい鍝勭碍閿涙瓟0]瀹革缚锟? [1]閸欏厖锟? [2]閸欏厖锟? [3]瀹革缚锟?
+        float[] positions = new float[]{
+            -w/2, -h/2, 0,  // [0] 瀹革缚绗呰
+            w/2, -h/2, 0,   // [1] 閸欏厖绗呰
+            w/2, h/2, 0,    // [2] 閸欏厖绗傝
+            -w/2, h/2, 0    // [3] 瀹革缚绗傝
+        };
+        mesh.setBuffer(com.jme3.scene.VertexBuffer.Type.Position, 3, positions);
+
+        // 鐠佸墽鐤嗙汗鐞嗗潗鏍囬敍鍫滃紬閺嶇厧顕惔鎿痮sition妞ゅ墎鍋ｏ紙
+        // OpenGL UV: U=0閺勵垰涔忛敍锟?1閺勵垰褰搁敍锟?0閺勵垯绗呴敍锟?1閺勵垯锟?
+        float[] texCoords = new float[]{
+            uvOffsetX, uvOffsetY,                       // [0] 瀹革缚绗呰鈫扷V瀹革缚锟?
+            uvOffsetX + uvScaleX, uvOffsetY,            // [1] 閸欏厖绗呰鈫扷V閸欏厖锟?
+            uvOffsetX + uvScaleX, uvOffsetY + uvScaleY, // [2] 閸欏厖绗傝鈫扷V閸欏厖锟?
+            uvOffsetX, uvOffsetY + uvScaleY             // [3] 瀹革缚绗傝鈫扷V瀹革缚锟?
+        };
+        mesh.setBuffer(com.jme3.scene.VertexBuffer.Type.TexCoord, 2, texCoords);
+
+        // 鐠佸墽鐤嗗▔鏇犲殠閿涘牊婀為崥鎱潪瀛橆劀鏂瑰悜閿涘矂娼伴崥鎴ｎ潎鐎电喕鈧拑锟?
+        float[] normals = new float[]{
+            0, 0, 1,  // [0]
+            0, 0, 1,  // [1]
+            0, 0, 1,  // [2]
+            0, 0, 1   // [3]
+        };
+        mesh.setBuffer(com.jme3.scene.VertexBuffer.Type.Normal, 3, normals);
+
+        // 鐠佸墽鐤嗙槐銏犵穿缂傛挸鍟块崠鐚寸礄鐎规矮绠熸稉銈勯嚋娑撳顫楄ぐ顫礆
+        // 娑撳顫楀綋: [0,1,2] 閿涘牆涔忔稉瀣у晪閸欏厖绗呴埆鎺戝礁娑撳锟?
+        // 娑撳顫楀綋: [0,2,3] 閿涘牆涔忔稉瀣у晪閸欏厖绗傞埆鎺戜箯娑撳锟?
+        // 闁棙妞傞柦鍫㈢搏鎼村骏绱欏锝夋桨閺堟繂鎮滅憴鍌氱檪閼板拑锟?
+        short[] indices = new short[]{
+            0, 1, 2,  // 缁楊兛绔存稉顏冪瑏鐟欐帒锟?
+            0, 2, 3   // 缁楊兛绨╂稉顏冪瑏鐟欐帒锟?
+        };
+        mesh.setBuffer(com.jme3.scene.VertexBuffer.Type.Index, 3, indices);
+
+        // 閺囧瓨鏌婃潏鍦櫕
+        mesh.updateBound();
+
+        // 鐏忓搮esh鏉烆剚宕叉稉绡瀠ad閿涘牅璐熸禍鍡曠箽閹镐胶琚崹瀣悑鐎硅鈧嶇礆
+        // 鐎圭偤妾稉濠冨灉娴狀剛娲块幒銉ㄧ箲閸ユ康esh閿涘奔绲鹃棁鈧憰浣锋叏閺€绛絘rtQuad閻ㄥ嫮琚崹?
+        // 鏉╂瑩鍣烽幋鎴滄粦閸掓稑缂撲竴娑撶寑uad楠炶泛顦查崚鑸靛閺堝绱﹂崘鎻掑隘
+        Quad quad = new Quad(1, 1);
+        quad.setBuffer(com.jme3.scene.VertexBuffer.Type.Position, 3, positions);
+        quad.setBuffer(com.jme3.scene.VertexBuffer.Type.TexCoord, 2, texCoords);
+        quad.setBuffer(com.jme3.scene.VertexBuffer.Type.Normal, 3, normals);
+        quad.setBuffer(com.jme3.scene.VertexBuffer.Type.Index, 3, indices);
+        quad.updateBound();
+
+        return quad;
+    }
+
+    /**
+     * 鐠佸墽鐤嗛悥鑸佃閺屾挸娅掑紩鐢紙绮炬暏娴滃海绮轰竴billboard锟?
+     */
+    public void setParentRenderer(EditorPuppetRenderer renderer) {
+        this.parentRenderer = renderer;
+    }
+}
+
+
+
+
+

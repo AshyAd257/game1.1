@@ -25,6 +25,11 @@
             <name>Maven Central for jMonkeyEngine</name>
             <url>https://repo1.maven.org/maven2</url>
         </repository>
+        <!-- JitPack 仓库 (用于 TWL) -->
+        <repository>
+            <id>jitpack.io</id>
+            <url>https://jitpack.io</url>
+        </repository>
     </repositories>
 
     <dependencies>
@@ -63,6 +68,19 @@
             <artifactId>jme3-plugins</artifactId>
             <version>${jme3.version}</version>
         </dependency>
+        <!-- OGG音频支持（修复警告） -->
+        <dependency>
+            <groupId>org.jmonkeyengine</groupId>
+            <artifactId>jme3-jogg</artifactId>
+            <version>${jme3.version}</version>
+        </dependency>
+
+        <!-- TTF字体渲染支持 -->
+        <dependency>
+            <groupId>com.github.stephengold</groupId>
+            <artifactId>jme-ttf</artifactId>
+            <version>3.0.1</version>
+        </dependency>
 
         <!-- 辅助库 -->
         <dependency>
@@ -80,7 +98,173 @@
             <artifactId>logback-classic</artifactId>
             <version>1.4.11</version>
         </dependency>
+
+        <!-- ==================== UI 库 ==================== -->
+
+        <!-- ImGui-Java (调试面板/编辑器UI) -->
+        <!-- imgui-java-app 包含完整的独立应用支持 -->
+        <dependency>
+            <groupId>io.github.spair</groupId>
+            <artifactId>imgui-java-app</artifactId>
+            <version>1.86.11</version>
+        </dependency>
+
+        <!-- Lemur GUI (jME原生UI - 推荐用于游戏UI) -->
+        <dependency>
+            <groupId>com.simsilica</groupId>
+            <artifactId>lemur</artifactId>
+            <version>1.16.0</version>
+        </dependency>
+        <dependency>
+            <groupId>com.simsilica</groupId>
+            <artifactId>lemur-proto</artifactId>
+            <version>1.13.0</version>
+        </dependency>
+
+        <!-- Nifty GUI (jME集成，XML定义UI) -->
+        <dependency>
+            <groupId>org.jmonkeyengine</groupId>
+            <artifactId>jme3-niftygui</artifactId>
+            <version>${jme3.version}</version>
+        </dependency>
+
+        <!-- TWL 主题化UI库 (已禁用 - 使用Lemur替代) -->
+        <!--
+        <dependency>
+            <groupId>com.github.ThemableWidgetLibrary</groupId>
+            <artifactId>twl-lwjgl3</artifactId>
+            <version>master-SNAPSHOT</version>
+        </dependency>
+        -->
+
+        <!-- 测试依赖 -->
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>5.10.0</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.platform</groupId>
+            <artifactId>junit-platform-suite-api</artifactId>
+            <version>1.10.0</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.platform</groupId>
+            <artifactId>junit-platform-suite-engine</artifactId>
+            <version>1.10.0</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.mockito</groupId>
+            <artifactId>mockito-core</artifactId>
+            <version>5.5.0</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.mockito</groupId>
+            <artifactId>mockito-junit-jupiter</artifactId>
+            <version>5.5.0</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
+
+    <!-- Maven Profiles: 游戏本体 vs 完整版（含编辑器） -->
+    <profiles>
+        <!-- 游戏本体Profile（默认）- 排除编辑器 -->
+        <profile>
+            <id>game-only</id>
+            <activation>
+                <activeByDefault>true</activeByDefault>
+            </activation>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-shade-plugin</artifactId>
+                        <version>3.5.0</version>
+                        <executions>
+                            <execution>
+                                <id>main-game</id>
+                                <phase>package</phase>
+                                <goals>
+                                    <goal>shade</goal>
+                                </goals>
+                                <configuration>
+                                    <finalName>Hecate-Game</finalName>
+                                    <filters>
+                                        <filter>
+                                            <artifact>*:*</artifact>
+                                            <excludes>
+                                                <!-- 排除编辑器包 -->
+                                                <exclude>com/Hecate/puppet/editor/**</exclude>
+                                                <!-- 排除导出工具（仅编辑器使用） -->
+                                                <exclude>com/Hecate/puppet/export/**</exclude>
+                                            </excludes>
+                                        </filter>
+                                    </filters>
+                                    <transformers>
+                                        <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                                            <mainClass>com.Hecate.Main</mainClass>
+                                        </transformer>
+                                    </transformers>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+
+        <!-- 完整版Profile - 包含编辑器 -->
+        <profile>
+            <id>with-editor</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-shade-plugin</artifactId>
+                        <version>3.5.0</version>
+                        <executions>
+                            <!-- 游戏本体（含编辑器反射加载支持） -->
+                            <execution>
+                                <id>main-game</id>
+                                <phase>package</phase>
+                                <goals>
+                                    <goal>shade</goal>
+                                </goals>
+                                <configuration>
+                                    <finalName>Hecate-Game-Full</finalName>
+                                    <transformers>
+                                        <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                                            <mainClass>com.Hecate.Main</mainClass>
+                                        </transformer>
+                                    </transformers>
+                                </configuration>
+                            </execution>
+                            <!-- 独立编辑器 -->
+                            <execution>
+                                <id>puppet-editor</id>
+                                <phase>package</phase>
+                                <goals>
+                                    <goal>shade</goal>
+                                </goals>
+                                <configuration>
+                                    <finalName>PuppetEditor</finalName>
+                                    <transformers>
+                                        <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                                            <mainClass>com.Hecate.puppet.editor.PuppetEditorLauncher</mainClass>
+                                        </transformer>
+                                    </transformers>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 
     <build>
         <plugins>
@@ -94,32 +278,17 @@
                 </configuration>
             </plugin>
             <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>3.1.2</version>
+            </plugin>
+            <plugin>
                 <groupId>org.codehaus.mojo</groupId>
                 <artifactId>exec-maven-plugin</artifactId>
                 <version>3.1.0</version>
                 <configuration>
                     <mainClass>com.Hecate.Main</mainClass>
                 </configuration>
-            </plugin>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-shade-plugin</artifactId>
-                <version>3.5.0</version>
-                <executions>
-                    <execution>
-                        <phase>package</phase>
-                        <goals>
-                            <goal>shade</goal>
-                        </goals>
-                        <configuration>
-                            <transformers>
-                                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
-                                    <mainClass>com.Hecate.Main</mainClass>
-                                </transformer>
-                            </transformers>
-                        </configuration>
-                    </execution>
-                </executions>
             </plugin>
         </plugins>
     </build>

@@ -28,11 +28,18 @@ public class CollisionManager {
      */
     public void setChunkManager(ChunkManager chunkManager) {
         this.chunkManager = chunkManager;
-        System.out.println("✅ CollisionManager已连接到ChunkManager");
+
     }
 
     /**
-     * ✅ PlayerController需要的方法 - 检测移动是否会发生碰撞
+     * 获取ChunkManager
+     */
+    public ChunkManager getChunkManager() {
+        return chunkManager;
+    }
+
+    /**
+     * PlayerController需要的方法 - 检测移动是否会发生碰撞
      */
     public boolean wouldCollide(AABB playerBox, Vector3f movement) {
         if (chunkManager == null) {
@@ -45,43 +52,17 @@ public class CollisionManager {
         // 获取需要检查的方块范围
         Vector3f min = newBox.getMinPoint();
         Vector3f max = newBox.getMaxPoint();
-        
-        // 调试信息：显示碰撞检测范围
-        int minY = (int) Math.floor(min.y);
-        int maxY = (int) Math.floor(max.y);
-        
-        // 只在玩家接近地面时打印
-        if (minY <= 3 && maxY >= -1) {
-            System.out.println("🔍 碰撞检测范围: Y=" + minY + " 到 Y=" + maxY + " (地面在Y=1)");
-        }
 
         int minX = (int) Math.floor(min.x);
         int minZ = (int) Math.floor(min.z);
         int maxX = (int) Math.floor(max.x);
         int maxZ = (int) Math.floor(max.z);
 
-        // 检查范围内的所有方块
-        for (int x = minX; x <= maxX; x++) {
-            for (int y = minY; y <= maxY; y++) {
-                for (int z = minZ; z <= maxZ; z++) {
-                    if (isBlockSolid(x, y, z)) {
-                        // 创建方块的AABB
-                        AABB blockBox = new AABB(x, y, z, x + 1, y + 1, z + 1);
-
-                        // 检测碰撞
-                        if (newBox.intersects(blockBox)) {
-                            return true;
-                        }
-                    }
-                }
-            }
-        }
-
         return false;
     }
 
     /**
-     * ✅ PlayerController需要的方法 - 获取滑动移动向量
+     * PlayerController需要的方法 - 获取滑动移动向量
      */
     public Vector3f getSlideMovement(AABB playerBox, Vector3f intendedMovement) {
         if (chunkManager == null) {
@@ -117,7 +98,7 @@ public class CollisionManager {
     }
 
     /**
-     * 📐 获取部分移动向量
+     * 获取部分移动向量
      */
     private Vector3f getPartialMovement(AABB playerBox, Vector3f currentMovement, Vector3f axisMovement) {
         Vector3f direction = axisMovement.normalize();
@@ -127,7 +108,7 @@ public class CollisionManager {
         float minDistance = 0;
         float testDistance = maxDistance;
 
-        for (int i = 0; i < 10; i++) { // 最多10次迭代
+        for (int i = 0; i < 10; i++) { // 最大10次迭代
             Vector3f testMovement = currentMovement.add(direction.mult(testDistance));
 
             if (wouldCollide(playerBox, testMovement)) {
@@ -174,7 +155,7 @@ public class CollisionManager {
             return movement;
         }
 
-        // 创建移动后的碰撞箱
+        // 创建移动后的碰撞盒
         AABB movedBox;
         switch (axis) {
             case 0: // X轴
@@ -244,21 +225,27 @@ public class CollisionManager {
     }
 
     /**
+     * 公共方法：检查指定位置的方块是否为固体（用于火焰粒子等）
+     */
+    public boolean isBlockSolidAt(int x, int y, int z) {
+        return isBlockSolid(x, y, z);
+    }
+
+    /**
      * 检查指定位置的方块是否为固体
      * 使用你现有的ChunkManager系统
      */
     private boolean isBlockSolid(int x, int y, int z) {
         if (chunkManager == null) {
-            System.out.println("⚠️ ChunkManager为null！位置(" + x + "," + y + "," + z + ")");
             // 没有ChunkManager时的简单测试逻辑
             return y <= 0; // 地面以下都是固体
         }
 
         try {
-            // 计算区块坐标
-            int chunkX = Math.floorDiv(x, Chunk.SIZE);
-            int chunkY = Math.floorDiv(y, Chunk.SIZE);
-            int chunkZ = Math.floorDiv(z, Chunk.SIZE);
+            // 计算区块坐标（使用正确的地板除法）
+            int chunkX = (x >= 0) ? (x / Chunk.SIZE) : ((x + 1) / Chunk.SIZE - 1);
+            int chunkY = (y >= 0) ? (y / Chunk.SIZE) : ((y + 1) / Chunk.SIZE - 1);
+            int chunkZ = (z >= 0) ? (z / Chunk.SIZE) : ((z + 1) / Chunk.SIZE - 1);
 
             ChunkPosition chunkPos = new ChunkPosition(chunkX, chunkY, chunkZ);
             Chunk chunk = chunkManager.getChunk(chunkPos);
@@ -267,24 +254,26 @@ public class CollisionManager {
                 return false; // 未加载的区块视为空气
             }
 
-            // 计算区块内坐标
-            int localX = ((x % Chunk.SIZE) + Chunk.SIZE) % Chunk.SIZE;
-            int localY = ((y % Chunk.SIZE) + Chunk.SIZE) % Chunk.SIZE;
-            int localZ = ((z % Chunk.SIZE) + Chunk.SIZE) % Chunk.SIZE;
+            // 计算区块内坐标（确保在0-15范围内）
+            int localX = x - (chunkX * Chunk.SIZE);
+            int localY = y - (chunkY * Chunk.SIZE);
+            int localZ = z - (chunkZ * Chunk.SIZE);
 
-            // 使用你的Chunk.getBlockId方法
+            // 边界检查（防止数组越界）
+            if (localX < 0 || localX >= Chunk.SIZE ||
+                localY < 0 || localY >= Chunk.SIZE ||
+                localZ < 0 || localZ >= Chunk.SIZE) {
+                return false;
+            }
+
+            // 使用Chunk.getBlockId的方法
             String blockId = chunk.getBlockId(localX, localY, localZ);
             boolean isSolid = blockId != null && !blockId.equals("air");
-            
-            // 调试信息：打印玩家周围的方块检测
-            if (x >= -1 && x <= 1 && y >= 0 && y <= 2 && z >= -1 && z <= 1) {
-                System.out.println("🔍 检测方块(" + x + "," + y + "," + z + ") -> 区块(" + chunkX + "," + chunkY + "," + chunkZ + ") -> " + blockId + " (固体:" + isSolid + ")");
-            }
-            
+
             return isSolid;
 
         } catch (Exception e) {
-            System.err.println("检查方块固体状态时出错: " + e.getMessage());
+            e.printStackTrace();
             return false;
         }
     }
@@ -317,5 +306,93 @@ public class CollisionManager {
         }
 
         return false;
+    }
+
+    /**
+     * 获取地形表面在指定世界坐标的高度
+     * @param worldX 世界X坐标
+     * @param worldZ 世界Z坐标
+     * @return 地形表面高度，如果没有地形数据则返回Float.NaN
+     */
+    // 调试计数器
+    private int heightQueryCounter = 0;
+    private int chunkMissCounter = 0;
+    private int boundaryQueryCounter = 0;
+
+    public float getTerrainHeightAt(float worldX, float worldZ) {
+        heightQueryCounter++;
+
+        if (chunkManager == null) {
+
+        }
+
+        try {
+            // 计算chunk坐标（只处理Y=0的地表chunk）
+            int chunkX = (int) Math.floor(worldX / Chunk.SIZE);
+            int chunkZ = (int) Math.floor(worldZ / Chunk.SIZE);
+            ChunkPosition chunkPos = new ChunkPosition(chunkX, 0, chunkZ);
+
+            // 计算chunk内坐标
+            float localX = worldX - (chunkX * Chunk.SIZE);
+            float localZ = worldZ - (chunkZ * Chunk.SIZE);
+
+            // 检测是否在chunk边界附近（距离边界0.5格以内）
+            boolean nearBoundary = (localX < 0.5f || localX > 15.5f || localZ < 0.5f || localZ > 15.5f);
+            if (nearBoundary) {
+                boundaryQueryCounter++;
+                // 移除边界查询日志 - 太多且无用
+            }
+
+            Chunk chunk = chunkManager.getChunk(chunkPos);
+            if (chunk == null || !chunk.hasTerrainData()) {
+                chunkMissCounter++;
+
+
+
+                return Float.NaN; // 无地形数据
+            }
+
+            // 获取heightMap（17x17顶点）
+            com.Hecate.world.HeightMap heightMap = chunk.getSurfaceHeightMap();
+
+            // 双线性插值获取精确高度
+            // localX和localZ在[0, 16]范围内，heightMap索引在[0, 16]
+            int x0 = (int) Math.floor(localX);
+            int z0 = (int) Math.floor(localZ);
+            int x1 = Math.min(x0 + 1, 16);
+            int z1 = Math.min(z0 + 1, 16);
+
+            float fx = localX - x0; // 小数部分
+            float fz = localZ - z0;
+
+            // 四个顶点的高度
+            float h00 = heightMap.getHeight(x0, z0);
+            float h10 = heightMap.getHeight(x1, z0);
+            float h01 = heightMap.getHeight(x0, z1);
+            float h11 = heightMap.getHeight(x1, z1);
+
+            // 使用三角形精确碰撞而不是双线性插值
+            // 顶点布局: 0=(x,z), 1=(x+1,z), 2=(x,z+1), 3=(x+1,z+1)
+            // 对应高度: h00, h10, h01, h11
+            // 三角形A (0,1,3): h00, h10, h11 - 对角线右上方
+            // 三角形B (0,3,2): h00, h11, h01 - 对角线左下方
+
+            float height;
+            if (fz < fx) {
+                // 在右上三角形 (0,1,3): 包含h00, h10, h11
+                // 平面方程插值
+                height = h00 + (h10 - h00) * fx + (h11 - h10) * fz;
+            } else {
+                // 在左下三角形 (0,3,2): 包含h00, h11, h01
+                // 平面方程插值
+                height = h00 + (h11 - h01) * fx + (h01 - h00) * fz;
+            }
+
+            return height;
+
+        } catch (Exception e) {
+            e.printStackTrace();
+            return Float.NaN;
+        }
     }
 }

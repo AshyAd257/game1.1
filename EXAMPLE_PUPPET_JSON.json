@@ -1,0 +1,81 @@
+{
+  "name": "my_character",
+  "billboardMode": "UNIFIED",
+  "bones": [
+    {
+      "name": "root",
+      "parentName": null,
+      "restPosition": { "x": 0.0, "y": 0.0, "z": 0.0 },
+      "restRotation": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0 },
+      "restScale": { "x": 1.0, "y": 1.0, "z": 1.0 },
+      "currentPosition": { "x": 0.0, "y": 5.0, "z": 0.0 },
+      "currentRotation": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0 },
+      "currentScale": { "x": 1.0, "y": 1.0, "z": 1.0 },
+      "boneType": "CONNECTED",
+      "gravityDirection": "DOWN",
+      "customGravityVector": { "x": 0.0, "y": -1.0, "z": 0.0 },
+      "freedomValue": 0.0,
+      "multiDirectionTextureEnabled": true,
+      "partConfig": {
+        "width": 2.0,
+        "height": 2.0,
+        "offset": { "x": 0.0, "y": 0.0, "z": 0.0 },
+        "customRotationX": 0.0,
+        "customRotationZ": 0.0,
+        "pivotPoint": { "x": 0.0, "y": 0.0, "z": 0.0 },
+        "texturePath": "C:/textures/body_front.png",
+        "directionTextures": {
+          "FRONT": "C:/textures/body_front.png",
+          "BACK": "C:/textures/body_back.png",
+          "LEFT": "C:/textures/body_left.png",
+          "RIGHT": "C:/textures/body_right.png"
+        },
+        "currentDirection": "FRONT",
+        "priority": 10,
+        "directionPriorities": {
+          "FRONT": 10,
+          "BACK": 5,
+          "LEFT": 8,
+          "RIGHT": 8
+        },
+        "directionWidths": {
+          "FRONT": 2.0,
+          "BACK": 1.8,
+          "LEFT": 1.5,
+          "RIGHT": 1.5
+        },
+        "directionHeights": {
+          "FRONT": 2.0,
+          "BACK": 1.8,
+          "LEFT": 2.0,
+          "RIGHT": 2.0
+        },
+        "directionOffsetMultipliers": {
+          "FRONT": { "x": 1.0, "y": 1.0 },
+          "BACK": { "x": 1.0, "y": 0.9 }
+        },
+        "directionOffsets": {
+          "FRONT": { "x": 0.0, "y": 0.0, "z": 0.0 },
+          "BACK": { "x": 0.0, "y": -0.1, "z": 0.0 }
+        },
+        "directionRotations": {
+          "FRONT": { "x": 0.0, "y": 0.0, "z": 0.0 },
+          "BACK": { "x": 0.0, "y": 180.0, "z": 0.0 }
+        },
+        "directionUVs": {
+          "FRONT": {
+            "uvOffsetX": 0.0,
+            "uvOffsetY": 0.0,
+            "uvScaleX": 1.0,
+            "uvScaleY": 1.0
+          }
+        },
+        "billboardEnabled": true,
+        "uvOffsetX": 0.0,
+        "uvOffsetY": 0.0,
+        "uvScaleX": 1.0,
+        "uvScaleY": 1.0
+      }
+    }
+  ]
+}

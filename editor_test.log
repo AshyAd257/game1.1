@@ -1,0 +1,20 @@
+3月 14, 2026 9:40:08 下午 com.jme3.system.JmeDesktopSystem initialize
+信息: Running on jMonkeyEngine 3.5.2-stable
+ * Branch: HEAD
+ * Git Hash: 8ab3d24
+ * Build Date: 2022-04-21
+Exception in thread "main" java.lang.NoClassDefFoundError: org/lwjgl/opengl/GLDebugMessageARBCallbackI
+	at java.base/java.lang.Class.forName0(Native Method)
+	at java.base/java.lang.Class.forName(Class.java:375)
+	at com.jme3.system.JmeDesktopSystem.newContextLwjgl(JmeDesktopSystem.java:202)
+	at com.jme3.system.JmeDesktopSystem.newContext(JmeDesktopSystem.java:275)
+	at com.jme3.system.JmeSystem.newContext(JmeSystem.java:174)
+	at com.jme3.app.LegacyApplication.start(LegacyApplication.java:488)
+	at com.jme3.app.LegacyApplication.start(LegacyApplication.java:442)
+	at com.jme3.app.SimpleApplication.start(SimpleApplication.java:126)
+	at com.Hecate.puppet.editor.PuppetEditorApp.main(PuppetEditorApp.java:130)
+Caused by: java.lang.ClassNotFoundException: org.lwjgl.opengl.GLDebugMessageARBCallbackI
+	at java.base/jdk.internal.loader.BuiltinClassLoader.loadClass(BuiltinClassLoader.java:641)
+	at java.base/jdk.internal.loader.ClassLoaders$AppClassLoader.loadClass(ClassLoaders.java:188)
+	at java.base/java.lang.ClassLoader.loadClass(ClassLoader.java:525)
+	... 9 more

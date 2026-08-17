@@ -10,21 +10,44 @@ import com.jme3.math.Vector3f;
 import com.jme3.scene.Geometry;
 import com.jme3.scene.Spatial;
 import com.jme3.scene.shape.Box;
+import com.jme3.texture.Texture;
 import com.Hecate.module.AbstractGameModule;
 import com.Hecate.module.Version;
 
 import java.util.*;
 
 /**
- * Blender模块 - 负责3D模型的加载和管理
- * 支持从Blender导出的.j3o文件，以及内置几何体
+ * 改进的Blender模块 - 支持OBJ+MTL文件加载
+ * 正确处理几何体、材质和贴图的关联
  */
 public class BlenderModule extends AbstractGameModule {
 
+    // 模型配置类
+    public static class ModelConfig {
+        public final String modelId;
+        public final String objPath;
+        public final String mtlPath;
+        public final Map<String, String> textureOverrides;
+
+        public ModelConfig(String modelId, String objPath, String mtlPath) {
+            this.modelId = modelId;
+            this.objPath = objPath;
+            this.mtlPath = mtlPath;
+            this.textureOverrides = new HashMap<>();
+        }
+
+        public ModelConfig(String modelId, String objPath, String mtlPath, Map<String, String> textureOverrides) {
+            this.modelId = modelId;
+            this.objPath = objPath;
+            this.mtlPath = mtlPath;
+            this.textureOverrides = textureOverrides != null ? textureOverrides : new HashMap<>();
+        }
+    }
+
     // 土方块模型缓存
     private Map<String, Spatial> dirtBlockModels;
-    // 土方块模型路径列表
-    private List<String> dirtModelPaths;
+    // 模型配置列表
+    private List<ModelConfig> modelConfigs;
     // 随机数生成器
     private Random random;
     // 应用程序引用
@@ -36,7 +59,7 @@ public class BlenderModule extends AbstractGameModule {
         this.app = app;
         this.assetManager = app.getAssetManager();
         this.dirtBlockModels = new HashMap<>();
-        this.dirtModelPaths = new ArrayList<>();
+        this.modelConfigs = new ArrayList<>();
         this.random = new Random();
     }
 
@@ -52,20 +75,18 @@ public class BlenderModule extends AbstractGameModule {
 
     @Override
     public void onInitialize() {
-        System.out.println("Blender模块: 开始初始化...");
 
-        // 初始化模型路径
-        initializeDirtModelPaths();
+        // 初始化模型配置
+        initializeModelConfigs();
 
         // 预加载所有土方块模型
         loadDirtBlockModels();
 
-        System.out.println("Blender模块: 初始化完成");
     }
 
     @Override
     public void onPostInitialize() {
-        System.out.println("Blender模块: 后初始化完成");
+
     }
 
     @Override
@@ -75,167 +96,237 @@ public class BlenderModule extends AbstractGameModule {
 
     @Override
     public void onDisable() {
-        System.out.println("Blender模块: 正在禁用...");
 
-        // 清理资源
         if (dirtBlockModels != null) {
             dirtBlockModels.clear();
         }
-        if (dirtModelPaths != null) {
-            dirtModelPaths.clear();
+        if (modelConfigs != null) {
+            modelConfigs.clear();
         }
 
-        System.out.println("Blender模块: 已禁用");
     }
 
     /**
-     * 初始化土方块模型路径
+     * 初始化模型配置
      */
-    private void initializeDirtModelPaths() {
-        // 外部模型文件路径 - 你的项目中有 .obj 文件，但JME需要 .j3o 文件
-        String[] externalPaths = {
-                "Models/dirt1.j3o",
-                "Models/dirt2.j3o",
-                "Models/dirt3.j3o",
-                "Models/dirt4.j3o"
-        };
+    private void initializeModelConfigs() {
+        // 方案1: 使用现有的OBJ文件（需要创建对应的MTL文件）
+        modelConfigs.add(new ModelConfig(
+                "dirt1",
+                "Models/blocks/drt1.obj",
+                "Models/blocks/drt1.mtl"
+        ));
 
-        // 添加外部模型路径
-        dirtModelPaths.addAll(Arrays.asList(externalPaths));
+        // 方案2: 如果你有更多模型文件
+        // modelConfigs.add(new ModelConfig(
+        //     "dirt2",
+        //     "Models/blocks/drt2.obj",
+        //     "Models/blocks/drt2.mtl"
+        // ));
 
-        System.out.println("土方块模型路径初始化完成，共 " + dirtModelPaths.size() + " 个路径");
+        // 方案3: 使用纹理覆盖（当MTL文件不存在或需要自定义材质时）
+        Map<String, String> customTextures = new HashMap<>();
+        customTextures.put("diffuse", "textures/blocks/dirt.png");
+        modelConfigs.add(new ModelConfig(
+                "dirt_custom",
+                "Models/blocks/drt1.obj",
+                null, // 没有MTL文件
+                customTextures
+        ));
+
     }
 
     /**
-     * 预加载所有土方块模型（带详细调试信息）
+     * 加载土方块模型（支持OBJ+MTL）
      */
     private void loadDirtBlockModels() {
-        System.out.println("开始加载土方块模型...");
-        System.out.println("AssetManager: " + (assetManager != null ? "已初始化" : "未初始化"));
 
         int loadedCount = 0;
 
-        // 尝试加载外部模型文件
-        for (String modelPath : new ArrayList<>(dirtModelPaths)) {
+        for (ModelConfig config : modelConfigs) {
             try {
-                System.out.println("尝试加载模型: " + modelPath);
 
-                // 检查文件是否存在
-                try {
-                    AssetInfo info = assetManager.locateAsset(new AssetKey<>(modelPath));
-                    if (info == null) {
-                        System.err.println("❌ 文件不存在: " + modelPath);
-                        continue;
-                    }
-                    System.out.println("✅ 文件存在: " + modelPath);
-                } catch (Exception e) {
-                    System.err.println("❌ 无法定位文件 " + modelPath + ": " + e.getMessage());
-                    continue;
-                }
-
-                // 加载模型
-                Spatial model = assetManager.loadModel(modelPath);
+                Spatial model = loadModelFromConfig(config);
                 if (model != null) {
                     model.setLocalScale(1.0f);
-                    dirtBlockModels.put(modelPath, model);
+                    dirtBlockModels.put(config.modelId, model);
                     loadedCount++;
-                    System.out.println("✅ 成功加载模型: " + modelPath);
+
                 } else {
-                    System.err.println("❌ 加载模型返回null: " + modelPath);
                 }
             } catch (Exception e) {
-                System.err.println("❌ 加载模型异常 " + modelPath + ": " + e.getMessage());
+                e.printStackTrace();
             }
         }
 
-        System.out.println("外部模型加载完成，成功加载 " + loadedCount + " 个模型");
-
         // 如果没有加载到外部模型，创建内置几何体
         if (loadedCount == 0) {
-            System.out.println("⚠️  没有找到外部模型文件，创建内置几何体...");
             createBuiltInDirtBlocks();
         }
 
-        System.out.println("土方块模型加载完成，总共可用 " + dirtBlockModels.size() + " 个模型");
     }
 
     /**
-     * 创建内置几何体土方块
+     * 从配置加载模型
+     */
+    private Spatial loadModelFromConfig(ModelConfig config) {
+        // 检查OBJ文件是否存在
+        if (!checkFileExists(config.objPath)) {
+            return null;
+        }
+
+        try {
+            // 加载OBJ文件
+            Spatial model = assetManager.loadModel(config.objPath);
+            if (model == null) {
+                return null;
+            }
+
+            // 处理材质
+            if (config.mtlPath != null && checkFileExists(config.mtlPath)) {
+                // MTL文件存在，JME3应该自动加载材质
+
+                // 注意：JME3通常会自动查找与OBJ同名的MTL文件
+            } else {
+                // MTL文件不存在或为null，应用自定义材质
+
+                applyCustomMaterial(model, config);
+            }
+
+            return model;
+
+        } catch (Exception e) {
+
+            e.printStackTrace();
+            return null;
+        }
+    }
+
+    /**
+     * 应用自定义材质
+     */
+    private void applyCustomMaterial(Spatial model, ModelConfig config) {
+        if (model instanceof Geometry) {
+            applyMaterialToGeometry((Geometry) model, config);
+        } else if (model instanceof com.jme3.scene.Node) {
+            // 递归处理节点中的所有几何体
+            com.jme3.scene.Node node = (com.jme3.scene.Node) model;
+            for (Spatial child : node.getChildren()) {
+                applyCustomMaterial(child, config);
+            }
+        }
+    }
+
+    /**
+     * 为几何体应用材质
+     */
+    private void applyMaterialToGeometry(Geometry geometry, ModelConfig config) {
+        try {
+            Material material = new Material(assetManager, "Common/MatDefs/Light/Lighting.j3md");
+
+            // 应用漫反射贴图
+            if (config.textureOverrides.containsKey("diffuse")) {
+                String texturePath = config.textureOverrides.get("diffuse");
+                if (checkFileExists(texturePath)) {
+                    Texture diffuseTexture = assetManager.loadTexture(texturePath);
+                    material.setTexture("DiffuseMap", diffuseTexture);
+
+                } else {
+
+                    // 使用默认颜色
+                    material.setColor("Diffuse", ColorRGBA.Brown);
+                }
+            } else {
+                // 使用默认土色
+                material.setColor("Diffuse", ColorRGBA.Brown);
+            }
+
+            // 设置环境光和镜面反射
+            material.setColor("Ambient", ColorRGBA.Brown.mult(0.3f));
+            material.setColor("Specular", ColorRGBA.White);
+            material.setFloat("Shininess", 32f);
+
+            geometry.setMaterial(material);
+
+        } catch (Exception e) {
+
+            // 回退到基本材质
+            Material fallback = new Material(assetManager, "Common/MatDefs/Misc/Unshaded.j3md");
+            fallback.setColor("Color", ColorRGBA.Brown);
+            geometry.setMaterial(fallback);
+        }
+    }
+
+    /**
+     * 检查文件是否存在
+     */
+    private boolean checkFileExists(String path) {
+        try {
+            AssetInfo info = assetManager.locateAsset(new AssetKey<>(path));
+            return info != null;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /**
+     * 创建内置几何体土方块（保持原有逻辑）
      */
     private void createBuiltInDirtBlocks() {
-        System.out.println("创建内置几何体土方块...");
 
-        // 创建4种不同颜色的方块
         ColorRGBA[] colors = {
-                ColorRGBA.Brown,                           // 标准棕色
-                new ColorRGBA(0.6f, 0.4f, 0.2f, 1.0f),   // 深棕色
-                new ColorRGBA(0.8f, 0.6f, 0.3f, 1.0f),   // 浅棕色
-                new ColorRGBA(0.5f, 0.3f, 0.1f, 1.0f)    // 暗棕色
+                ColorRGBA.Brown,
+                new ColorRGBA(0.6f, 0.4f, 0.2f, 1.0f),
+                new ColorRGBA(0.8f, 0.6f, 0.3f, 1.0f),
+                new ColorRGBA(0.5f, 0.3f, 0.1f, 1.0f)
         };
 
         String[] names = {"标准土块", "深色土块", "浅色土块", "暗色土块"};
 
-        // 清空原有路径，使用内置路径
-        dirtModelPaths.clear();
-
         for (int i = 0; i < colors.length; i++) {
             String modelKey = "built-in-dirt-" + i;
 
-            // 创建立方体几何体
             Box box = new Box(0.5f, 0.5f, 0.5f);
             Geometry geom = new Geometry("DirtBlock" + i, box);
 
-            // 设置材质
             Material mat = new Material(assetManager, "Common/MatDefs/Misc/Unshaded.j3md");
             mat.setColor("Color", colors[i]);
             geom.setMaterial(mat);
 
-            // 缓存模型
             dirtBlockModels.put(modelKey, geom);
-            dirtModelPaths.add(modelKey);
-
-            System.out.println("✅ 创建内置土方块: " + names[i] + " (" + modelKey + ")");
         }
 
-        System.out.println("内置土方块创建完成，共创建 " + dirtBlockModels.size() + " 个方块");
     }
 
     /**
      * 获取随机的土方块模型
-     * @return 克隆的土方块模型
      */
     public Spatial getRandomDirtBlock() {
         if (dirtBlockModels.isEmpty()) {
-            System.err.println("❌ 没有可用的土方块模型！");
             return createEmergencyDirtBlock();
         }
 
-        // 随机选择一个模型路径
-        String randomPath = dirtModelPaths.get(random.nextInt(dirtModelPaths.size()));
-        Spatial originalModel = dirtBlockModels.get(randomPath);
+        String[] modelIds = dirtBlockModels.keySet().toArray(new String[0]);
+        String randomId = modelIds[random.nextInt(modelIds.length)];
+        Spatial originalModel = dirtBlockModels.get(randomId);
 
         if (originalModel != null) {
-            // 克隆模型以避免共享状态
             Spatial clonedModel = originalModel.clone();
             clonedModel.setLocalScale(1.0f);
             return clonedModel;
         }
 
-        System.err.println("❌ 无法获取模型: " + randomPath);
         return createEmergencyDirtBlock();
     }
 
     /**
-     * 创建紧急备用土方块（当所有其他方法都失败时）
+     * 创建紧急备用土方块
      */
     private Spatial createEmergencyDirtBlock() {
-        System.out.println("创建紧急备用土方块...");
 
-        // 创建一个简单的红色立方体作为错误指示
         Box box = new Box(0.5f, 0.5f, 0.5f);
         Geometry geom = new Geometry("EmergencyDirtBlock", box);
 
-        // 设置红色材质表示错误
         Material mat = new Material(assetManager, "Common/MatDefs/Misc/Unshaded.j3md");
         mat.setColor("Color", ColorRGBA.Red);
         geom.setMaterial(mat);
@@ -243,48 +334,28 @@ public class BlenderModule extends AbstractGameModule {
         return geom;
     }
 
-    /**
-     * 在指定位置创建随机土方块场景
-     * @param centerX 中心X坐标
-     * @param centerZ 中心Z坐标
-     * @param width 宽度
-     * @param height 高度
-     * @param density 密度 (0-100)
-     * @return 创建的方块数量
-     */
+    // 其他方法保持不变...
     public int createRandomDirtField(float centerX, float centerZ, int width, int height, int density) {
-        System.out.println("创建随机土方块场景...");
-        System.out.println("中心位置: (" + centerX + ", " + centerZ + ")");
-        System.out.println("区域大小: " + width + "x" + height);
-        System.out.println("密度: " + density + "%");
 
         int createdCount = 0;
-
-        // 计算起始位置
         float startX = centerX - width / 2.0f;
         float startZ = centerZ - height / 2.0f;
 
-        // 遍历指定区域
         for (int x = 0; x < width; x++) {
             for (int z = 0; z < height; z++) {
-                // 根据密度随机决定是否放置方块
                 if (random.nextInt(100) < density) {
-                    // 获取随机土方块
                     Spatial dirtBlock = getRandomDirtBlock();
 
                     if (dirtBlock != null) {
-                        // 设置位置
                         float posX = startX + x;
                         float posZ = startZ + z;
-                        float posY = 0; // 地面高度
+                        float posY = 0;
 
                         dirtBlock.setLocalTranslation(posX, posY, posZ);
 
-                        // 随机旋转 (0, 90, 180, 270度)
                         float rotation = (random.nextInt(4) * 90) * (float) Math.PI / 180f;
                         dirtBlock.setLocalRotation(dirtBlock.getLocalRotation().fromAngleAxis(rotation, Vector3f.UNIT_Y));
 
-                        // 添加到场景
                         app.getRootNode().attachChild(dirtBlock);
                         createdCount++;
                     }
@@ -292,36 +363,19 @@ public class BlenderModule extends AbstractGameModule {
             }
         }
 
-        System.out.println("装饰性土方块场景创建完成，包含 " + createdCount + " 个方块");
         return createdCount;
     }
 
-    /**
-     * 重新加载所有模型
-     */
     public void reloadModels() {
-        System.out.println("重新加载所有模型...");
-
-        // 清理现有模型
         dirtBlockModels.clear();
-
-        // 重新加载
         loadDirtBlockModels();
-
-        System.out.println("模型重新加载完成");
     }
 
-    /**
-     * 获取可用模型数量
-     */
     public int getAvailableModelCount() {
         return dirtBlockModels.size();
     }
 
-    /**
-     * 获取所有模型路径
-     */
-    public List<String> getModelPaths() {
-        return new ArrayList<>(dirtModelPaths);
+    public List<String> getModelIds() {
+        return new ArrayList<>(dirtBlockModels.keySet());
     }
 }

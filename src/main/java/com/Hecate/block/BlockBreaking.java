@@ -1,9 +1,8 @@
 package com.Hecate.block;
 
 import com.jme3.math.Vector3f;
-import com.Hecate.world.Chunk;
 import com.Hecate.world.ChunkManager;
-import com.Hecate.world.ChunkPosition;
+import com.Hecate.utils.BlockUtils;
 
 /**
  * 方块破坏系统 - 处理方块破坏的进度、效果和掉落物
@@ -17,6 +16,24 @@ public class BlockBreaking {
     private float breakingProgress = 0.0f;
     private float breakingTime = 0.0f;
 
+    /**
+     * 构造函数（依赖注入）
+     *
+     * @param chunkManager 区块管理器
+     * @param blockRegistry 方块注册表（通过依赖注入传入）
+     */
+    public BlockBreaking(ChunkManager chunkManager, BlockRegistry blockRegistry) {
+        this.chunkManager = chunkManager;
+        this.blockRegistry = blockRegistry;
+    }
+
+    /**
+     * 构造函数（向后兼容）
+     *
+     * @param chunkManager 区块管理器
+     * @deprecated 推荐使用 {@link #BlockBreaking(ChunkManager, BlockRegistry)} 进行依赖注入
+     */
+    @Deprecated
     public BlockBreaking(ChunkManager chunkManager) {
         this.chunkManager = chunkManager;
         this.blockRegistry = BlockRegistry.getInstance();
@@ -27,12 +44,9 @@ public class BlockBreaking {
      */
     public void startBreaking(Vector3f blockPosition) {
         if (!blockPosition.equals(currentBreakingBlock)) {
-            // 重置破坏进度
             currentBreakingBlock = blockPosition.clone();
             breakingProgress = 0.0f;
             breakingTime = 0.0f;
-
-            System.out.println("开始破坏方块: " + blockPosition);
         }
     }
 
@@ -41,7 +55,6 @@ public class BlockBreaking {
      */
     public void stopBreaking() {
         if (currentBreakingBlock != null) {
-            System.out.println("停止破坏方块: " + currentBreakingBlock);
             currentBreakingBlock = null;
             breakingProgress = 0.0f;
             breakingTime = 0.0f;
@@ -56,8 +69,8 @@ public class BlockBreaking {
             return;
         }
 
-        // 获取方块信息
-        String blockId = getBlockAt(currentBreakingBlock);
+        // 使用工具类获取方块信息
+        String blockId = BlockUtils.getBlockAt(currentBreakingBlock, chunkManager);
         if ("air".equals(blockId)) {
             stopBreaking();
             return;
@@ -71,7 +84,7 @@ public class BlockBreaking {
 
         // 计算破坏时间（基于方块硬度）
         float hardness = getBlockHardness(block);
-        float requiredTime = hardness * 1.5f; // 基础破坏时间
+        float requiredTime = hardness * 1.5f;
 
         // 更新进度
         breakingTime += tpf;
@@ -91,76 +104,23 @@ public class BlockBreaking {
             return;
         }
 
-        String blockId = getBlockAt(currentBreakingBlock);
+        String blockId = BlockUtils.getBlockAt(currentBreakingBlock, chunkManager);
         Block block = blockRegistry.getBlock(blockId);
 
         if (block != null) {
-            // 设置为空气方块
-            setBlockAt(currentBreakingBlock, "air");
-
-            // 创建掉落物
+            // 使用工具类设置方块
+            BlockUtils.setBlockAt(currentBreakingBlock, "air", chunkManager);
             createBlockDrop(currentBreakingBlock, block);
-
-            System.out.println("完成破坏方块: " + blockId + " 在位置 " + currentBreakingBlock);
         }
-
         stopBreaking();
-    }
-
-    /**
-     * 获取指定位置的方块
-     */
-    private String getBlockAt(Vector3f worldPos) {
-        ChunkPosition chunkPos = worldToChunkPosition(worldPos);
-        Chunk chunk = chunkManager.getChunk(chunkPos);
-
-        if (chunk != null) {
-            int localX = (int) (worldPos.x - chunkPos.getX() * Chunk.SIZE);
-            int localY = (int) (worldPos.y - chunkPos.getY() * Chunk.SIZE);
-            int localZ = (int) (worldPos.z - chunkPos.getZ() * Chunk.SIZE);
-
-            if (localX >= 0 && localX < Chunk.SIZE &&
-                    localY >= 0 && localY < Chunk.SIZE &&
-                    localZ >= 0 && localZ < Chunk.SIZE) {
-                return chunk.getBlockId(localX, localY, localZ);
-            }
-        }
-
-        return "air";
-    }
-
-    /**
-     * 设置指定位置的方块
-     */
-    private void setBlockAt(Vector3f worldPos, String blockId) {
-        ChunkPosition chunkPos = worldToChunkPosition(worldPos);
-        Chunk chunk = chunkManager.getChunk(chunkPos);
-
-        if (chunk != null) {
-            int localX = (int) (worldPos.x - chunkPos.getX() * Chunk.SIZE);
-            int localY = (int) (worldPos.y - chunkPos.getY() * Chunk.SIZE);
-            int localZ = (int) (worldPos.z - chunkPos.getZ() * Chunk.SIZE);
-
-            if (localX >= 0 && localX < Chunk.SIZE &&
-                    localY >= 0 && localY < Chunk.SIZE &&
-                    localZ >= 0 && localZ < Chunk.SIZE) {
-                chunk.setBlock(localX, localY, localZ, blockId);
-            }
-        }
     }
 
     /**
      * 获取方块硬度
      */
     private float getBlockHardness(Block block) {
-        // 根据方块类型返回不同的硬度
-        switch (block.getId()) {
-            case "stone": return 3.0f;
-            case "dirt": return 1.0f;
-            case "grass": return 1.2f;
-            case "glass": return 0.5f;
-            default: return 2.0f;
-        }
+        // 直接使用Block类中的hardness属性
+        return block.getHardness();
     }
 
     /**
@@ -168,18 +128,7 @@ public class BlockBreaking {
      */
     private void createBlockDrop(Vector3f position, Block block) {
         // 这里将来会实现掉落物系统
-        // 目前只是打印信息
-        System.out.println("创建掉落物: " + block.getId() + " 在位置 " + position);
-    }
-
-    /**
-     * 世界坐标转区块坐标
-     */
-    private ChunkPosition worldToChunkPosition(Vector3f worldPos) {
-        int chunkX = (int) Math.floor(worldPos.x / Chunk.SIZE);
-        int chunkY = (int) Math.floor(worldPos.y / Chunk.SIZE);
-        int chunkZ = (int) Math.floor(worldPos.z / Chunk.SIZE);
-        return new ChunkPosition(chunkX, chunkY, chunkZ);
+        // 目前只是占位
     }
 
     // Getter方法
@@ -187,3 +136,4 @@ public class BlockBreaking {
     public float getBreakingProgress() { return breakingProgress; }
     public boolean isBreaking() { return currentBreakingBlock != null; }
 }
+

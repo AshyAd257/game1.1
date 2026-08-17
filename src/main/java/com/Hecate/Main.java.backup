@@ -1,0 +1,795 @@
+package com.Hecate;
+
+import com.jme3.app.SimpleApplication;
+import com.jme3.math.ColorRGBA;
+import com.jme3.math.Vector3f;
+import com.jme3.renderer.RenderManager;
+import com.jme3.system.AppSettings;
+import java.awt.DisplayMode;
+import java.awt.GraphicsDevice;
+import java.awt.GraphicsEnvironment;
+
+// 导入核心系统
+import com.Hecate.core.ApplicationContext;
+import com.Hecate.core.SystemInitializer;
+
+// 导入输入系统
+import com.jme3.input.KeyInput;
+import com.jme3.input.controls.ActionListener;
+import com.jme3.input.controls.KeyTrigger;
+
+/**
+ * Hecate游戏引擎主类 - 应用程序入口点
+ *
+ * <p>本类职责已大幅精简，遵循单一职责原则：
+ * <ul>
+ *   <li>应用程序配置（窗口设置、全屏模式）</li>
+ *   <li>初始化流程编排（委托给 SystemInitializer）</li>
+ *   <li>游戏循环（simpleUpdate）</li>
+ *   <li>资源清理（destroy）</li>
+ * </ul>
+ *
+ * <h3>重构成果</h3>
+ * <p>所有系统管理职责已提取到：
+ * <ul>
+ *   <li>{@link ApplicationContext} - 依赖注入容器</li>
+ *   <li>{@link SystemInitializer} - 初始化流程管理</li>
+ *   <li>{@link com.Hecate.core.LightingSystem} - 光照系统</li>
+ * </ul>
+ *
+ * @author Hecate Team
+ * @version 2.0 (重构版本)
+ */
+public class Main extends SimpleApplication {
+
+    // 应用程序上下文（统一管理所有系统依赖）
+    private ApplicationContext context;
+
+    // 木偶动画编辑器应用（独立窗口）- 使用Object避免直接依赖
+    private Object puppetEditorApp;
+
+    // 区块重新渲染标志
+    private boolean chunksReloaded = false;
+
+    public static void main(String[] args) {
+        Main app = new Main();
+
+        // 创建设置对象
+        AppSettings settings = new AppSettings(true);
+
+        // 获取默认显示设备信息
+        GraphicsDevice device = GraphicsEnvironment.getLocalGraphicsEnvironment().getDefaultScreenDevice();
+        DisplayMode displayMode = device.getDisplayMode();
+
+        // 设置全屏模式
+        settings.setFullscreen(true);
+        settings.setWidth(displayMode.getWidth());
+        settings.setHeight(displayMode.getHeight());
+        settings.setFrequency(displayMode.getRefreshRate());
+        settings.setBitsPerPixel(displayMode.getBitDepth());
+
+        // 其他设置
+        settings.setTitle("Hecate Game");
+        settings.setVSync(true);  // 垂直同步，防止画面撕裂
+        settings.setSamples(4);    // 抗锯齿
+
+        // 跳过显示设置对话框
+        app.setShowSettings(false);
+
+        // 应用设置
+        app.setSettings(settings);
+
+        app.start();
+    }
+
+    /**
+     * 应用程序初始化入口
+     * <p>职责已精简为：
+     * <ul>
+     *   <li>注册资源路径</li>
+     *   <li>配置相机和视口</li>
+     *   <li>创建应用上下文</li>
+     *   <li>委托给SystemInitializer初始化所有系统</li>
+     *   <li>初始化木偶编辑器启动器</li>
+     *   <li>清理调试UI</li>
+     * </ul>
+     */
+    @Override
+    public void simpleInitApp() {
+        // 注册资源路径
+        assetManager.registerLocator("target/classes/", com.jme3.asset.plugins.FileLocator.class);
+
+        // 配置相机
+        cam.setLocation(new Vector3f(0, 15, 15));
+        cam.lookAt(new Vector3f(0, 1, 0), Vector3f.UNIT_Y);
+
+        // 配置视口
+        viewPort.setBackgroundColor(new ColorRGBA(0.53f, 0.81f, 0.92f, 1.0f)); // 天蓝色
+        setDisplayStatView(false);
+        setDisplayFps(false);
+
+        // 创建应用上下文（依赖注入容器）
+        context = new ApplicationContext(this);
+
+        // 使用SystemInitializer初始化所有系统
+        SystemInitializer.initialize(context);
+
+        // 打印配置信息
+        SystemInitializer.printConfiguration(context);
+
+        // 初始化木偶编辑器启动器（按I键打开独立窗口）
+        initializePuppetEditorLauncher();
+
+        // 清除调试UI元素
+        removeDebugTexts();
+    }
+
+    /**
+     * 清除调试文本（仅在初始化时调用一次）
+     */
+    private void removeDebugTexts() {
+        try {
+            // 遍历guiNode的所有子节点
+            for (int i = guiNode.getChildren().size() - 1; i >= 0; i--) {
+                com.jme3.scene.Spatial child = guiNode.getChild(i);
+                String name = child.getName();
+
+                // 清除FPS显示和统计信息（jMonkeyEngine默认添加的调试元素）
+                if (name != null && (name.contains("Statistics") ||
+                                    name.contains("FPS") ||
+                                    name.contains("Stats") ||
+                                    name.equals("DebugText"))) {
+                    child.removeFromParent();
+                }
+
+                // 如果是BitmapText，进一步检查是否是UI组件
+                if (child instanceof com.jme3.font.BitmapText) {
+                    com.jme3.font.BitmapText text = (com.jme3.font.BitmapText) child;
+                    String textContent = text.getText();
+
+                    // 删除包含坐标或数字的调试信息（比如坐标显示）
+                    if (textContent != null && textContent.matches(".*\\(.*\\d+.*\\).*")) {
+                        child.removeFromParent();
+                    }
+                }
+            }
+        } catch (Exception e) {
+        }
+    }
+
+    /**
+     * 初始化木偶编辑器启动器（按I键打开）
+     */
+    private void initializePuppetEditorLauncher() {
+        try {
+            // 绑定I键 - 打开木偶编辑器（独立窗口）
+            inputManager.addMapping("OpenPuppetEditor", new KeyTrigger(KeyInput.KEY_I));
+            inputManager.addListener(new ActionListener() {
+                @Override
+                public void onAction(String name, boolean keyPressed, float tpf) {
+                    if (name.equals("OpenPuppetEditor") && !keyPressed) {
+                        // 检查InventoryUI的TextField是否有焦点
+                        if (playerControlModule != null &&
+                            playerControlModule.getPlayerController() != null) {
+                            com.Hecate.player.PlayerController pc = playerControlModule.getPlayerController();
+                            // 通过反射或添加公共方法获取InventoryUI
+                            // 暂时通过检查控制台是否打开来判断
+                            try {
+                                java.lang.reflect.Field inventoryField = pc.getClass().getDeclaredField("inventoryUI");
+                                inventoryField.setAccessible(true);
+                                com.Hecate.ui.InventoryUI inventoryUI = (com.Hecate.ui.InventoryUI) inventoryField.get(pc);
+
+                                if (inventoryUI != null && inventoryUI.isTextFieldFocused()) {
+                                    // TextField有焦点，忽略I键
+                                    return;
+                                }
+                            } catch (Exception e) {
+                                // 忽略反射异常
+                            }
+                        }
+
+                        openPuppetEditorWindow();
+                    }
+                }
+            }, "OpenPuppetEditor");
+
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    /**
+     * 打开木偶编辑器独立窗口（在新线程中启动）
+     * 使用反射加载编辑器，避免游戏主程序直接依赖编辑器代码
+     */
+    private void openPuppetEditorWindow() {
+        // 如果编辑器已经打开，则不重复创建（避免多次点击I键创建多个窗口）
+        if (puppetEditorApp != null) {
+
+            return;
+        }
+
+
+        // 在新线程中启动编辑器独立窗口
+        new Thread(() -> {
+            try {
+                // 使用反射加载编辑器，避免直接依赖
+                Class<?> editorClass = Class.forName("com.Hecate.puppet.editor.PuppetEditorApp");
+                java.lang.reflect.Method createMethod = editorClass.getMethod("createEditor");
+                puppetEditorApp = createMethod.invoke(null);
+
+                // 调用start方法
+                java.lang.reflect.Method startMethod = editorClass.getMethod("start");
+                startMethod.invoke(puppetEditorApp);
+
+                // 当编辑器窗口关闭后，清理引用（允许重新打开）
+                puppetEditorApp = null;
+
+            } catch (ClassNotFoundException e) {
+
+                puppetEditorApp = null;
+            } catch (Exception e) {
+
+                e.printStackTrace();
+                puppetEditorApp = null;  // 发生错误也要清理
+            }
+        }).start();
+    }
+
+
+    /**
+     * 强制重新渲染所有区块（用于应用材质和网格修复）
+     */
+    private void forceReloadAllChunks() {
+
+
+        if (worldModule != null && worldModule.getChunkManager() != null) {
+            try {
+                // 获取ChunkManager
+                com.Hecate.world.ChunkManager chunkManager = worldModule.getChunkManager();
+
+                // 获取所有已加载的区块
+                java.util.Map<com.Hecate.world.ChunkPosition, com.Hecate.world.Chunk> chunks =
+                    chunkManager.getLoadedChunks();
+
+
+
+                // 标记所有区块为dirty并清除渲染节点
+                for (com.Hecate.world.Chunk chunk : chunks.values()) {
+                    chunk.setDirty();
+
+                    // 移除旧的渲染节点
+                    com.jme3.scene.Node oldNode = chunk.getChunkNode();
+                    if (oldNode != null) {
+                        oldNode.removeFromParent();
+                        chunk.setChunkNode(null);
+                    }
+                }
+
+
+
+            } catch (Exception e) {
+                System.err.println("[Main] 强制重新渲染失败: " + e.getMessage());
+                e.printStackTrace();
+            }
+        } else {
+
+        }
+
+
+    }
+
+    /**
+     * 初始化注册表系统（依赖注入模式）
+     *
+     * 创建独立的注册表实例，而非使用单例模式。
+     * 这样可以支持多世界、测试隔离、模组系统等高级功能。
+     */
+    private void initializeRegistries() {
+        // 创建方块注册表实例（推荐方式：使用构造器）
+        blockRegistry = new BlockRegistry();
+
+        // 创建模型注册表实例
+        blenderModelRegistry = new BlenderModelRegistry();
+        blockbenchModelRegistry = new BlockbenchModelRegistry();
+    }
+
+    /**
+     * 初始化碰撞检测系统
+     */
+    private void initializeCollisionSystem() {
+        collisionManager = new CollisionManager();
+    }
+
+    /**
+     * 初始化游戏模块（使用依赖注入传递注册表）
+     */
+    private void initializeModules() {
+        try {
+            // 初始化世界模块（通过构造函数注入 BlockRegistry）
+            worldModule = new WorldModule(this, blockRegistry);
+            worldModule.onInitialize();
+
+            // 初始化玩家控制模块
+            playerControlModule = new PlayerControlModule(this);
+            playerControlModule.onInitialize();
+
+            // 后初始化阶段
+            worldModule.onPostInitialize();
+
+            playerControlModule.onPostInitialize();
+
+        } catch (Exception e) {
+            e.printStackTrace();
+            throw new RuntimeException("模块系统初始化失败", e);
+        }
+    }
+
+    /**
+     * 初始化指针系统
+     */
+    private void initializePointerSystem() {
+        try {
+            // 需要等待玩家控制器初始化完成后才能创建指针系统
+            if (playerControlModule != null && playerControlModule.getPlayerController() != null) {
+                pointerSystem = new PointerSystem(this, playerControlModule.getPlayerController());
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    /**
+     * 连接各个系统
+     */
+    private void connectSystems() {
+        try {
+            // 将ChunkManager连接到碰撞检测系统
+            if (worldModule != null && worldModule.getChunkManager() != null) {
+                collisionManager.setChunkManager(worldModule.getChunkManager());
+            }
+
+            // 连接玩家控制模块到世界模块
+            if (playerControlModule != null && worldModule != null) {
+                playerControlModule.setChunkManager(worldModule.getChunkManager());
+                playerControlModule.setWorldNode(worldModule.getWorldNode());
+
+                // 将碰撞管理器注入到PlayerControlModule的PlayerController
+                if (playerControlModule.getPlayerController() != null) {
+                    playerControlModule.getPlayerController().setCollisionManager(collisionManager);
+
+                    // 将PlayerController连接到WorldModule（用于方块放置等交互）
+                    worldModule.setPlayerController(playerControlModule.getPlayerController());
+                }
+            }
+
+            // 【墨水系统】连接网格管理器到玩家控制模块（用于速度倍率）
+            if (playerControlModule != null && gridManager != null) {
+                playerControlModule.setGridManager(gridManager);
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    @Override
+    public void simpleUpdate(float tpf) {
+        // 持续清除所有调试文本（确保即使在运行时添加的调试元素也会被清除）
+        removeAllDebugTexts();
+
+        // 【一次性】检测区块加载后强制重新渲染
+        if (!chunksReloaded && worldModule != null && worldModule.getChunkManager() != null) {
+            java.util.Map<com.Hecate.world.ChunkPosition, com.Hecate.world.Chunk> chunks =
+                worldModule.getChunkManager().getLoadedChunks();
+
+            if (!chunks.isEmpty()) {
+
+                forceReloadAllChunks();
+                chunksReloaded = true; // 只执行一次
+            }
+        }
+
+        // 更新所有模块
+        if (worldModule != null) {
+            worldModule.onUpdate(tpf);
+        }
+
+        if (playerControlModule != null) {
+            playerControlModule.onUpdate(tpf);
+        }
+
+        // 更新指针系统
+        if (pointerSystem != null) {
+            pointerSystem.update(tpf);
+        }
+
+        // 更新火焰系统
+        if (flameRenderer != null) {
+            flameRenderer.update(tpf);
+        }
+
+        // 更新涂墨网格系统
+        if (gridManager != null) {
+            gridManager.update(tpf);
+        }
+
+        // 更新网格调试渲染
+        if (gridDebugRenderer != null && gridDebugRenderer.isEnabled()) {
+            gridDebugRenderer.update();
+        }
+    }
+
+    /**
+     * 清除所有调试文本（在每帧update中调用）
+     */
+    private void removeAllDebugTexts() {
+        try {
+            for (int i = guiNode.getChildren().size() - 1; i >= 0; i--) {
+                com.jme3.scene.Spatial child = guiNode.getChild(i);
+
+                // 保留自定义UI组件（根据Node名称判断）
+                if (child instanceof com.jme3.scene.Node) {
+                    String name = child.getName();
+                    if (name != null && (
+                        name.contains("Console") ||
+                        name.contains("Inventory") ||
+                        name.contains("Blood") ||
+                        name.contains("UI")
+                    )) {
+                        continue; // 保留这些UI组件
+                    }
+                }
+
+                // 保留物品栏背景
+                String name = child.getName();
+                if (name != null && name.equals("InventoryBackground")) {
+                    continue;
+                }
+
+                // 清除所有调试BitmapText（包括坐标显示等）
+                if (child instanceof com.jme3.font.BitmapText) {
+                    child.removeFromParent();
+                }
+            }
+        } catch (Exception e) {
+            // 忽略任何异常
+        }
+    }
+
+    @Override
+    public void destroy() {
+        // 清理木偶编辑器独立窗口（使用反射）
+        if (puppetEditorApp != null) {
+            try {
+                java.lang.reflect.Method stopMethod = puppetEditorApp.getClass().getMethod("stop");
+                stopMethod.invoke(puppetEditorApp);
+            } catch (Exception e) {
+
+            }
+            puppetEditorApp = null;
+        }
+
+        // 清理火焰系统
+        // flameTestController已禁用，不需要清理
+        if (flameRenderer != null) {
+            flameRenderer.cleanup();
+        }
+
+        // 清理涂墨网格系统
+        if (gridDebugRenderer != null) {
+            gridDebugRenderer.cleanup();
+        }
+        if (gridManager != null) {
+            gridManager.clear();
+        }
+
+        // 清理所有模块
+        if (playerControlModule != null) {
+            playerControlModule.onDisable();
+        }
+
+        if (worldModule != null) {
+            worldModule.onDisable();
+        }
+
+        super.destroy();
+    }
+
+    /**
+     * 【新诊断测试】创建带纹理的测试地面
+     * 使用自定义网格（与ChunkRenderer相同的方式）
+     * 位置在y=1（与游戏地面相同高度）
+     */
+    private void createTexturedTestGround() {
+
+
+        // 【关键测试】使用自定义网格而不是Box
+        com.jme3.scene.Mesh mesh = new com.jme3.scene.Mesh();
+
+        // 创建一个简单的水平四边形（10x10单位）
+        float[] vertices = new float[] {
+            -5f, 1.0f, -5f,  // 0: 左下
+             5f, 1.0f, -5f,  // 1: 右下
+             5f, 1.0f,  5f,  // 2: 右上
+            -5f, 1.0f,  5f   // 3: 左上
+        };
+
+        float[] normals = new float[] {
+            0f, 1f, 0f,  // 朝上
+            0f, 1f, 0f,
+            0f, 1f, 0f,
+            0f, 1f, 0f
+        };
+
+        float[] texCoords = new float[] {
+            0f, 0f,
+            1f, 0f,
+            1f, 1f,
+            0f, 1f
+        };
+
+        int[] indices = new int[] {
+            0, 1, 2,  // 第一个三角形
+            0, 2, 3   // 第二个三角形
+        };
+
+        mesh.setBuffer(com.jme3.scene.VertexBuffer.Type.Position, 3,
+            com.jme3.util.BufferUtils.createFloatBuffer(vertices));
+        mesh.setBuffer(com.jme3.scene.VertexBuffer.Type.Normal, 3,
+            com.jme3.util.BufferUtils.createFloatBuffer(normals));
+        mesh.setBuffer(com.jme3.scene.VertexBuffer.Type.TexCoord, 2,
+            com.jme3.util.BufferUtils.createFloatBuffer(texCoords));
+        mesh.setBuffer(com.jme3.scene.VertexBuffer.Type.Index, 3,
+            com.jme3.util.BufferUtils.createIntBuffer(indices));
+
+        // 生成切线数据
+        com.jme3.util.TangentBinormalGenerator.generate(mesh);
+
+        mesh.updateBound();
+
+        Geometry groundGeom = new Geometry("CustomMeshTestGround", mesh);
+
+        // 【测试】使用纯色材质（淡黄色）排除纹理问题
+        Material groundMat = new Material(assetManager, "Common/MatDefs/Light/Lighting.j3md");
+        groundMat.setBoolean("UseMaterialColors", true);
+        groundMat.setColor("Diffuse", new ColorRGBA(1.0f, 1.0f, 0.6f, 1.0f));  // 淡黄色
+        groundMat.setColor("Ambient", new ColorRGBA(1.0f, 1.0f, 0.6f, 1.0f));
+        groundMat.setColor("Specular", ColorRGBA.White.mult(0.1f));
+        groundMat.setFloat("Shininess", 8.0f);
+
+        // 【关键】与游戏地面完全相同的渲染状态设置
+        groundMat.getAdditionalRenderState().setDepthWrite(true);
+        groundMat.getAdditionalRenderState().setDepthTest(true);
+        groundMat.getAdditionalRenderState().setFaceCullMode(com.jme3.material.RenderState.FaceCullMode.Back);
+        groundMat.getAdditionalRenderState().setBlendMode(com.jme3.material.RenderState.BlendMode.Off);
+
+        groundGeom.setMaterial(groundMat);
+
+        // 顶点已经在正确位置(y=1.0f)，不需要额外的平移
+        // groundGeom.setLocalTranslation(0, 0, 0);  // 保持在原点
+
+        // 【关键】启用阴影接收
+        groundGeom.setShadowMode(com.jme3.renderer.queue.RenderQueue.ShadowMode.CastAndReceive);
+
+        // 【关键】设置为Opaque渲染队列
+        groundGeom.setQueueBucket(com.jme3.renderer.queue.RenderQueue.Bucket.Opaque);
+
+        // 添加到场景
+        rootNode.attachChild(groundGeom);
+
+
+    }
+
+    /**
+     * 【诊断测试】创建简单白色地面来测试阴影功能
+     * 这是一个最小化的测试场景，用于隔离阴影问题
+     */
+    private void createSimpleTestGround() {
+
+        // 创建一个大的白色平面（50x50单位）
+        Box groundBox = new Box(25f, 0.1f, 25f);
+        Geometry groundGeom = new Geometry("TestGround", groundBox);
+
+        // 创建简单的淡黄色Lighting材质（与游戏地面测试相同）
+        Material groundMat = new Material(assetManager, "Common/MatDefs/Light/Lighting.j3md");
+        groundMat.setBoolean("UseMaterialColors", true);
+        groundMat.setColor("Diffuse", new ColorRGBA(1.0f, 1.0f, 0.6f, 1.0f));  // 淡黄色
+        groundMat.setColor("Ambient", new ColorRGBA(1.0f, 1.0f, 0.6f, 1.0f));
+        groundMat.setColor("Specular", ColorRGBA.White.mult(0.1f));
+        groundMat.setFloat("Shininess", 8.0f);
+
+        // 显式启用深度写入和深度测试（接收阴影的关键设置）
+        groundMat.getAdditionalRenderState().setDepthWrite(true);
+        groundMat.getAdditionalRenderState().setDepthTest(true);
+        groundMat.getAdditionalRenderState().setFaceCullMode(com.jme3.material.RenderState.FaceCullMode.Back);
+
+        groundGeom.setMaterial(groundMat);
+
+        // 设置位置（在原点下方一点）
+        groundGeom.setLocalTranslation(0, -0.1f, 0);
+
+        // 【关键】启用阴影接收
+        groundGeom.setShadowMode(com.jme3.renderer.queue.RenderQueue.ShadowMode.CastAndReceive);
+
+        // 【关键】设置为Opaque渲染队列（确保正确接收阴影）
+        groundGeom.setQueueBucket(com.jme3.renderer.queue.RenderQueue.Bucket.Opaque);
+
+        // 添加到场景
+        rootNode.attachChild(groundGeom);
+
+
+    }
+
+    /**
+     * 获取指针系统实例
+     * @return PointerSystem 指针系统
+     */
+    public PointerSystem getPointerSystem() {
+        return pointerSystem;
+    }
+
+    /**
+     * 获取玩家控制模块
+     * @return PlayerControlModule 玩家控制模块
+     */
+    public PlayerControlModule getPlayerControlModule() {
+        return playerControlModule;
+    }
+
+    /**
+     * 获取世界模块
+     * @return WorldModule 世界模块
+     */
+    public WorldModule getWorldModule() {
+        return worldModule;
+    }
+
+    /**
+     * 设置光照系统
+     */
+    private void setupLighting() {
+
+        // 环境光照（提供基础亮度，避免完全黑暗）- 适度降低以增强阴影对比
+        AmbientLight ambient = new AmbientLight();
+        ambient.setColor(new ColorRGBA(0.3f, 0.3f, 0.3f, 1.0f)); // 适度的环境光，让阴影清晰可见但不会太暗
+        rootNode.addLight(ambient);
+
+
+        // 方向光照（模拟太阳光照）- 更强烈的太阳光
+        sun = new DirectionalLight();
+        sun.setDirection(new Vector3f(-1f, -1.5f, -1f).normalizeLocal()); // 从西北上方照射
+        sun.setColor(new ColorRGBA(1.5f, 1.4f, 1.2f, 1.0f)); // 更强烈的暖色调阳光
+        rootNode.addLight(sun);
+
+
+        // 添加阴影渲染器
+        setupShadows();
+
+        // 暂时禁用后处理效果，测试基础光照
+        // setupPostProcessing();
+
+    }
+
+    /**
+     * 设置阴影系统
+     */
+    private void setupShadows() {
+        try {
+            // 创建阴影渲染器 - 使用更高分辨率获得更清晰的阴影
+            final int SHADOWMAP_SIZE = 2048;
+            shadowRenderer = new DirectionalLightShadowRenderer(assetManager, SHADOWMAP_SIZE, 4);
+            shadowRenderer.setLight(sun);
+
+            // 设置阴影强度 - 更明显的阴影（0.9 = 90%黑暗）
+            shadowRenderer.setShadowIntensity(0.9f);
+
+            // 设置边缘过滤模式 - 使用PCF4获得更清晰的阴影边缘
+            shadowRenderer.setEdgeFilteringMode(EdgeFilteringMode.PCF4);
+
+            // 设置阴影渲染距离 - 更大的范围
+            shadowRenderer.setShadowZExtend(200f);
+            shadowRenderer.setShadowZFadeLength(20f);
+
+            // 将阴影渲染器添加到视口
+            viewPort.addProcessor(shadowRenderer);
+
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    /**
+     * 设置后处理效果（SSAO、Bloom、体积光等）
+     */
+    private void setupPostProcessing() {
+
+
+        /* 暂时注释掉，因为缺少jme3-effects依赖
+        try {
+            // 创建后处理器
+            fpp = new com.jme3.post.FilterPostProcessor(assetManager);
+
+            // 1. SSAO（屏幕空间环境光遮蔽）- 在缝隙和接触点添加柔和阴影
+            com.jme3.post.ssao.SSAOFilter ssaoFilter = new com.jme3.post.ssao.SSAOFilter(
+                2.0f,    // sampleRadius - 采样半径
+                1.5f,    // intensity - 强度
+                0.2f,    // scale - 缩放
+                0.1f     // bias - 偏移
+            );
+            fpp.addFilter(ssaoFilter);
+            System.out.println("[后处理] ✓ SSAO已启用 - 强度: 1.5");
+
+            // 2. Bloom（泛光）- 暂时禁用，因为会对透明角色产生白色光晕
+            // TODO: 未来可以考虑只对特定物体（火焰、魔法效果）启用Bloom
+
+            com.jme3.post.filters.BloomFilter bloomFilter =
+                new com.jme3.post.filters.BloomFilter(com.jme3.post.filters.BloomFilter.GlowMode.Objects);
+            bloomFilter.setBloomIntensity(0.5f);
+            bloomFilter.setExposurePower(150);
+            bloomFilter.setBlurScale(0.8f);
+            fpp.addFilter(bloomFilter);
+            System.out.println("[后处理] ✓ Bloom已启用");
+
+            System.out.println("[后处理] ⊗ Bloom已禁用（避免透明角色产生光晕）");
+
+            // 3. 体积光（God Rays）- 阳光穿透效果
+            com.jme3.post.filters.LightScatteringFilter lsFilter =
+                new com.jme3.post.filters.LightScatteringFilter(sun.getDirection().mult(-300));
+            lsFilter.setLightDensity(0.8f);
+            lsFilter.setBlurStart(0.5f);
+            lsFilter.setBlurWidth(0.8f);
+            lsFilter.setLightPosition(sun.getDirection().mult(-300));
+            fpp.addFilter(lsFilter);
+            System.out.println("[后处理] ✓ 体积光已启用 - 密度: 0.8");
+
+            // 将后处理器添加到视口
+            viewPort.addProcessor(fpp);
+            System.out.println("[后处理] ✓ 后处理系统配置成功");
+
+        } catch (Exception e) {
+            System.err.println("[后处理] ✗ 后处理系统配置失败: " + e.getMessage());
+            e.printStackTrace();
+        }
+        */
+    }
+
+    /**
+     * 获取碰撞管理器实例
+     * @return CollisionManager 碰撞检测管理器
+     */
+    public CollisionManager getCollisionManager() {
+        return collisionManager;
+    }
+
+    /**
+     * 获取涂墨网格管理器实例
+     * @return SparseGridManager 涂墨网格管理器
+     */
+    public SparseGridManager getGridManager() {
+        return gridManager;
+    }
+
+    /**
+     * 获取方块注册表实例（依赖注入）
+     * @return BlockRegistry 方块注册表
+     */
+    public BlockRegistry getBlockRegistry() {
+        return blockRegistry;
+    }
+
+    /**
+     * 获取Blender模型注册表实例（依赖注入）
+     * @return BlenderModelRegistry Blender模型注册表
+     */
+    public BlenderModelRegistry getBlenderModelRegistry() {
+        return blenderModelRegistry;
+    }
+
+    /**
+     * 获取Blockbench模型注册表实例（依赖注入）
+     * @return BlockbenchModelRegistry Blockbench模型注册表
+     */
+    public BlockbenchModelRegistry getBlockbenchModelRegistry() {
+        return blockbenchModelRegistry;
+    }
+}

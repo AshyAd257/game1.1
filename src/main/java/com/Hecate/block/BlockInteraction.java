@@ -5,9 +5,8 @@ import com.jme3.math.Ray;
 import com.jme3.math.Vector3f;
 import com.jme3.renderer.Camera;
 import com.jme3.scene.Node;
-import com.Hecate.world.Chunk;
 import com.Hecate.world.ChunkManager;
-import com.Hecate.world.ChunkPosition;
+import com.Hecate.utils.BlockUtils;
 
 /**
  * 方块交互系统 - 处理方块的放置、破坏和查询
@@ -21,6 +20,30 @@ public class BlockInteraction {
     // 交互距离
     private static final float INTERACTION_DISTANCE = 5.0f;
 
+    /**
+     * 构造函数（依赖注入）
+     *
+     * @param camera 相机
+     * @param worldNode 世界节点
+     * @param chunkManager 区块管理器
+     * @param blockRegistry 方块注册表（通过依赖注入传入）
+     */
+    public BlockInteraction(Camera camera, Node worldNode, ChunkManager chunkManager, BlockRegistry blockRegistry) {
+        this.camera = camera;
+        this.worldNode = worldNode;
+        this.chunkManager = chunkManager;
+        this.blockRegistry = blockRegistry;
+    }
+
+    /**
+     * 构造函数（向后兼容）
+     *
+     * @param camera 相机
+     * @param worldNode 世界节点
+     * @param chunkManager 区块管理器
+     * @deprecated 推荐使用 {@link #BlockInteraction(Camera, Node, ChunkManager, BlockRegistry)} 进行依赖注入
+     */
+    @Deprecated
     public BlockInteraction(Camera camera, Node worldNode, ChunkManager chunkManager) {
         this.camera = camera;
         this.worldNode = worldNode;
@@ -65,30 +88,10 @@ public class BlockInteraction {
         }
 
         Vector3f blockPos = hitResult.getBlockPosition();
+        String currentBlock = BlockUtils.getBlockAt(blockPos, chunkManager);
 
-        // 获取区块和方块坐标
-        ChunkPosition chunkPos = worldToChunkPosition(blockPos);
-        Chunk chunk = chunkManager.getChunk(chunkPos);
-
-        if (chunk != null) {
-            // 计算区块内坐标
-            int localX = (int) (blockPos.x - chunkPos.getX() * Chunk.SIZE);
-            int localY = (int) (blockPos.y - chunkPos.getY() * Chunk.SIZE);
-            int localZ = (int) (blockPos.z - chunkPos.getZ() * Chunk.SIZE);
-
-            // 确保坐标在有效范围内
-            if (localX >= 0 && localX < Chunk.SIZE &&
-                    localY >= 0 && localY < Chunk.SIZE &&
-                    localZ >= 0 && localZ < Chunk.SIZE) {
-
-                String currentBlock = chunk.getBlockId(localX, localY, localZ);
-                if (!"air".equals(currentBlock)) {
-                    // 设置为空气方块
-                    chunk.setBlock(localX, localY, localZ, "air");
-                    System.out.println("破坏方块: " + currentBlock + " 在位置 " + blockPos);
-                    return true;
-                }
-            }
+        if (!"air".equals(currentBlock)) {
+            return BlockUtils.setBlockAt(blockPos, "air", chunkManager);
         }
 
         return false;
@@ -105,32 +108,10 @@ public class BlockInteraction {
 
         // 获取放置位置（在被击中面的外侧）
         Vector3f placePos = getBlockPosition(hitResult.getHitPoint(), hitResult.getNormal(), true);
+        String currentBlock = BlockUtils.getBlockAt(placePos, chunkManager);
 
-        // 获取区块和方块坐标
-        ChunkPosition chunkPos = worldToChunkPosition(placePos);
-        Chunk chunk = chunkManager.getChunk(chunkPos);
-
-        if (chunk != null) {
-            // 计算区块内坐标
-            int localX = (int) (placePos.x - chunkPos.getX() * Chunk.SIZE);
-            int localY = (int) (placePos.y - chunkPos.getY() * Chunk.SIZE);
-            int localZ = (int) (placePos.z - chunkPos.getZ() * Chunk.SIZE);
-
-            // 确保坐标在有效范围内
-            if (localX >= 0 && localX < Chunk.SIZE &&
-                    localY >= 0 && localY < Chunk.SIZE &&
-                    localZ >= 0 && localZ < Chunk.SIZE) {
-
-                String currentBlock = chunk.getBlockId(localX, localY, localZ);
-                if ("air".equals(currentBlock)) {
-                    // 检查方块是否存在
-                    if (blockRegistry.getBlock(blockId) != null) {
-                        chunk.setBlock(localX, localY, localZ, blockId);
-                        System.out.println("放置方块: " + blockId + " 在位置 " + placePos);
-                        return true;
-                    }
-                }
-            }
+        if ("air".equals(currentBlock) && blockRegistry.getBlock(blockId) != null) {
+            return BlockUtils.setBlockAt(placePos, blockId, chunkManager);
         }
 
         return false;
@@ -156,16 +137,6 @@ public class BlockInteraction {
                 (float) Math.floor(blockPos.y),
                 (float) Math.floor(blockPos.z)
         );
-    }
-
-    /**
-     * 世界坐标转区块坐标
-     */
-    private ChunkPosition worldToChunkPosition(Vector3f worldPos) {
-        int chunkX = (int) Math.floor(worldPos.x / Chunk.SIZE);
-        int chunkY = (int) Math.floor(worldPos.y / Chunk.SIZE);
-        int chunkZ = (int) Math.floor(worldPos.z / Chunk.SIZE);
-        return new ChunkPosition(chunkX, chunkY, chunkZ);
     }
 
     /**

@@ -1,0 +1,32 @@
+MaterialDef FlameRender {
+    MaterialParameters {
+        // 纹理
+        Texture2D IntensityMap      // 强度场纹理
+        Texture2D ColorGradient     // 颜色条纹图（1D渐变）
+
+        // 颜色映射参数
+        Float SmokeThreshold : 0.25  // 烟雾阈值
+        Float Exposure : 1.2         // 曝光（亮度）
+
+        // 扰动参数
+        Float Time : 0.0            // 时间（用于动画）
+        Float NoiseFreq : 1.2       // 噪声频率
+        Float NoiseSpeed : 0.3      // 噪声速度
+        Float NoiseAmp : 0.01       // 噪声幅度
+
+        // 烟雾颜色
+        Color DarkGray : 0.2 0.2 0.2 1.0
+        Color LightGray : 0.5 0.5 0.5 1.0
+    }
+
+    Technique {
+        VertexShader GLSL150: MatDefs/Flame/FlameRender.vert
+        FragmentShader GLSL150: MatDefs/Flame/FlameRender.frag
+
+        WorldParameters {
+        }
+
+        Defines {
+        }
+    }
+}

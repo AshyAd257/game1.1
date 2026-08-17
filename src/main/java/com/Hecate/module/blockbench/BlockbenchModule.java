@@ -31,7 +31,6 @@ public class BlockbenchModule extends AbstractGameModule {
 
     @Override
     public void onInitialize() {
-        System.out.println("初始化Blockbench模块...");
 
         try {
             // 初始化资源加载器
@@ -43,10 +42,7 @@ public class BlockbenchModule extends AbstractGameModule {
             // 加载默认模型
             assetLoader.loadDefaultModels();
 
-            System.out.println("✅ Blockbench模块初始化完成");
-
         } catch (Exception e) {
-            System.err.println("❌ Blockbench模块初始化失败: " + e.getMessage());
             e.printStackTrace();
         }
     }
@@ -61,7 +57,6 @@ public class BlockbenchModule extends AbstractGameModule {
 
     @Override
     public void onDisable() {
-        System.out.println("禁用Blockbench模块...");
 
         // 清理资源
         if (modelPlacer != null) {

@@ -1,0 +1,312 @@
+========================================
+  Puppet Editor - 兼容性分析
+  Compatibility Analysis
+========================================
+
+🔍 独特功能分析
+========================================
+
+你们的木偶编辑器确实有一些**独创的功能**，这些在标准格式中很难找到：
+
+### 1. 多方向贴图系统 ⭐独创⭐
+
+**你们的实现：**
+```json
+{
+  "directionTextures": {
+    "FRONT": "textures/front.png",
+    "BACK": "textures/back.png",
+    "LEFT": "textures/left.png",
+    "RIGHT": "textures/right.png",
+    "FRONT_LEFT": "textures/front_left.png",
+    ...
+  }
+}
+```
+
+**标准格式的支持：**
+- ❌ DragonBones: 不支持
+- ❌ Spine: 不支持
+- ❌ Blender: 没有直接对应概念
+- ⚠️ Unity/Unreal: 需要自定义脚本
+
+### 2. Billboard模式 ⭐独特实现⭐
+
+**你们的实现：**
+- 每个部件独立控制2D/3D
+- 统一Billboard模式
+- 独立Billboard模式
+- 面始终朝向相机
+
+**标准格式的支持：**
+- ⚠️ Blender: 有Billboard约束，但实现不同
+- ⚠️ Unity: 有Billboard组件，但需要适配
+- ⚠️ Unreal: 有Sprite系统，但概念不同
+
+### 3. 方向相关属性
+
+**你们的实现：**
+```json
+{
+  "directionPriorities": { "FRONT": 10, "BACK": 5 },
+  "directionWidths": { "FRONT": 2.0, "BACK": 1.8 },
+  "directionHeights": { "FRONT": 2.0, "BACK": 1.8 },
+  "directionOffsets": { "FRONT": {...}, "BACK": {...} },
+  "directionRotations": { "FRONT": {...}, "BACK": {...} }
+}
+```
+
+**标准格式的支持：**
+- ❌ 所有标准格式都不支持
+
+========================================
+📊 兼容性矩阵
+========================================
+
+| 功能 | DragonBones | Spine | Blender | Unity | Unreal |
+|------|-------------|-------|---------|-------|--------|
+| 基础骨骼 | ✅ | ✅ | ✅ | ✅ | ✅ |
+| 动画 | ✅ | ✅ | ✅ | ✅ | ✅ |
+| 纹理 | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **多方向贴图** | ❌ | ❌ | ❌ | ⚠️ | ⚠️ |
+| **Billboard** | ❌ | ❌ | ⚠️ | ⚠️ | ⚠️ |
+| **方向属性** | ❌ | ❌ | ❌ | ❌ | ❌ |
+
+✅ = 原生支持
+⚠️ = 需要自定义脚本/插件
+❌ = 不支持
+
+========================================
+🔧 导入Blender需要什么
+========================================
+
+### 方案1：简化导出（丢失特性）
+
+**导出为标准格式：**
+```python
+# 只导出当前方向的贴图
+# 丢失：多方向贴图、方向属性
+# 保留：基础骨骼、动画、单一纹理
+```
+
+**优点：**
+- ✅ 不需要插件
+- ✅ 标准格式兼容
+
+**缺点：**
+- ❌ 丢失独特功能
+- ❌ 无法完整还原
+
+### 方案2：编写Blender插件（完整支持）
+
+**需要实现：**
+
+```python
+# Blender插件伪代码
+class PuppetImporter(bpy.types.Operator):
+    def execute(self, context):
+        # 1. 读取.puppet或.ppkg文件
+        puppet_data = load_puppet_file(filepath)
+
+        # 2. 创建骨架
+        armature = create_armature(puppet_data.bones)
+
+        # 3. 处理多方向贴图
+        for bone in puppet_data.bones:
+            if bone.has_direction_textures:
+                # 创建材质切换系统
+                setup_direction_materials(bone)
+
+                # 创建驱动器根据相机角度切换材质
+                setup_camera_angle_driver(bone)
+
+        # 4. 处理Billboard
+        for bone in puppet_data.bones:
+            if bone.billboard_enabled:
+                # 添加Track To约束
+                add_billboard_constraint(bone)
+
+        # 5. 导入动画
+        import_animations(puppet_data.animations)
+
+        return {'FINISHED'}
+```
+
+**需要实现的功能：**
+
+1. **文件解析**
+   - 读取JSON配置
+   - 解压.ppkg文件
+   - 加载纹理
+
+2. **骨架创建**
+   - 创建Armature
+   - 设置骨骼层级
+   - 应用变换
+
+3. **多方向贴图系统**
+   - 为每个方向创建材质
+   - 根据相机角度自动切换
+   - 使用Geometry Nodes或驱动器
+
+4. **Billboard实现**
+   - 添加Track To约束
+   - 或使用Geometry Nodes
+   - 保持面向相机
+
+5. **方向属性**
+   - 根据方向调整尺寸
+   - 根据方向调整偏移
+   - 根据方向调整优先级（Z-order）
+
+### 方案3：运行时适配（游戏引擎）
+
+**Unity示例：**
+
+```csharp
+public class PuppetRenderer : MonoBehaviour {
+    private PuppetData puppetData;
+    private Camera mainCamera;
+
+    void Update() {
+        // 计算相机方向
+        Vector3 cameraDir = GetCameraDirection();
+        Direction currentDir = GetDirectionFromAngle(cameraDir);
+
+        // 切换贴图
+        foreach (var part in puppetData.parts) {
+            if (part.directionTextures.ContainsKey(currentDir)) {
+                part.spriteRenderer.sprite =
+                    part.directionTextures[currentDir];
+
+                // 应用方向相关属性
+                part.transform.localScale =
+                    part.directionSizes[currentDir];
+                part.sortingOrder =
+                    part.directionPriorities[currentDir];
+            }
+        }
+
+        // Billboard
+        if (part.billboardEnabled) {
+            transform.LookAt(mainCamera.transform);
+        }
+    }
+}
+```
+
+========================================
+💡 推荐方案
+========================================
+
+### 短期方案：简化导出
+
+**实现DragonBones/Spine导出器：**
+- 导出基础骨骼和动画
+- 只使用FRONT方向的贴图
+- 丢失多方向功能
+- 但可以在标准软件中使用
+
+**优点：**
+- 快速实现
+- 广泛兼容
+
+**缺点：**
+- 功能受限
+
+### 中期方案：游戏引擎运行时
+
+**为Unity/Unreal编写运行时加载器：**
+- 直接加载.ppkg文件
+- 运行时实现多方向切换
+- 运行时实现Billboard
+- 完整保留所有功能
+
+**优点：**
+- 完整功能
+- 性能可控
+
+**缺点：**
+- 需要编写加载器
+- 每个引擎都要适配
+
+### 长期方案：Blender插件
+
+**编写完整的Blender导入插件：**
+- 完整支持所有功能
+- 可以在Blender中编辑
+- 可以渲染预览
+
+**优点：**
+- 最完整的支持
+- 可以进一步编辑
+
+**缺点：**
+- 开发工作量大
+- 需要维护
+
+========================================
+🎯 实际建议
+========================================
+
+### 阶段1：现在（立即可用）
+
+**保持现有格式：**
+- .puppet / .ppkg 作为主要格式
+- 在你们自己的引擎/游戏中使用
+- 完整保留所有功能
+
+### 阶段2：基础兼容（1-2周）
+
+**实现简化导出：**
+```java
+// 添加SimplifiedExporter
+public class SimplifiedExporter {
+    // 只导出FRONT方向
+    // 移除Billboard信息
+    // 导出为标准JSON
+}
+```
+
+### 阶段3：游戏引擎支持（1-2月）
+
+**编写Unity加载器：**
+```csharp
+// PuppetLoader.cs
+// 完整支持所有功能
+```
+
+### 阶段4：专业工具支持（3-6月）
+
+**编写Blender插件：**
+```python
+# puppet_importer.py
+# 完整导入所有功能
+```
+
+========================================
+📝 结论
+========================================
+
+**你说得对！** 你们的功能确实很独特，标准格式无法完全支持。
+
+**需要做的：**
+
+1. **短期：** 保持现有格式，在自己的项目中使用
+2. **中期：** 为目标平台编写加载器/插件
+3. **长期：** 推广格式，让更多工具支持
+
+**好消息：**
+- ✅ 你们的格式设计得很好（JSON + ZIP）
+- ✅ 易于解析和扩展
+- ✅ 可以编写插件支持
+
+**建议：**
+- 📝 编写详细的格式文档
+- 🔧 提供示例加载器代码
+- 🌐 开源格式规范
+- 🤝 与社区合作开发插件
+
+========================================
+最后更新：2026-02-06
+========================================

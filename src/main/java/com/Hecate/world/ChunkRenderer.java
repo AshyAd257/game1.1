@@ -8,6 +8,8 @@ import com.jme3.asset.AssetManager;
 import com.jme3.material.Material;
 import com.jme3.math.ColorRGBA;
 import com.jme3.math.Vector3f;
+import java.util.HashMap;
+import java.util.Map;
 import com.jme3.scene.Geometry;
 import com.jme3.scene.Mesh;
 import com.jme3.scene.Node;
@@ -27,30 +29,24 @@ public class ChunkRenderer {
     public ChunkRenderer(AssetManager assetManager, BlockTextureManager textureManager) {
         this.assetManager = assetManager;
         this.textureManager = textureManager;
-        System.out.println("✅ ChunkRenderer 创建完成");
+
     }
 
     /**
      * 渲染区块为3D网格
+     * 【诊断模式】为每个面创建独立几何体以测试阴影
      */
     public Node renderChunk(Chunk chunk) {
-        if (!chunk.isDirty() && chunk.getChunkNode() != null) {
-            return chunk.getChunkNode();
-        }
 
-        System.out.println("🎨 渲染区块: " + chunk.getPosition());
+        // 【临时禁用缓存】强制重新渲染以测试新材质
+        // if (!chunk.isDirty() && chunk.getChunkNode() != null) {
+        //     return chunk.getChunkNode();
+        // }
 
         Node chunkNode = new Node("Chunk_" + chunk.getPosition());
         Vector3f chunkWorldPos = chunk.getWorldPosition();
 
-        // 简化：只处理非空气方块
-        List<Float> vertices = new ArrayList<>();
-        List<Float> normals = new ArrayList<>();
-        List<Float> texCoords = new ArrayList<>();
-        List<Integer> indices = new ArrayList<>();
-
-        int blockCount = 0;
-
+        // 【诊断模式】为每个面创建独立的几何体
         // 遍历区块中的所有方块
         for (int x = 0; x < Chunk.SIZE; x++) {
             for (int y = 0; y < Chunk.SIZE; y++) {
@@ -59,17 +55,37 @@ public class ChunkRenderer {
 
                     // 只渲染非空气方块
                     if (!blockId.equals("air")) {
-                        blockCount++;
-
                         // 检查每个面是否需要渲染
                         for (BlockFace face : BlockFace.values()) {
                             if (shouldRenderFace(chunk, x, y, z, face)) {
+                                // 为每个面创建独立的MeshData
+                                MeshData meshData = new MeshData();
+
                                 addFaceToMesh(
                                         x + chunkWorldPos.x,
                                         y + chunkWorldPos.y,
                                         z + chunkWorldPos.z,
-                                        face, vertices, normals, texCoords, indices
+                                        face,
+                                        meshData.vertices,
+                                        meshData.normals,
+                                        meshData.texCoords,
+                                        meshData.indices
                                 );
+
+                                // 为这个面创建独立的几何体
+                                Geometry faceGeom = createBlockGeometry(
+                                        meshData.vertices,
+                                        meshData.normals,
+                                        meshData.texCoords,
+                                        meshData.indices
+                                );
+
+                                if (faceGeom != null) {
+                                    Material mat = textureManager.createBlockMaterial(blockId);
+                                    faceGeom.setMaterial(mat);
+                                    faceGeom.setName("Face_" + blockId + "_" + x + "_" + y + "_" + z + "_" + face);
+                                    chunkNode.attachChild(faceGeom);
+                                }
                             }
                         }
                     }
@@ -77,26 +93,18 @@ public class ChunkRenderer {
             }
         }
 
-        System.out.println("🔍 区块中方块总数: " + blockCount);
-
-        // 如果有面需要渲染，创建网格
-        if (!vertices.isEmpty()) {
-            Geometry blockGeom = createBlockGeometry(vertices, normals, texCoords, indices);
-            if (blockGeom != null) {
-                // 使用纹理材质
-                Material mat = textureManager.createBlockMaterial("dirt");
-                blockGeom.setMaterial(mat);
-                chunkNode.attachChild(blockGeom);
-                System.out.println("✅ 添加方块几何体 (面数: " + indices.size()/6 + ")");
-            }
-        }
-
         chunk.setChunkNode(chunkNode);
         chunk.setClean();
-        System.out.println("✅ 区块渲染完成");
         return chunkNode;
     }
 
+    // 添加内部类来存储网格数据
+    private static class MeshData {
+        List<Float> vertices = new ArrayList<>();
+        List<Float> normals = new ArrayList<>();
+        List<Float> texCoords = new ArrayList<>();
+        List<Integer> indices = new ArrayList<>();
+    }
 
     /**
      * 判断某个面是否需要渲染
@@ -138,11 +146,11 @@ public class ChunkRenderer {
         // 根据面的方向添加顶点
         switch (face) {
             case TOP:
-                // 顶面
-                addVertex(vertices, x, y + 1, z);
-                addVertex(vertices, x + 1, y + 1, z);
-                addVertex(vertices, x + 1, y + 1, z + 1);
-                addVertex(vertices, x, y + 1, z + 1);
+                // 顶面 - 修正为逆时针顶点顺序（从上往下看）
+                addVertex(vertices, x, y + 1, z);           // 0: back-left
+                addVertex(vertices, x, y + 1, z + 1);       // 1: front-left
+                addVertex(vertices, x + 1, y + 1, z + 1);   // 2: front-right
+                addVertex(vertices, x + 1, y + 1, z);       // 3: back-right
                 addNormal(normals, 0, 1, 0);
                 break;
 
@@ -246,6 +254,9 @@ public class ChunkRenderer {
 
         Mesh mesh = new Mesh();
 
+        // 【关键】显式设置网格模式为Triangles
+        mesh.setMode(Mesh.Mode.Triangles);
+
         // 转换为数组
         float[] vertexArray = listToFloatArray(vertices);
         float[] normalArray = listToFloatArray(normals);
@@ -258,9 +269,21 @@ public class ChunkRenderer {
         mesh.setBuffer(VertexBuffer.Type.TexCoord, 2, BufferUtils.createFloatBuffer(texCoordArray));
         mesh.setBuffer(VertexBuffer.Type.Index, 3, BufferUtils.createIntBuffer(indexArray));
 
+        // 【关键修复】生成切线数据（阴影渲染需要）
+        // TangentBinormalGenerator会自动计算切线和副切线
+        com.jme3.util.TangentBinormalGenerator.generate(mesh);
+
         mesh.updateBound();
 
-        return new Geometry("ChunkMesh", mesh);
+        Geometry geometry = new Geometry("ChunkMesh", mesh);
+
+        // 启用阴影投射和接收（让DirectionalLightShadowRenderer能够在地面上渲染阴影）
+        geometry.setShadowMode(com.jme3.renderer.queue.RenderQueue.ShadowMode.CastAndReceive);
+
+        // 显式设置为Opaque渲染队列（确保正确接收阴影）
+        geometry.setQueueBucket(com.jme3.renderer.queue.RenderQueue.Bucket.Opaque);
+
+        return geometry;
     }
 
     private float[] listToFloatArray(List<Float> list) {

@@ -1,0 +1,86 @@
+一、创建的新工具类
+BlockUtils.java (src/main/java/com/Hecate/utils/BlockUtils.java)
+
+提取了重复的世界坐标转区块坐标方法
+提取了获取和设置方块的通用逻辑
+统一了坐标验证逻辑
+LogUtils.java (src/main/java/com/Hecate/utils/LogUtils.java)
+
+创建了统一的日志管理工具
+提供了 debug、info、warning、error 等日志级别
+可通过配置控制日志输出
+二、Block 模块清理
+
+Block.java：
+
+删除了所有 emoji 符号（🆕、❌、🎨 等）
+删除了所有 System.out.println 语句
+简化了 applyTextureToSpatial 方法，消除了内部重复逻辑
+
+BlockBreaking.java 和 BlockInteraction.java：
+
+删除了重复的 worldToChunkPosition 方法
+删除了重复的 getBlockAt 和 setBlockAt 方法
+使用 BlockUtils 工具类替代重复代码
+删除了所有 System.out.println 语句
+其他 Block 相关文件：
+
+BlockRegistry.java：删除了 emoji 和 System.out.println
+BlockTexture.java：删除了 emoji 和 System.out.println
+CorpseBlock.java：删除了 emoji
+CorpseBlockManager.java：删除了 emoji
+ProceduralBlockGenerator.java：删除了 emoji
+TextureManager.java：删除了 emoji 和 System.out.println
+三、Player 模块清理
+
+PlayerController.java：
+
+删除了重复的 startScreenShake 方法（原有两个版本）
+删除了重复的按键映射（TestBlood 和 ForceShowBlood 被注册了两次）
+删除了重复的屏幕震动相关变量声明
+删除了所有 emoji 符号
+将所有 System.out.println 替换为 LogUtils 调用
+
+PlayerAnimator.java：
+
+删除了所有 emoji 符号
+删除了所有 System.out.println 语句
+保留了内部的 AnimationState 枚举（与独立文件中的不同）
+其他 Player 相关文件：
+
+AnimationState.java：删除了 emoji
+CameraDirectionDetector.java：删除了 emoji 和 System.out.println
+DirectionalSpriteRenderer.java：删除了 emoji，使用 LogUtils 替代 System.err.println
+Player2DSpriteController.java：删除了 emoji，使用 LogUtils
+PlayerHealth.java：删除了 emoji 和 System.out.println
+PlayerModel.java：删除了 emoji 和 System.out.println
+PlayerSpriteManager.java：删除了 emoji 和 System.out.println
+SpriteAnimation.java：删除了 emoji
+SpriteAnimationSystem.java：删除了 emoji，保留了 Logger
+SpriteScaleManager.java：删除了 emoji 和 System.out.println
+SpriteSet.java：删除了 emoji
+
+Main.java：
+删除了文件末尾重复的 connectSystems() 调用
+删除了所有 emoji 符号
+删除了所有 System.out.println 语句
+四、代码优化总结
+消除代码重复
+
+提取了 6 个重复方法到工具类
+删除了 2 个重复的方法定义
+清理了 4 处重复的按键映射
+统一日志管理
+
+替换了约 50+ 处 System.out.println
+创建了集中的日志控制机制
+保留了必要的错误堆栈打印（e.printStackTrace()）
+代码规范化
+
+删除了所有 emoji 符号（约 100+ 处）
+保持了代码功能的完整性
+提高了代码的可维护性
+五、影响范围
+修改文件数量：约 25 个
+删除代码行数：约 200 行重复代码
+新增工具类：2 个

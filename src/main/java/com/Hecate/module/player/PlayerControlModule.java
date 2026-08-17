@@ -14,6 +14,7 @@ import com.Hecate.block.BlockInteraction;
 import com.Hecate.block.BlockBreaking;
 import com.Hecate.world.ChunkManager;
 import com.Hecate.player.PlayerController;
+import com.Hecate.utils.LogUtils;
 
 /**
  * 提供玩家移动和控制功能
@@ -54,7 +55,6 @@ public class PlayerControlModule extends AbstractGameModule implements ActionLis
 
     @Override
     public void onInitialize() {
-        System.out.println("玩家控制模块: 初始化中");
 
         // 初始化玩家控制器
         playerController = new PlayerController(app);
@@ -62,7 +62,6 @@ public class PlayerControlModule extends AbstractGameModule implements ActionLis
         // 设置方块交互输入
         setupBlockInteractionInputs();
 
-        System.out.println("玩家控制模块: 初始化完成");
     }
 
     @Override
@@ -73,17 +72,15 @@ public class PlayerControlModule extends AbstractGameModule implements ActionLis
             Node worldSpatial = (Node) app.getRootNode().getChild("WorldNode");
             if (worldSpatial != null) {
                 worldNode = worldSpatial;
-                System.out.println("成功获取世界节点");
             } else {
-                System.err.println("未找到世界节点");
+                LogUtils.error(getClass(), "未找到世界节点");
                 return;
             }
 
             // 初始化方块交互系统
             initializeBlockInteraction();
         } catch (Exception e) {
-            System.err.println("初始化方块交互系统失败: " + e.getMessage());
-            e.printStackTrace();
+            LogUtils.error(getClass(), "初始化方块交互系统失败", e);
         }
     }
 
@@ -94,9 +91,9 @@ public class PlayerControlModule extends AbstractGameModule implements ActionLis
         if (chunkManager != null && worldNode != null) {
             blockInteraction = new BlockInteraction(app.getCamera(), worldNode, chunkManager);
             blockBreaking = new BlockBreaking(chunkManager);
-            System.out.println("方块交互系统初始化完成");
+
         } else {
-            System.out.println("等待ChunkManager和WorldNode初始化...");
+
         }
     }
 
@@ -105,7 +102,6 @@ public class PlayerControlModule extends AbstractGameModule implements ActionLis
      */
     public void setChunkManager(ChunkManager chunkManager) {
         this.chunkManager = chunkManager;
-        System.out.println("PlayerControlModule: 接收到ChunkManager");
 
         // 如果worldNode也已经准备好，则初始化方块交互系统
         if (worldNode != null) {
@@ -118,11 +114,26 @@ public class PlayerControlModule extends AbstractGameModule implements ActionLis
      */
     public void setWorldNode(Node worldNode) {
         this.worldNode = worldNode;
-        System.out.println("PlayerControlModule: 接收到WorldNode");
+
+        // 传递给 PuppetPlayerController（用于阴影射线检测）
+        if (playerController != null) {
+            playerController.setWorldNode(worldNode);
+        }
 
         // 如果chunkManager也已经准备好，则初始化方块交互系统
         if (chunkManager != null) {
             initializeBlockInteraction();
+        }
+    }
+
+    /**
+     * 设置网格管理器（由Main调用，用于墨水系统速度倍率）
+     */
+    public void setGridManager(com.Hecate.ink.SparseGridManager gridManager) {
+        if (playerController != null) {
+            playerController.setGridManager(gridManager);
+            // 默认设置为B队（1=暗属性）
+            playerController.setPlayerTeam(1);
         }
     }
 
@@ -161,7 +172,7 @@ public class PlayerControlModule extends AbstractGameModule implements ActionLis
 
     @Override
     public void onDisable() {
-        System.out.println("玩家控制模块: 正在禁用");
+
         // 清除输入映射
         app.getInputManager().deleteMapping("BreakBlock");
         app.getInputManager().deleteMapping("PlaceBlock");
@@ -192,6 +203,13 @@ public class PlayerControlModule extends AbstractGameModule implements ActionLis
                 break;
 
             case "PlaceBlock":
+                // 右键用于恢复，不再用于放置方块
+                if (playerController != null) {
+                    playerController.setRightButtonForRecovery(isPressed);
+                }
+                break;
+
+            case "PlaceBlockOld":
                 if (isPressed && blockInteraction != null) {
                     blockInteraction.placeBlock(selectedBlockType);
                 }
@@ -201,25 +219,25 @@ public class PlayerControlModule extends AbstractGameModule implements ActionLis
             case "SelectStone":
                 if (isPressed) {
                     selectedBlockType = "stone";
-                    System.out.println("选择方块: 石头");
+
                 }
                 break;
             case "SelectDirt":
                 if (isPressed) {
                     selectedBlockType = "dirt";
-                    System.out.println("选择方块: 泥土");
+
                 }
                 break;
             case "SelectGrass":
                 if (isPressed) {
                     selectedBlockType = "grass";
-                    System.out.println("选择方块: 草方块");
+
                 }
                 break;
             case "SelectGlass":
                 if (isPressed) {
                     selectedBlockType = "glass";
-                    System.out.println("选择方块: 玻璃");
+
                 }
                 break;
         }

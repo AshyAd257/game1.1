@@ -1,5 +1,6 @@
 package com.Hecate.world;
 
+import com.Hecate.utils.BlockUtils;
 import com.jme3.bounding.BoundingBox;
 import com.jme3.math.Vector3f;
 import com.jme3.renderer.Camera;
@@ -37,7 +38,7 @@ public class ChunkVisibilityManager {
     public void update() {
         // 获取相机当前位置
         Vector3f cameraPos = camera.getLocation();
-        ChunkPosition currentCameraChunkPos = worldToChunkPosition(cameraPos);
+        ChunkPosition currentCameraChunkPos = BlockUtils.worldToChunkPosition(cameraPos);
 
         // 如果相机没有移动到新的区块，不需要更新
         if (currentCameraChunkPos.equals(lastCameraChunkPos)) {
@@ -145,7 +146,7 @@ public class ChunkVisibilityManager {
         int localZ = ((int) Math.floor(worldPosition.z)) % Chunk.SIZE;
 
         // 如果方块在区块边界上，可能需要更新相邻区块
-        ChunkPosition chunkPos = worldToChunkPosition(worldPosition);
+        ChunkPosition chunkPos = BlockUtils.worldToChunkPosition(worldPosition);
 
         // 检查是否在区块边界
         if (localX == 0 || localX == Chunk.SIZE - 1 ||
@@ -192,16 +193,6 @@ public class ChunkVisibilityManager {
         if (chunk != null) {
             chunk.setDirty();
         }
-    }
-
-    /**
-     * 世界坐标转区块坐标
-     */
-    private ChunkPosition worldToChunkPosition(Vector3f worldPos) {
-        int chunkX = (int) Math.floor(worldPos.x / Chunk.SIZE);
-        int chunkY = (int) Math.floor(worldPos.y / Chunk.SIZE);
-        int chunkZ = (int) Math.floor(worldPos.z / Chunk.SIZE);
-        return new ChunkPosition(chunkX, chunkY, chunkZ);
     }
 
     // Getter/Setter

@@ -1,0 +1,56 @@
+
+        // ==================== Live2D风格相机跟随偏移 ====================
+        // 根据相机旋转角度和部件的自由度，计算额外的位置偏移
+        // 这会让某些部件（如头发、饰品）在相机旋转时产生更大的移动幅度
+
+        float cameraFollowFreedomX = bone.getCameraFollowFreedomX();
+        float cameraFollowFreedomY = bone.getCameraFollowFreedomY();
+
+        // 只有当自由度大于0时才计算相机跟随偏移
+        if ((cameraFollowFreedomX > 0.001f || cameraFollowFreedomY > 0.001f) && parentRenderer != null) {
+            // 获取相机位置和木偶中心位置
+            Vector3f camPos = app.getCamera().getLocation();
+            Vector3f puppetCenter = parentRenderer.getPuppetNode().getWorldTranslation();
+
+            // 计算从木偶中心指向相机的方向向量
+            Vector3f toCam = camPos.subtract(puppetCenter);
+            float distance = toCam.length();
+
+            if (distance > 0.001f) {
+                toCam.normalizeLocal();
+
+                // 计算相机在水平面上的投影方向（用于水平偏移）
+                Vector3f camHorizontal = new Vector3f(toCam.x, 0, toCam.z);
+                float horizontalDist = camHorizontal.length();
+
+                if (horizontalDist > 0.001f) {
+                    camHorizontal.normalizeLocal();
+
+                    // 计算水平偏移：相机越偏向侧面，偏移越大
+                    // 使用X分量作为左右偏移的指标（-1到1）
+                    float horizontalFactor = camHorizontal.x;
+
+                    // 计算水平偏移向量（沿着世界X轴）
+                    Vector3f horizontalOffset = new Vector3f(
+                        horizontalFactor * cameraFollowFreedomX * 2.0f,  // 乘以2.0f增加偏移幅度
+                        0,
+                        0
+                    );
+
+                    finalPos.addLocal(horizontalOffset);
+                }
+
+                // 计算垂直偏移：相机越偏向上下，偏移越大
+                // 使用Y分量作为上下偏移的指标（-1到1）
+                float verticalFactor = toCam.y;
+
+                // 计算垂直偏移向量（沿着世界Y轴）
+                Vector3f verticalOffset = new Vector3f(
+                    0,
+                    verticalFactor * cameraFollowFreedomY * 2.0f,  // 乘以2.0f增加偏移幅度
+                    0
+                );
+
+                finalPos.addLocal(verticalOffset);
+            }
+        }

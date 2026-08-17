@@ -1,0 +1,370 @@
+package com.Hecate.core;
+
+import com.jme3.app.SimpleApplication;
+
+// 注册表系统
+import com.Hecate.block.BlockRegistry;
+import com.Hecate.blender.BlenderModelRegistry;
+import com.Hecate.blockbench.BlockbenchModelRegistry;
+
+// 核心系统
+import com.Hecate.physics.CollisionManager;
+import com.Hecate.pointer.PointerSystem;
+import com.Hecate.flame.SimpleFlameRenderer;
+import com.Hecate.ink.SparseGridManager;
+import com.Hecate.ink.GridDebugRenderer;
+
+// 模块系统
+import com.Hecate.module.world.WorldModule;
+import com.Hecate.module.player.PlayerControlModule;
+
+/**
+ * 应用程序上下文 - 中央依赖注入容器
+ *
+ * <p>负责创建、管理和提供所有核心系统实例。
+ * 这是一个轻量级的依赖注入容器，避免了Main.java职责过重的问题。
+ *
+ * <h3>设计原则</h3>
+ * <ul>
+ *   <li>单一职责：仅负责依赖管理，不包含业务逻辑</li>
+ *   <li>依赖注入：所有组件通过构造函数创建</li>
+ *   <li>延迟初始化：部分系统延迟创建（如PointerSystem需要PlayerController）</li>
+ *   <li>清晰的生命周期：提供cleanup方法统一清理资源</li>
+ * </ul>
+ *
+ * <h3>使用示例</h3>
+ * <pre>{@code
+ * ApplicationContext context = new ApplicationContext(app);
+ * context.initializeRegistries();
+ * context.initializeCoreSystems();
+ *
+ * BlockRegistry blockRegistry = context.getBlockRegistry();
+ * WorldModule worldModule = context.getWorldModule();
+ * }</pre>
+ *
+ * @see SystemInitializer
+ */
+public class ApplicationContext {
+
+    private final SimpleApplication app;
+
+    // ==================== 注册表系统 ====================
+    private BlockRegistry blockRegistry;
+    private BlenderModelRegistry blenderModelRegistry;
+    private BlockbenchModelRegistry blockbenchModelRegistry;
+
+    // ==================== 核心系统 ====================
+    private CollisionManager collisionManager;
+    private PointerSystem pointerSystem;
+    private SimpleFlameRenderer flameRenderer;
+    private SparseGridManager gridManager;
+    private GridDebugRenderer gridDebugRenderer; // 旧渲染器（已弃用）
+    private com.Hecate.ink.RegionMeshRenderer regionMeshRenderer; // 新渲染器（基于动态纹理）
+    private com.Hecate.ink.DecalInkRenderer decalInkRenderer; // Decal渲染器（自适应地形）
+
+    // 渲染器切换标志（true=Decal, false=RegionMesh）
+    private static final boolean USE_DECAL_RENDERER = false;
+
+    // ==================== 模块系统 ====================
+    private WorldModule worldModule;
+    private PlayerControlModule playerControlModule;
+
+    // ==================== 光照系统 ====================
+    private LightingSystem lightingSystem;
+
+    /**
+     * 构造函数
+     *
+     * @param app SimpleApplication实例
+     */
+    public ApplicationContext(SimpleApplication app) {
+        this.app = app;
+    }
+
+    // ==================== 初始化方法 ====================
+
+    /**
+     * 初始化所有注册表
+     * <p>必须最先调用，因为模块依赖注册表实例
+     */
+    public void initializeRegistries() {
+        blockRegistry = new BlockRegistry();
+        blenderModelRegistry = new BlenderModelRegistry();
+        blockbenchModelRegistry = new BlockbenchModelRegistry();
+    }
+
+    /**
+     * 初始化碰撞检测系统
+     */
+    public void initializeCollisionSystem() {
+        collisionManager = new CollisionManager();
+    }
+
+    /**
+     * 初始化光照系统
+     */
+    public void initializeLightingSystem() {
+        lightingSystem = new LightingSystem(app);
+        lightingSystem.setupLighting();
+    }
+
+    /**
+     * 初始化游戏模块
+     * <p>依赖：注册表必须已初始化
+     */
+    public void initializeModules() {
+        // 初始化世界模块（通过构造函数注入 BlockRegistry）
+        worldModule = new WorldModule(app, blockRegistry);
+        worldModule.onInitialize();
+
+        // 初始化玩家控制模块
+        playerControlModule = new PlayerControlModule(app);
+        playerControlModule.onInitialize();
+
+        // 后初始化阶段
+        worldModule.onPostInitialize();
+        playerControlModule.onPostInitialize();
+    }
+
+    /**
+     * 初始化涂墨网格系统
+     * <p>依赖：碰撞管理器
+     */
+    public void initializeGridSystem() {
+        // 创建阵营注册表
+        com.Hecate.ink.FactionRegistry factionRegistry = new com.Hecate.ink.FactionRegistry();
+
+        // 创建网格管理器
+        gridManager = new SparseGridManager(factionRegistry);
+
+        // 设置墨水参数
+        gridManager.setInkDecayTime(60.0f);    // 墨水60秒后消退
+        gridManager.setIgniteDecayTime(10.0f); // 点燃10秒后降级为涂墨
+
+        // 创建涂墨渲染器（支持切换）
+        if (USE_DECAL_RENDERER) {
+            // 使用Decal渲染器（自适应地形，完美贴合斜面）
+            decalInkRenderer = new com.Hecate.ink.DecalInkRenderer(app.getAssetManager(), app.getRootNode(), gridManager);
+            decalInkRenderer.setWorldNode(worldModule.getWorldNode()); // 设置世界节点用于射线检测
+            decalInkRenderer.setEnabled(true);
+
+            // ColorResolver调试输入
+            com.Hecate.ink.ColorResolverDebugInput colorDebugInput =
+                new com.Hecate.ink.ColorResolverDebugInput(decalInkRenderer);
+            colorDebugInput.registerInputs(app);
+        } else {
+            // 使用原有的RegionMesh渲染器（基于纹理）
+            regionMeshRenderer = new com.Hecate.ink.RegionMeshRenderer(app, gridManager);
+            regionMeshRenderer.setEnabled(true);
+
+            // 设置碰撞管理器（用于获取地形高度）
+            if (collisionManager != null) {
+                regionMeshRenderer.setCollisionManager(collisionManager);
+            }
+
+            // ColorResolver调试输入
+            com.Hecate.ink.ColorResolverDebugInput colorDebugInput =
+                new com.Hecate.ink.ColorResolverDebugInput(regionMeshRenderer);
+            colorDebugInput.registerInputs(app);
+        }
+
+        // 生成测试场景：在原点周围铺满光属性墨水
+        com.Hecate.ink.ColorResolverTestScenario.fillLightInkAround(
+            gridManager,
+            new com.jme3.math.Vector3f(0, 0, 0),
+            50.0f  // 50米范围测试
+        );
+    }
+
+    /**
+     * 初始化火焰系统
+     * <p>依赖：碰撞管理器、网格管理器、玩家控制模块
+     */
+    public void initializeFlameSystem() {
+        // 设置依赖到火焰粒子系统
+        if (collisionManager != null) {
+            com.Hecate.flame.FlameParticle.setCollisionManager(collisionManager);
+        }
+
+        if (gridManager != null) {
+            com.Hecate.flame.FlameParticle.setGridManager(gridManager);
+        }
+
+        // 创建火焰渲染器
+        flameRenderer = new SimpleFlameRenderer(app);
+
+        // 设置玩家阵营到火焰粒子系统（用于涂墨）
+        if (playerControlModule != null && playerControlModule.getPlayerController() != null) {
+            int playerFactionId = playerControlModule.getPlayerController().getPlayerFactionId();
+            flameRenderer.getParticleSystem().setFactionId(playerFactionId);
+        }
+
+        // 【整合火焰武器到PlayerController】
+        if (playerControlModule != null && playerControlModule.getPlayerController() != null) {
+            playerControlModule.getPlayerController().setFlameRenderer(flameRenderer);
+
+            // 设置worldNode用于射线检测
+            if (worldModule != null && worldModule.getWorldNode() != null) {
+                com.Hecate.weapon.FlameWeapon flameWeapon =
+                    (com.Hecate.weapon.FlameWeapon) playerControlModule.getPlayerController().getCurrentWeapon();
+                if (flameWeapon != null) {
+                    flameWeapon.setWorldNode(worldModule.getWorldNode());
+                }
+            }
+        }
+    }
+
+    /**
+     * 初始化指针系统
+     * <p>依赖：玩家控制模块（必须在PlayerController初始化后）
+     */
+    public void initializePointerSystem() {
+        if (playerControlModule != null && playerControlModule.getPlayerController() != null) {
+            pointerSystem = new PointerSystem(app, playerControlModule.getPlayerController());
+        }
+    }
+
+    /**
+     * 连接各个系统的依赖关系
+     * <p>必须在所有系统初始化完成后调用
+     */
+    public void connectSystems() {
+        // 将ChunkManager连接到碰撞检测系统
+        if (worldModule != null && worldModule.getChunkManager() != null) {
+            collisionManager.setChunkManager(worldModule.getChunkManager());
+        }
+
+        // 连接玩家控制模块到世界模块
+        if (playerControlModule != null && worldModule != null) {
+            playerControlModule.setChunkManager(worldModule.getChunkManager());
+            playerControlModule.setWorldNode(worldModule.getWorldNode());
+
+            // 将碰撞管理器注入到PlayerControlModule的PlayerController
+            if (playerControlModule.getPlayerController() != null) {
+                playerControlModule.getPlayerController().setCollisionManager(collisionManager);
+
+                // 将PlayerController连接到WorldModule（用于方块放置等交互）
+                worldModule.setPlayerController(playerControlModule.getPlayerController());
+            }
+        }
+
+        // 【墨水系统】连接网格管理器到玩家控制模块（用于速度倍率）
+        if (playerControlModule != null && gridManager != null) {
+            playerControlModule.setGridManager(gridManager);
+        }
+    }
+
+    /**
+     * 更新所有系统（在游戏循环中调用）
+     *
+     * @param tpf 每帧时间（秒）
+     */
+    public void update(float tpf) {
+        // 更新模块
+        if (worldModule != null) {
+            worldModule.onUpdate(tpf);
+        }
+
+        if (playerControlModule != null) {
+            playerControlModule.onUpdate(tpf);
+        }
+
+        // 更新指针系统
+        if (pointerSystem != null) {
+            pointerSystem.update(tpf);
+        }
+
+        // 更新火焰系统
+        if (flameRenderer != null) {
+            flameRenderer.update(tpf);
+        }
+
+        // 更新涂墨网格系统
+        if (gridManager != null) {
+            gridManager.update(tpf);
+        }
+
+        // 更新涂墨渲染器
+        if (USE_DECAL_RENDERER && decalInkRenderer != null) {
+            decalInkRenderer.update();
+        } else if (regionMeshRenderer != null && regionMeshRenderer.isEnabled()) {
+            regionMeshRenderer.update();
+        }
+    }
+
+    /**
+     * 清理所有系统资源
+     */
+    public void cleanup() {
+        // 清理火焰系统
+        if (flameRenderer != null) {
+            flameRenderer.cleanup();
+        }
+
+        // 清理涂墨渲染系统
+        if (USE_DECAL_RENDERER && decalInkRenderer != null) {
+            decalInkRenderer.cleanup();
+        } else if (regionMeshRenderer != null) {
+            regionMeshRenderer.cleanup();
+        }
+
+        if (gridManager != null) {
+            gridManager.clear();
+        }
+
+        // 清理所有模块
+        if (playerControlModule != null) {
+            playerControlModule.onDisable();
+        }
+
+        if (worldModule != null) {
+            worldModule.onDisable();
+        }
+    }
+
+    // ==================== Getter方法 ====================
+
+    public BlockRegistry getBlockRegistry() {
+        return blockRegistry;
+    }
+
+    public BlenderModelRegistry getBlenderModelRegistry() {
+        return blenderModelRegistry;
+    }
+
+    public BlockbenchModelRegistry getBlockbenchModelRegistry() {
+        return blockbenchModelRegistry;
+    }
+
+    public CollisionManager getCollisionManager() {
+        return collisionManager;
+    }
+
+    public PointerSystem getPointerSystem() {
+        return pointerSystem;
+    }
+
+    public SimpleFlameRenderer getFlameRenderer() {
+        return flameRenderer;
+    }
+
+    public SparseGridManager getGridManager() {
+        return gridManager;
+    }
+
+    public GridDebugRenderer getGridDebugRenderer() {
+        return gridDebugRenderer;
+    }
+
+    public WorldModule getWorldModule() {
+        return worldModule;
+    }
+
+    public PlayerControlModule getPlayerControlModule() {
+        return playerControlModule;
+    }
+
+    public LightingSystem getLightingSystem() {
+        return lightingSystem;
+    }
+}

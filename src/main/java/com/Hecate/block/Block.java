@@ -16,7 +16,7 @@ public class Block {
     private final float hardness;
     private final BlockTexture texture;
     private final String modelPath;
-    private final boolean isTransparent; // 新增：透明度属性
+    private final boolean isTransparent;
 
     /**
      * 创建一个新的方块类型（完整版本）
@@ -39,7 +39,7 @@ public class Block {
     }
 
     /**
-     * 🆕 新构造器：简化版本，不需要 BlockTexture 对象
+     * 新构造器：简化版本，不需要 BlockTexture 对象
      * 纹理由 BlockTextureManager 管理
      */
     public Block(String id, String name, boolean solid, float hardness, boolean isTransparent) {
@@ -47,14 +47,13 @@ public class Block {
         this.name = name;
         this.solid = solid;
         this.hardness = hardness;
-        this.texture = null; // 纹理由外部管理
+        this.texture = null;
         this.modelPath = null;
         this.isTransparent = isTransparent;
-        System.out.println("🧊 创建方块: " + id + " (透明:" + isTransparent + ")");
     }
 
     /**
-     * 🆕 带自定义模型的构造器
+     * 带自定义模型的构造器
      */
     public Block(String id, String name, boolean solid, float hardness, boolean isTransparent, String modelPath) {
         this.id = id;
@@ -64,7 +63,6 @@ public class Block {
         this.texture = null;
         this.modelPath = modelPath;
         this.isTransparent = isTransparent;
-        System.out.println("🧊 创建自定义模型方块: " + id + " -> " + modelPath);
     }
 
     // Getter 方法
@@ -119,10 +117,7 @@ public class Block {
                 if (texture != null) {
                     applyTextureToSpatial(blockSpatial, assetManager);
                 }
-
-                System.out.println("✅ 加载自定义模型: " + id + " -> " + modelPath);
             } catch (Exception e) {
-                System.err.println("❌ 加载自定义模型失败: " + modelPath + ", 使用默认立方体");
                 e.printStackTrace();
                 blockSpatial = createDefaultCube(position, assetManager);
             }
@@ -161,31 +156,14 @@ public class Block {
      * 将纹理应用到空间对象
      */
     private void applyTextureToSpatial(Spatial spatial, AssetManager assetManager) {
-        if (spatial instanceof Geometry) {
-            Geometry geom = (Geometry) spatial;
-            Material material = new Material(assetManager, "Common/MatDefs/Light/Lighting.j3md");
-
-            if (texture != null) {
-                // 这里需要更新为使用新的纹理系统
-                System.out.println("⚠️ 使用了旧的纹理应用方法，建议使用 BlockTextureManager");
+        // 递归遍历所有几何体并应用材质
+        spatial.depthFirstTraversal(s -> {
+            if (s instanceof Geometry) {
+                Geometry geom = (Geometry) s;
+                Material material = new Material(assetManager, "Common/MatDefs/Light/Lighting.j3md");
+                geom.setMaterial(material);
             }
-
-            geom.setMaterial(material);
-        } else {
-            // 如果是Node，递归应用到所有子几何体
-            spatial.depthFirstTraversal(s -> {
-                if (s instanceof Geometry) {
-                    Geometry geom = (Geometry) s;
-                    Material material = new Material(assetManager, "Common/MatDefs/Light/Lighting.j3md");
-
-                    if (texture != null) {
-                        System.out.println("⚠️ 使用了旧的纹理应用方法，建议使用 BlockTextureManager");
-                    }
-
-                    geom.setMaterial(material);
-                }
-            });
-        }
+        });
     }
 
     @Override

@@ -41,35 +41,56 @@ public class AABB {
     }
 
     /**
-     * ✅ 设置最小点 - PlayerController需要的方法
+     * 从底部位置（脚底）和尺寸创建AABB - 用于角色碰撞盒
+     * @param bottomCenter 底部中心位置（角色脚底位置）
+     * @param width 宽度
+     * @param height 高度
+     * @param depth 深度
+     */
+    public static AABB fromBottom(Vector3f bottomCenter, float width, float height, float depth) {
+        float halfWidth = width / 2f;
+        float halfDepth = depth / 2f;
+
+        return new AABB(
+                bottomCenter.x - halfWidth,
+                bottomCenter.y,              // 底部从脚底开始
+                bottomCenter.z - halfDepth,
+                bottomCenter.x + halfWidth,
+                bottomCenter.y + height,     // 顶部是底部+高度
+                bottomCenter.z + halfDepth
+        );
+    }
+
+    /**
+     *  设置最小点 - PlayerController需要的方法
      */
     public void setMinPoint(Vector3f minPoint) {
         this.min = minPoint.clone();
     }
 
     /**
-     * ✅ 设置最大点 - PlayerController需要的方法
+     *  设置最大点 - PlayerController需要的方法
      */
     public void setMaxPoint(Vector3f maxPoint) {
         this.max = maxPoint.clone();
     }
 
     /**
-     * ✅ 获取最小点
+     *  获取最小点
      */
     public Vector3f getMinPoint() {
         return min.clone();
     }
 
     /**
-     * ✅ 获取最大点
+     * 获取最大点
      */
     public Vector3f getMaxPoint() {
         return max.clone();
     }
 
     /**
-     * 🔄 更新位置 - 保持尺寸不变，只改变位置
+     * 🔄 更新位置 - 保持尺寸不变，只改变位置（按中心点）
      */
     public void updatePosition(Vector3f newCenter) {
         Vector3f size = getSize();
@@ -86,6 +107,26 @@ public class AABB {
                 newCenter.x + halfWidth,
                 newCenter.y + halfHeight,
                 newCenter.z + halfDepth
+        );
+    }
+
+    /**
+     * 🔄 从底部位置更新 - 用于角色移动
+     */
+    public void updateFromBottom(Vector3f newBottomCenter) {
+        Vector3f size = getSize();
+        float halfWidth = size.x / 2f;
+        float halfDepth = size.z / 2f;
+
+        this.min.set(
+                newBottomCenter.x - halfWidth,
+                newBottomCenter.y,              // 底部从脚底开始
+                newBottomCenter.z - halfDepth
+        );
+        this.max.set(
+                newBottomCenter.x + halfWidth,
+                newBottomCenter.y + size.y,     // 顶部是底部+高度
+                newBottomCenter.z + halfDepth
         );
     }
 

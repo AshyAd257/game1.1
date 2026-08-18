@@ -254,14 +254,26 @@ public class SimpleFlameRenderer {
     }
 
     /**
-     * 在指定位置发射火焰,带目标速度(3D世界空间)
+     * 在指定位置发射火焰,带目标速度(3D世界空间)——无伤害版本
      * @param worldPosition 发射位置(3D世界坐标)
      * @param particleCount 粒子数量
      * @param targetVelocity 目标速度(3D),如果为null则使用默认速度
      */
     public void emitFlame(Vector3f worldPosition, int particleCount, Vector3f targetVelocity) {
+        emitFlame(worldPosition, particleCount, targetVelocity, 0f);
+    }
+
+    /**
+     * 在指定位置发射火焰,带目标速度和伤害(3D世界空间)——用于武器开火
+     * <p>本次调用发射的这一整团粒子在概念上是"同一发子弹"，命中怪物时只会计一次伤害。
+     * @param worldPosition 发射位置(3D世界坐标)
+     * @param particleCount 粒子数量
+     * @param targetVelocity 目标速度(3D),如果为null则使用默认速度
+     * @param damage 命中怪物时造成的伤害（<=0表示不参与命中判定）
+     */
+    public void emitFlame(Vector3f worldPosition, int particleCount, Vector3f targetVelocity, float damage) {
         // 使用扩散半径和初始强度(3D单位)
-        particleSystem.burst(worldPosition, particleCount, 0.5f, 0.8f, targetVelocity);
+        particleSystem.burst(worldPosition, particleCount, 0.5f, 0.8f, targetVelocity, damage);
     }
 
     /**

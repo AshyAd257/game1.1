@@ -257,8 +257,20 @@ public class TerrainMeshGenerator {
     /**
      * 生成边缘填充网格（智能检测开放边缘并生成垂直连接面）
      * 只在没有相邻格子的边缘生成垂直面，避免穿帮
+     * <p>默认下探300格，适合主世界（可向下挖掘任意深度的无限地形）。
      */
     public static Mesh generateEdgeFillMesh(Chunk chunk, Vector3f chunkWorldPos) {
+        return generateEdgeFillMesh(chunk, chunkWorldPos, -300.0f);
+    }
+
+    /**
+     * 生成边缘填充网格（可指定下探深度）
+     * <p>像竞技场这种悬浮平台，边缘外是虚空而非可挖掘的地面，用较浅的深度
+     * （刚好遮住台面底部即可）能避免视觉上呈现"深坑/峡谷"的效果。
+     *
+     * @param bottomY 垂直面延伸到的绝对世界Y坐标（不是相对深度）
+     */
+    public static Mesh generateEdgeFillMesh(Chunk chunk, Vector3f chunkWorldPos, float bottomY) {
         HeightMap heightMap = chunk.getSurfaceHeightMap();
         TerrainMaterial[][] materials = chunk.getSurfaceMaterials();
 
@@ -268,7 +280,6 @@ public class TerrainMeshGenerator {
         List<Integer> indices = new ArrayList<>();
 
         float QUAD_SIZE = 1.0f;
-        float bottomY = -300.0f; // 垂直面延伸到的底部高度（可以向下挖300格）
 
         int edgesGenerated = 0;
 

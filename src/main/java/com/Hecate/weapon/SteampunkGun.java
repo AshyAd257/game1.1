@@ -72,10 +72,10 @@ public class SteampunkGun extends Weapon {
 
             // 发射少量粒子作为子弹（类似火焰，但更少的粒子）
             int particleCount = 5; // 少量粒子代表一发子弹
-            flameRenderer.emitFlame(origin, particleCount, bulletVelocity);
+            flameRenderer.emitFlame(origin, particleCount, bulletVelocity, stats.getBaseDamage());
         }
 
-        // 粒子落地后会自动触发涂墨（FlameParticle系统自带）
+        // 粒子落地后会自动触发涂墨（FlameParticle系统自带）；命中怪物则不再涂墨
     }
 
     /**

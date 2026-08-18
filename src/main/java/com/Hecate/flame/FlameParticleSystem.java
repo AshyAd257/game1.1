@@ -132,15 +132,18 @@ public class FlameParticleSystem {
         particles.add(particle);
     }
 
+    // 每次调用burst()生成的一组粒子共享的shotId计数器（用于武器命中伤害去重）
+    private static long nextShotId = 0L;
+
     /**
-     * 在指定位置爆发式发射粒子（改进版，3D空间）
+     * 在指定位置爆发式发射粒子（改进版，3D空间）——无伤害版本，用于环境视觉效果
      */
     public void burst(Vector3f position, int count, float spreadRadius, float initialIntensity) {
         burst(position, count, spreadRadius, initialIntensity, null);
     }
 
     /**
-     * 在指定位置爆发式发射粒子，朝向目标3D位置（用于瞄准射击）
+     * 在指定位置爆发式发射粒子，朝向目标3D位置（用于瞄准射击）——无伤害版本
      * @param position 发射位置（3D世界坐标）
      * @param count 粒子数量
      * @param spreadRadius 扩散半径（3D单位）
@@ -148,6 +151,19 @@ public class FlameParticleSystem {
      * @param targetVelocity 目标速度方向（3D），如果为null则使用默认向上速度
      */
     public void burst(Vector3f position, int count, float spreadRadius, float initialIntensity, Vector3f targetVelocity) {
+        burst(position, count, spreadRadius, initialIntensity, targetVelocity, 0f);
+    }
+
+    /**
+     * 在指定位置爆发式发射粒子，朝向目标3D位置，带伤害（用于武器开火）
+     * <p>本次调用发射的所有粒子共享同一个新生成的shotId：它们在概念上是"同一发子弹"，
+     * 命中怪物时只会计算一次伤害（见 {@link FlameParticle} 类注释）。
+     *
+     * @param damage 命中怪物时造成的伤害（<=0表示不参与命中判定，视为环境粒子）
+     */
+    public void burst(Vector3f position, int count, float spreadRadius, float initialIntensity,
+                       Vector3f targetVelocity, float damage) {
+        long shotId = damage > 0f ? nextShotId++ : -1L;
         int beforeCount = particles.size();
         for (int i = 0; i < count && particles.size() < maxParticles; i++) {
             // 随机方向（球形扩散）
@@ -187,7 +203,7 @@ public class FlameParticleSystem {
             float lifetime = defaultLifetime * (0.7f + FastMath.nextRandomFloat() * 0.6f); // 70%-130%
 
             FlameParticle particle = obtainParticle();
-            particle.reset(pos, vel, radius, intensity, defaultSoftness, lifetime, this.factionId);
+            particle.reset(pos, vel, radius, intensity, defaultSoftness, lifetime, this.factionId, damage, shotId);
             particles.add(particle);
         }
     }

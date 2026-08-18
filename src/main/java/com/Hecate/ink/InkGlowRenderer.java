@@ -38,7 +38,7 @@ public class InkGlowRenderer {
 
     private final AssetManager assetManager;
     private final Node rootNode;
-    private final SparseGridManager gridManager;
+    private SparseGridManager gridManager;
     private final ColorResolver colorResolver;
     private CollisionManager collisionManager;
 
@@ -74,6 +74,20 @@ public class InkGlowRenderer {
 
     public void setCollisionManager(CollisionManager collisionManager) {
         this.collisionManager = collisionManager;
+    }
+
+    /**
+     * 切换所渲染的墨水数据源（用于世界切换）
+     * <p>清除当前所有已渲染的光晕（它们属于旧世界的数据）。
+     */
+    public void setGridManager(SparseGridManager newGridManager) {
+        if (this.gridManager == newGridManager) {
+            return;
+        }
+        this.gridManager = newGridManager;
+
+        glowNode.detachAllChildren();
+        regionGlows.clear();
     }
 
     public void setObserverFactionId(int factionId) {

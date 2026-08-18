@@ -72,6 +72,12 @@ public class ApplicationContext {
     // ==================== 光照系统 ====================
     private LightingSystem lightingSystem;
 
+    // ==================== 竞技场系统 ====================
+    private com.Hecate.arena.WorldSwitcher worldSwitcher;
+
+    // ==================== 怪物系统 ====================
+    private com.Hecate.monster.MonsterManager monsterManager;
+
     /**
      * 构造函数
      *
@@ -177,6 +183,27 @@ public class ApplicationContext {
     }
 
     /**
+     * 初始化怪物系统
+     * <p>依赖：碰撞管理器（已在initializeCollisionSystem中创建）、
+     * 玩家控制模块（已在initializeModules中创建）。
+     * 应在初始化火焰系统之前调用，以便 FlameParticle 能立即拿到 MonsterManager 引用用于命中检测。
+     */
+    public void initializeMonsterSystem() {
+        monsterManager = new com.Hecate.monster.MonsterManager(app.getAssetManager());
+        com.Hecate.flame.FlameParticle.setMonsterManager(monsterManager);
+
+        // 碰撞管理器：用于怪物AI移动时查询地形高度、避免走入虚空
+        if (collisionManager != null) {
+            monsterManager.setCollisionManager(collisionManager);
+        }
+
+        // 玩家控制器：怪物的索敌目标、接触伤害的施加对象
+        if (playerControlModule != null && playerControlModule.getPlayerController() != null) {
+            monsterManager.setPlayerController(playerControlModule.getPlayerController());
+        }
+    }
+
+    /**
      * 初始化火焰系统
      * <p>依赖：碰撞管理器、网格管理器、玩家控制模块
      */
@@ -188,6 +215,9 @@ public class ApplicationContext {
 
         if (gridManager != null) {
             com.Hecate.flame.FlameParticle.setGridManager(gridManager);
+            if (monsterManager != null) {
+                monsterManager.setGridManager(gridManager);
+            }
         }
 
         // 创建火焰渲染器
@@ -225,6 +255,21 @@ public class ApplicationContext {
     }
 
     /**
+     * 初始化竞技场系统
+     * <p>依赖：WorldModule（区块管理器/世界节点已创建）、CollisionManager、PlayerControlModule（PlayerController已创建）
+     */
+    public void initializeArenaSystem() {
+        if (worldModule != null && worldModule.getChunkManager() != null &&
+            collisionManager != null &&
+            playerControlModule != null && playerControlModule.getPlayerController() != null &&
+            regionMeshRenderer != null && gridManager != null) {
+            worldSwitcher = new com.Hecate.arena.WorldSwitcher(
+                    worldModule, collisionManager, playerControlModule,
+                    regionMeshRenderer, gridManager, app.getRootNode(), monsterManager);
+        }
+    }
+
+    /**
      * 连接各个系统的依赖关系
      * <p>必须在所有系统初始化完成后调用
      */
@@ -251,6 +296,16 @@ public class ApplicationContext {
         // 【墨水系统】连接网格管理器到玩家控制模块（用于速度倍率）
         if (playerControlModule != null && gridManager != null) {
             playerControlModule.setGridManager(gridManager);
+        }
+
+        // 【竞技场系统】连接世界切换器到玩家控制模块（M键进入/离开竞技场）
+        if (playerControlModule != null && playerControlModule.getPlayerController() != null && worldSwitcher != null) {
+            playerControlModule.getPlayerController().setWorldSwitcher(worldSwitcher);
+        }
+
+        // 【怪物系统】连接怪物管理器到玩家控制模块（/mob1 命令生成怪物）
+        if (playerControlModule != null && playerControlModule.getPlayerController() != null && monsterManager != null) {
+            playerControlModule.getPlayerController().setMonsterManager(monsterManager);
         }
     }
 
@@ -279,8 +334,18 @@ public class ApplicationContext {
             flameRenderer.update(tpf);
         }
 
+        // 更新怪物系统（受击闪白计时、hit-stop倒计时、死亡清理+死亡涂墨）
+        if (monsterManager != null) {
+            monsterManager.update(tpf);
+        }
+
         // 更新涂墨网格系统
-        if (gridManager != null) {
+        // 若WorldSwitcher存在，由它统一更新主世界+竞技场两份独立的墨水网格
+        // （确保未激活的那一份墨水也按真实时间衰减，不会被"冻结"）；
+        // 否则（竞技场系统未初始化成功）退化为只更新主世界的这一份。
+        if (worldSwitcher != null) {
+            worldSwitcher.update(tpf);
+        } else if (gridManager != null) {
             gridManager.update(tpf);
         }
 
@@ -296,6 +361,11 @@ public class ApplicationContext {
      * 清理所有系统资源
      */
     public void cleanup() {
+        // 清理怪物系统
+        if (monsterManager != null) {
+            monsterManager.clear();
+        }
+
         // 清理火焰系统
         if (flameRenderer != null) {
             flameRenderer.cleanup();
@@ -310,6 +380,13 @@ public class ApplicationContext {
 
         if (gridManager != null) {
             gridManager.clear();
+        }
+
+        // 清理竞技场系统：保存主世界和竞技场两边所有被修改过的区块
+        // （worldModule.onDisable() 只会保存当前绑定的那一个ChunkManager，
+        //  这里确保无论玩家退出时身处哪个世界，两边的存档都不会丢）
+        if (worldSwitcher != null) {
+            worldSwitcher.saveAll();
         }
 
         // 清理所有模块
@@ -366,5 +443,13 @@ public class ApplicationContext {
 
     public LightingSystem getLightingSystem() {
         return lightingSystem;
+    }
+
+    public com.Hecate.arena.WorldSwitcher getWorldSwitcher() {
+        return worldSwitcher;
+    }
+
+    public com.Hecate.monster.MonsterManager getMonsterManager() {
+        return monsterManager;
     }
 }

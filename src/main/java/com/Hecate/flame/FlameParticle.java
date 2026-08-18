@@ -3,6 +3,7 @@ package com.Hecate.flame;
 import com.jme3.math.Vector3f;
 import com.Hecate.physics.CollisionManager;
 import com.Hecate.ink.SparseGridManager;
+import com.Hecate.monster.MonsterManager;
 
 /**
  * 火焰粒子(3D世界空间)
@@ -38,11 +39,21 @@ public class FlameParticle {
     // 发射者阵营ID（实例字段，每个粒子携带自己的发射者信息）
     private int factionId;
 
+    // 本粒子所携带的伤害值，命中怪物时生效（不影响落地涂墨）
+    private float damage;
+
+    // 本粒子所属的"这一发子弹"的唯一标识：一次开火发射的一整团粒子共享同一shotId，
+    // 用于让MonsterManager把它们当作同一发子弹去重伤害，而不是每个粒子单独计伤
+    private long shotId;
+
     // 碰撞检测管理器
     private static CollisionManager collisionManager;
 
     // 涂墨网格管理器
     private static SparseGridManager gridManager;
+
+    // 怪物管理器（用于弹道命中检测），世界切换时WorldSwitcher会重新指向
+    private static MonsterManager monsterManager;
 
     // 物理参数
     private static final float GRAVITY = -15f; // 向下的重力加速度(3D世界单位)
@@ -50,7 +61,7 @@ public class FlameParticle {
     private float turbulenceTime = 0f; // 扰动时间累加器
 
     /**
-     * 构造函数
+     * 构造函数（无伤害，用于环境火焰视觉粒子，如地面火焰扩散产生的粒子）
      * @param position 初始位置
      * @param velocity 初始速度
      * @param radius 粒子半径
@@ -60,6 +71,16 @@ public class FlameParticle {
      * @param factionId 发射者阵营ID
      */
     public FlameParticle(Vector3f position, Vector3f velocity, float radius, float intensity, float softness, float lifetime, int factionId) {
+        this(position, velocity, radius, intensity, softness, lifetime, factionId, 0f, -1L);
+    }
+
+    /**
+     * 构造函数（带伤害，用于武器直接发射的子弹粒子）
+     * @param damage 命中怪物时造成的伤害
+     * @param shotId 本粒子所属的"这一发子弹"的唯一标识，用于伤害去重（见类字段注释）
+     */
+    public FlameParticle(Vector3f position, Vector3f velocity, float radius, float intensity, float softness,
+                          float lifetime, int factionId, float damage, long shotId) {
         this.position = position.clone();
         this.velocity = velocity.clone();
         this.radius = radius;
@@ -69,6 +90,8 @@ public class FlameParticle {
         this.maxLifetime = lifetime;
         this.alive = true;
         this.factionId = factionId;
+        this.damage = damage;
+        this.shotId = shotId;
     }
 
     /**
@@ -96,6 +119,18 @@ public class FlameParticle {
         newPosition.x += (velocity.x + turbulenceX) * tpf;
         newPosition.y += velocity.y * tpf;
         newPosition.z += (velocity.z + turbulenceZ) * tpf;
+
+        // 怪物命中检测（先于地形碰撞检测：子弹应该打中怪物本身，而不是先撞到怪物脚下的地面）
+        // 只有带伤害的粒子（damage>0，武器直接发射的子弹）才参与命中判定，
+        // 环境视觉粒子（如地面火焰扩散产生的粒子）不应该对怪物造成伤害。
+        if (damage > 0f && monsterManager != null) {
+            Vector3f hitPoint = monsterManager.checkHit(position, newPosition, damage, shotId);
+            if (hitPoint != null) {
+                // 命中怪物：粒子消失，不再落地涂墨
+                alive = false;
+                return;
+            }
+        }
 
         // 方块碰撞检测（改进版：找到实际地面表面）
         if (collisionManager != null) {
@@ -203,9 +238,17 @@ public class FlameParticle {
     }
 
     /**
-     * 重置粒子(用于对象池)
+     * 重置粒子(用于对象池)——无伤害版本，用于环境火焰视觉粒子
      */
     public void reset(Vector3f position, Vector3f velocity, float radius, float intensity, float softness, float lifetime, int factionId) {
+        reset(position, velocity, radius, intensity, softness, lifetime, factionId, 0f, -1L);
+    }
+
+    /**
+     * 重置粒子(用于对象池)——带伤害版本，用于武器直接发射的子弹粒子
+     */
+    public void reset(Vector3f position, Vector3f velocity, float radius, float intensity, float softness,
+                       float lifetime, int factionId, float damage, long shotId) {
         this.position.set(position);
         this.velocity.set(velocity);
         this.radius = radius;
@@ -217,6 +260,8 @@ public class FlameParticle {
         this.turbulenceTime = 0f;
         this.justHitGround = false;
         this.factionId = factionId;
+        this.damage = damage;
+        this.shotId = shotId;
     }
 
     // Getters
@@ -255,5 +300,12 @@ public class FlameParticle {
      */
     public static void setGridManager(SparseGridManager manager) {
         gridManager = manager;
+    }
+
+    /**
+     * 设置怪物管理器(静态方法,所有粒子共享)，用于弹道命中检测
+     */
+    public static void setMonsterManager(MonsterManager manager) {
+        monsterManager = manager;
     }
 }

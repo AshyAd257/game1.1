@@ -64,13 +64,19 @@ public class SystemInitializer {
             // 第5步：初始化网格系统（涂墨系统）
             initializeGridSystem(context);
 
-            // 第6步：初始化火焰系统
+            // 第6步：初始化怪物系统（必须在火焰系统之前，让FlameParticle能拿到MonsterManager引用）
+            initializeMonsterSystem(context);
+
+            // 第7步：初始化火焰系统
             initializeFlameSystem(context);
 
-            // 第7步：初始化指针系统
+            // 第8步：初始化指针系统
             initializePointerSystem(context);
 
-            // 第8步：连接各系统的依赖关系
+            // 第9步：初始化竞技场系统
+            initializeArenaSystem(context);
+
+            // 第10步：连接各系统的依赖关系
             connectSystems(context);
 
         } catch (Exception e) {
@@ -152,7 +158,22 @@ public class SystemInitializer {
     }
 
     /**
-     * 第6步：初始化火焰系统
+     * 第6步：初始化怪物系统
+     * <p>无强制依赖，但必须在火焰系统之前初始化
+     */
+    private static void initializeMonsterSystem(ApplicationContext context) {
+        try {
+
+            context.initializeMonsterSystem();
+
+        } catch (Exception e) {
+            System.err.println("   怪物系统初始化失败，继续执行...");
+            e.printStackTrace();
+        }
+    }
+
+    /**
+     * 第7步：初始化火焰系统
      * <p>依赖：碰撞管理器、网格管理器、玩家控制模块
      */
     private static void initializeFlameSystem(ApplicationContext context) {
@@ -167,7 +188,7 @@ public class SystemInitializer {
     }
 
     /**
-     * 第7步：初始化指针系统
+     * 第8步：初始化指针系统
      * <p>依赖：玩家控制模块（必须在PlayerController初始化后）
      */
     private static void initializePointerSystem(ApplicationContext context) {
@@ -182,7 +203,22 @@ public class SystemInitializer {
     }
 
     /**
-     * 第8步：连接各系统的依赖关系
+     * 第9步：初始化竞技场系统
+     * <p>依赖：方块注册表、碰撞管理器
+     */
+    private static void initializeArenaSystem(ApplicationContext context) {
+        try {
+
+            context.initializeArenaSystem();
+
+        } catch (Exception e) {
+            System.err.println("   竞技场系统初始化失败，继续执行...");
+            e.printStackTrace();
+        }
+    }
+
+    /**
+     * 第10步：连接各系统的依赖关系
      * <p>必须在所有系统初始化完成后调用
      */
     private static void connectSystems(ApplicationContext context) {

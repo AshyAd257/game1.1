@@ -11,10 +11,11 @@ public class WeaponStats {
     private final String weaponName;         // 武器名称
 
     // 攻击属性
-    private final float fireRate;            // 攻击间隔（秒）- 两次攻击之间的最小时间
+    // 注：fireRate/spreadAngle 不是 final —— 波次buff系统需要在武器生命周期内原地修饰这两个数值
+    private float fireRate;                  // 攻击间隔（秒）- 两次攻击之间的最小时间
     private final float projectileSpawnRate; // 发射子弹的速度（每次攻击发射的子弹数量/秒）
     private final float projectileVelocity;  // 射出的子弹的速度（米/秒）- 子弹飞行速度
-    private final float spreadAngle;         // 弹药乱数（度）- 散射角度范围
+    private float spreadAngle;               // 弹药乱数（度）- 散射角度范围
     private final float maxRange;            // 攻击距离（米）- 子弹最大飞行距离
     private final float ammoCost;            // 发射消耗的弹药（每次攻击）
 
@@ -60,6 +61,20 @@ public class WeaponStats {
     public float getChargeMultiplier() { return chargeMultiplier; }
     public float getBaseDamage() { return baseDamage; }
     public float getInkRadius() { return inkRadius; }
+
+    /**
+     * 原地修饰攻击间隔（波次buff系统用）。factor小于1使间隔变短（打得更快）。
+     */
+    public void multiplyFireRate(float factor) {
+        this.fireRate *= factor;
+    }
+
+    /**
+     * 原地修饰散射角度（波次buff系统用）。factor大于1使散射范围变大。
+     */
+    public void multiplySpreadAngle(float factor) {
+        this.spreadAngle *= factor;
+    }
 
     /**
      * Builder类 - 用于构建WeaponStats

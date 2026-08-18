@@ -352,6 +352,18 @@ public class CollisionManager {
                 return Float.NaN; // 无地形数据
             }
 
+            // 【关键修复】hasTerrainData() 只检查该区块内"是否存在任意一个"有地形的格子，
+            // 不代表玩家脚下具体这一格也有地形（例如竞技场：区块内部分格子是DIRT地板，
+            // 部分格子在圆形范围外是NONE）。必须再检查具体格子的材质，否则区块内任意
+            // 位置都会被判定为"有地面"，玩家会被悬空的NONE格子稳稳托住。
+            int cellX = (int) Math.floor(localX);
+            int cellZ = (int) Math.floor(localZ);
+            cellX = Math.max(0, Math.min(Chunk.SIZE - 1, cellX));
+            cellZ = Math.max(0, Math.min(Chunk.SIZE - 1, cellZ));
+            if (chunk.getSurfaceMaterial(cellX, cellZ) == com.Hecate.world.TerrainMaterial.NONE) {
+                return Float.NaN; // 该格子本身没有地形（例如竞技场圆形范围外）
+            }
+
             // 获取heightMap（17x17顶点）
             com.Hecate.world.HeightMap heightMap = chunk.getSurfaceHeightMap();
 

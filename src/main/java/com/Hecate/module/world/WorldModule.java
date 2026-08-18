@@ -49,6 +49,12 @@ public class WorldModule extends AbstractGameModule {
     // 摄像机方块剔除系统
     private com.Hecate.camera.CameraBlockCulling cameraBlockCulling;
 
+    // 地形边缘填充网格下探到的绝对世界Y坐标。主世界地形可被挖掘任意深度，
+    // 需要下探很深（-300）避免看穿地表；竞技场是悬浮平台，边缘外是虚空，
+    // 用较浅的深度（刚好遮住台面底部）避免呈现"深坑/峡谷"的视觉效果。
+    private static final float DEFAULT_EDGE_FILL_DEPTH = -300.0f;
+    private float edgeFillDepth = DEFAULT_EDGE_FILL_DEPTH;
+
     /**
      * 构造函数（依赖注入）
      *
@@ -141,7 +147,7 @@ public class WorldModule extends AbstractGameModule {
             }
 
             // 生成边缘填充网格（智能检测开放边缘，防止看到天空）
-            com.jme3.scene.Mesh edgeFillMesh = com.Hecate.world.TerrainMeshGenerator.generateEdgeFillMesh(chunk, chunkWorldPos);
+            com.jme3.scene.Mesh edgeFillMesh = com.Hecate.world.TerrainMeshGenerator.generateEdgeFillMesh(chunk, chunkWorldPos, edgeFillDepth);
             if (edgeFillMesh != null) {
                 Geometry edgeFillGeom = new Geometry("TerrainEdgeFill_" + chunk.getPosition().toString(), edgeFillMesh);
 
@@ -396,6 +402,41 @@ public class WorldModule extends AbstractGameModule {
 
     public Node getWorldNode() {
         return worldNode;
+    }
+
+    /**
+     * 切换渲染/更新循环所驱动的活动世界（用于世界切换，如竞技场）
+     * <p>复用现有的 onUpdate 区块加载/渲染管线，只是重新指向新的 ChunkManager 和场景节点。
+     * 不会改变 textureManager/terrainMaterialFactory/blockRegistry，这些与具体世界无关。
+     *
+     * @param newChunkManager 新的活动区块管理器
+     * @param newWorldNode 新的活动世界场景节点
+     */
+    public void bindActiveWorld(ChunkManager newChunkManager, Node newWorldNode) {
+        bindActiveWorld(newChunkManager, newWorldNode, DEFAULT_EDGE_FILL_DEPTH);
+    }
+
+    /**
+     * 切换渲染/更新循环所驱动的活动世界，并指定该世界地形边缘填充网格下探的深度
+     * @param edgeFillDepth 边缘填充网格下探到的绝对世界Y坐标
+     */
+    public void bindActiveWorld(ChunkManager newChunkManager, Node newWorldNode, float edgeFillDepth) {
+        // 切换前先清理摄像机方块剔除系统（绑定了旧的chunkManager）
+        if (cameraBlockCulling != null) {
+            cameraBlockCulling.cleanup();
+        }
+
+        this.chunkManager = newChunkManager;
+        this.worldNode = newWorldNode;
+        this.edgeFillDepth = edgeFillDepth;
+
+        // 重建摄像机方块剔除系统，绑定新的chunkManager
+        cameraBlockCulling = new com.Hecate.camera.CameraBlockCulling(app.getCamera(), chunkManager);
+
+        // 重置区块加载状态，强制在新世界中围绕玩家重新加载
+        lastPlayerChunkPos = null;
+        initialLoadComplete = false;
+        updateTimer = 0f;
     }
 
     public BlockTextureManager getTextureManager() {

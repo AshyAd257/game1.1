@@ -48,7 +48,7 @@ public class PlayerController implements ActionListener, AnalogListener {
     private final InputManager inputManager;
 
     // 常量定义
-    private static final float PLAYER_WIDTH = 1.0f;
+    private static final float PLAYER_WIDTH = 0.67f;  // 宽度缩短为原来的2/3
     private static final float PLAYER_HEIGHT = 1.5f;
     private static final float GROUND_LEVEL = 2.75f;
     private static final float SPRITE_HEIGHT_OFFSET = -0.1f; // 精灵底部稍微上浮，避免Z-fighting
@@ -86,6 +86,11 @@ public class PlayerController implements ActionListener, AnalogListener {
     private static final float AUTO_REVIVE_TIME = 5.0f;
     private static final float DEATH_ANIMATION_DURATION = 0.5f;
 
+    // 虚空死亡阈值：低于此Y坐标视为坠入虚空，判定摔死。
+    // 主世界地形可挖掘到Y=-300（地形边缘填充网格的下探深度），留出足够安全边界，
+    // 确保只有真正掉出任何已知地形之外才会触发，不会误伤挖掘到底部的玩家。
+    private static final float VOID_DEATH_Y = -350f;
+
     // 玩家状态
     private Vector3f playerPosition = new Vector3f(0, GROUND_LEVEL, 0);
     private Vector3f velocity = new Vector3f();
@@ -101,7 +106,18 @@ public class PlayerController implements ActionListener, AnalogListener {
     private boolean isMoving = false;
     private boolean isOnGround = false;
     private boolean isDead = false;
+    // 一旦查到过一次有效地形数据就永久置true：用于区分"世界刚启动、还没生成好
+    // 地形"（此时GROUND_LEVEL兜底是安全网）和"已经站在过真实地面上、现在查不到
+    // 地形就是真的在虚空里"（此时不应再被隐形地板接住，应继续下落）。
+    private boolean hasLandedOnTerrain = false;
     private boolean isSprinting = false;  // 疾跑状态
+
+    // Buff选择界面弹出期间锁定玩家操作
+    private boolean inputLocked = false;
+    private com.Hecate.ui.BuffSelectUI buffSelectUI;
+
+    // "攻击弹道+1"buff的叠加计数：额外发射的偏移弹道数量（FlameWeapon读取）
+    private int extraProjectiles = 0;
 
     // 双击检测（用于疾跑）
     private float[] lastKeyPressTime = new float[4]; // W, A, S, D
@@ -112,6 +128,7 @@ public class PlayerController implements ActionListener, AnalogListener {
     // 碰撞系统
     private CollisionManager collisionManager;
     private AABB playerBox;
+    private com.Hecate.physics.CollisionBoxRenderer collisionBoxRenderer;  // 碰撞箱可视化渲染器
 
     // 血量系统
     private PlayerHealth playerHealth;
@@ -148,8 +165,8 @@ public class PlayerController implements ActionListener, AnalogListener {
     }
     private GroundType currentGroundType = GroundType.NONE;
 
-    // 恢复速率（每秒5%）
-    private static final float RECOVERY_PERCENTAGE = 0.05f;
+    // 恢复速率（每秒5%）——非final：波次buff系统（"恢复速度变快"）需要在运行时提高这个值
+    private float recoveryPercentage = 0.05f;
 
     // 死亡系统
     private float deathAnimationProgress = 0f;
@@ -191,6 +208,14 @@ public class PlayerController implements ActionListener, AnalogListener {
     // UI系统
     private InventoryUI inventoryUI;
     private GameConsole gameConsole;
+
+    // 竞技场系统（世界切换由 WorldSwitcher 统一处理）
+    private com.Hecate.arena.WorldSwitcher worldSwitcher;
+
+    // 怪物系统
+    private com.Hecate.monster.MonsterManager monsterManager;
+    // 当前活动世界的场景节点（随setWorldNode同步更新），用于/mob1命令生成怪物到正确的世界
+    private Node currentWorldNode;
 
     // Gun1武器系统
     private Node gun1WeaponNode = null;  // Gun1武器模型节点
@@ -242,6 +267,9 @@ public class PlayerController implements ActionListener, AnalogListener {
 
         // 初始化背包UI
         initializeInventoryUI();
+
+        // 初始化碰撞箱渲染器
+        initializeCollisionBoxRenderer();
     }
 
     /**
@@ -249,6 +277,25 @@ public class PlayerController implements ActionListener, AnalogListener {
      */
     public void setCollisionManager(CollisionManager collisionManager) {
         this.collisionManager = collisionManager;
+    }
+
+    /**
+     * 设置世界切换器（用于进入/离开竞技场）
+     */
+    public void setWorldSwitcher(com.Hecate.arena.WorldSwitcher worldSwitcher) {
+        this.worldSwitcher = worldSwitcher;
+    }
+
+    /**
+     * 初始化碰撞箱渲染器
+     */
+    private void initializeCollisionBoxRenderer() {
+        collisionBoxRenderer = new com.Hecate.physics.CollisionBoxRenderer(
+            app.getAssetManager(),
+            app.getRootNode()
+        );
+        // 默认显示碰撞箱（可以通过按键切换）
+        collisionBoxRenderer.setVisible(true);
     }
 
     /**
@@ -373,8 +420,110 @@ public class PlayerController implements ActionListener, AnalogListener {
         gameConsole = new GameConsole(app);
         gameConsole.setPlayerController(this);
 
+        // 初始化Buff选择界面（波次结算后弹出）
+        buffSelectUI = new com.Hecate.ui.BuffSelectUI(app);
+
         // 注册Gun1命令 - 显示steampunkgun.glb模型
         registerGun1Command();
+
+        // 注册Mob1命令 - 在玩家前方生成一只怪物
+        registerMob1Command();
+
+        // 注册Wave1命令 - 开始三波递进的刷怪遭遇战
+        registerWave1Command();
+    }
+
+    /**
+     * 注册Wave1命令 - 开始一次三波递进的刷怪遭遇战
+     * （第1波3只慢速怪 -> 第2波6只普通怪 -> 第3波1只小Boss，杀光当前波自动进下一波）
+     */
+    private void registerWave1Command() {
+        gameConsole.registerCommand("wave1", new GameConsole.CommandHandler() {
+            @Override
+            public void execute(String[] args) {
+                app.enqueue(() -> {
+                    try {
+                        if (monsterManager == null) {
+                            gameConsole.addHistory("错误: 怪物系统未初始化");
+                            return null;
+                        }
+                        if (currentWorldNode == null) {
+                            gameConsole.addHistory("错误: 当前世界节点未就绪");
+                            return null;
+                        }
+
+                        boolean started = monsterManager.startWaveEncounter(currentWorldNode);
+                        if (started) {
+                            gameConsole.addHistory("遭遇战开始：第1波（3只慢速怪）");
+                        } else {
+                            gameConsole.addHistory("遭遇战已在进行中");
+                        }
+                    } catch (Exception e) {
+                        LogUtils.error(PlayerController.class, "处理Wave1命令失败", e);
+                        gameConsole.addHistory("错误: " + e.getMessage());
+                    }
+                    return null;
+                });
+            }
+
+            @Override
+            public String getDescription() {
+                return "开始三波递进的刷怪遭遇战";
+            }
+        });
+    }
+
+    /**
+     * 注册Mob1命令 - 在玩家面前生成一只怪物（最初的怪物原型：1x1红色方块）
+     */
+    private void registerMob1Command() {
+        gameConsole.registerCommand("mob1", new GameConsole.CommandHandler() {
+            @Override
+            public void execute(String[] args) {
+                app.enqueue(() -> {
+                    try {
+                        if (monsterManager == null) {
+                            gameConsole.addHistory("错误: 怪物系统未初始化");
+                            return null;
+                        }
+                        if (currentWorldNode == null) {
+                            gameConsole.addHistory("错误: 当前世界节点未就绪");
+                            return null;
+                        }
+
+                        // 玩家前方3米处生成，脚底高度取当前玩家所在的地形高度
+                        Vector3f forward = camera.getDirection().clone();
+                        forward.y = 0;
+                        if (forward.lengthSquared() < 0.001f) {
+                            forward.set(0, 0, 1);
+                        } else {
+                            forward.normalizeLocal();
+                        }
+
+                        Vector3f spawnPos = playerPosition.clone().addLocal(forward.mult(3f));
+
+                        if (collisionManager != null) {
+                            float terrainHeight = collisionManager.getTerrainHeightAt(spawnPos.x, spawnPos.z);
+                            if (!Float.isNaN(terrainHeight)) {
+                                spawnPos.y = terrainHeight;
+                            }
+                        }
+
+                        monsterManager.spawnMonster(currentWorldNode, spawnPos);
+                        gameConsole.addHistory("已在玩家前方生成一只怪物");
+                    } catch (Exception e) {
+                        LogUtils.error(PlayerController.class, "处理Mob1命令失败", e);
+                        gameConsole.addHistory("错误: " + e.getMessage());
+                    }
+                    return null;
+                });
+            }
+
+            @Override
+            public String getDescription() {
+                return "在玩家前方生成一只怪物";
+            }
+        });
     }
 
     /**
@@ -759,6 +908,12 @@ public class PlayerController implements ActionListener, AnalogListener {
         // 背包UI
         inputManager.addMapping("ToggleInventory", new KeyTrigger(KeyInput.KEY_G));
 
+        // 竞技场系统
+        inputManager.addMapping("EnterArena", new KeyTrigger(KeyInput.KEY_M));
+
+        // 碰撞箱显示切换（F3键）
+        inputManager.addMapping("ToggleCollisionBox", new KeyTrigger(KeyInput.KEY_F3));
+
         // 地形挖掘
         inputManager.addMapping("DigTerrain", new com.jme3.input.controls.MouseButtonTrigger(MouseInput.BUTTON_LEFT));
 
@@ -770,7 +925,7 @@ public class PlayerController implements ActionListener, AnalogListener {
                 "RotateLeft", "RotateRight", "Jump", "MouseLook", "MouseLookNeg",
                 "MouseLookUp", "MouseLookDown", "ZoomIn", "ZoomOut", "ResetCamera",
                 "DigTerrain", "ToggleInventory", "NormalMode", "NormalModeAlt", "FireWeapon",
-                "ToggleHiding");
+                "ToggleHiding", "ToggleCollisionBox", "EnterArena");
     }
 
     @Override
@@ -782,6 +937,11 @@ public class PlayerController implements ActionListener, AnalogListener {
 
         // TextField有焦点时忽略玩家输入
         if (inventoryUI != null && inventoryUI.isTextFieldFocused()) {
+            return;
+        }
+
+        // Buff选择界面弹出时锁定玩家操作（WASD/开火等），直到选完
+        if (inputLocked) {
             return;
         }
 
@@ -891,6 +1051,18 @@ public class PlayerController implements ActionListener, AnalogListener {
             case "ToggleInventory":
                 if (isPressed && inventoryUI != null) {
                     inventoryUI.toggle();
+                }
+                break;
+            case "ToggleCollisionBox":
+                if (isPressed && collisionBoxRenderer != null) {
+                    collisionBoxRenderer.toggleVisibility();
+                    System.out.println("碰撞箱显示: " + (collisionBoxRenderer.isVisible() ? "开启" : "关闭"));
+                }
+                break;
+            case "EnterArena":
+                if (isPressed && worldSwitcher != null) {
+                    // 双向切换：主世界 <-> 竞技场
+                    worldSwitcher.toggle();
                 }
                 break;
             case "NormalMode":
@@ -1058,6 +1230,41 @@ public class PlayerController implements ActionListener, AnalogListener {
             // 使用updateFromBottom方法更新位置
             playerBox.updateFromBottom(playerPosition.clone());
         }
+
+        // 更新碰撞箱可视化
+        if (collisionBoxRenderer != null && playerBox != null) {
+            collisionBoxRenderer.updateCollisionBox(playerBox);
+        }
+    }
+
+    /**
+     * 将玩家传送到指定世界坐标
+     * <p>统一处理传送时需要同步的所有状态：玩家位置、速度清零、相机、碰撞盒、Puppet位置。
+     * 世界切换（worldNode/chunkManager 等）由调用方（如 {@link com.Hecate.arena.WorldSwitcher}）
+     * 负责，此方法只处理"同一个世界坐标系内的瞬间移动"。
+     *
+     * @param targetPosition 目标世界坐标（脚底位置）
+     */
+    public void teleportTo(Vector3f targetPosition) {
+        playerPosition.set(targetPosition);
+        velocity.set(0, 0, 0);
+        isJumping = false;
+        isOnGround = false; // 交给下一帧的地形碰撞检测重新判定
+
+        // 更新相机位置
+        if (camera != null) {
+            camera.setLocation(playerPosition.clone());
+        }
+
+        // 更新玩家碰撞盒
+        updatePlayerBox();
+
+        // 同步Puppet位置
+        if (puppetPlayerController != null) {
+            puppetPlayerController.setPosition(playerPosition.clone());
+        }
+
+        LogUtils.debug(PlayerController.class, "玩家已传送到: " + targetPosition);
     }
 
     /**
@@ -1104,6 +1311,14 @@ public class PlayerController implements ActionListener, AnalogListener {
                 return;
             }
 
+            updateScreenShake(tpf);
+            updateCameraPosition();
+            return;
+        }
+
+        // Buff选择界面弹出期间：锁定移动/武器/恢复等逐帧逻辑，只保留相机/振动，
+        // 避免画面完全静止显得卡死，但玩家无法借这段时间移动或攻击。
+        if (inputLocked) {
             updateScreenShake(tpf);
             updateCameraPosition();
             return;
@@ -1199,11 +1414,11 @@ public class PlayerController implements ActionListener, AnalogListener {
         if (hasRecovery && currentGroundType == GroundType.FRIENDLY) {
             // 恢复血量
             if (playerHealth != null && !playerHealth.isFullHealth()) {
-                playerHealth.recoverByPercentage(RECOVERY_PERCENTAGE, tpf);
+                playerHealth.recoverByPercentage(recoveryPercentage, tpf);
             }
             // 恢复弹药
             if (playerAmmo != null && !playerAmmo.isFull()) {
-                playerAmmo.recoverByPercentage(RECOVERY_PERCENTAGE, tpf);
+                playerAmmo.recoverByPercentage(recoveryPercentage, tpf);
             }
         }
 
@@ -1211,11 +1426,11 @@ public class PlayerController implements ActionListener, AnalogListener {
         if (isRecovering && currentGroundType == GroundType.FRIENDLY) {
             // 恢复血量
             if (playerHealth != null && !playerHealth.isFullHealth()) {
-                playerHealth.recoverByPercentage(RECOVERY_PERCENTAGE, tpf);
+                playerHealth.recoverByPercentage(recoveryPercentage, tpf);
             }
             // 恢复弹药
             if (playerAmmo != null && !playerAmmo.isFull()) {
-                playerAmmo.recoverByPercentage(RECOVERY_PERCENTAGE, tpf);
+                playerAmmo.recoverByPercentage(recoveryPercentage, tpf);
             }
         }
 
@@ -1338,8 +1553,11 @@ public class PlayerController implements ActionListener, AnalogListener {
                     isOnGround = false;
                 }
             } else {
-                // 没有地形数据，使用备用的GROUND_LEVEL
-                if (playerPosition.y <= GROUND_LEVEL && velocity.y <= 0) {
+                // 查不到地形数据：初始状态下（游戏刚启动，世界尚未生成完毕）用
+                // GROUND_LEVEL兜底防止掉出初始地面；一旦玩家已经真正立足过地面
+                // （hasLandedOnTerrain=true），说明"查不到地形"就是真的在虚空里，
+                // 应该持续下落而不是被隐形地板接住——否则玩家能"走在虚空上"。
+                if (!hasLandedOnTerrain && playerPosition.y <= GROUND_LEVEL && velocity.y <= 0) {
                     playerPosition.y = GROUND_LEVEL;
                     velocity.y = 0;
                     isJumping = false;
@@ -1349,7 +1567,7 @@ public class PlayerController implements ActionListener, AnalogListener {
                 }
             }
         } else {
-            // 没有collisionManager，使用备用的GROUND_LEVEL
+            // 没有collisionManager（系统尚未接入），使用备用的GROUND_LEVEL
             if (playerPosition.y <= GROUND_LEVEL && velocity.y <= 0) {
                 playerPosition.y = GROUND_LEVEL;
                 velocity.y = 0;
@@ -1357,6 +1575,17 @@ public class PlayerController implements ActionListener, AnalogListener {
                 isOnGround = true;
             } else {
                 isOnGround = false;
+            }
+        }
+
+        if (isOnGround) {
+            hasLandedOnTerrain = true;
+        }
+
+        // 虚空死亡检测：掉出任何已知地形范围之外，判定坠落致死
+        if (!isDead && playerPosition.y < VOID_DEATH_Y) {
+            if (playerHealth != null) {
+                playerHealth.kill();
             }
         }
 
@@ -1376,6 +1605,7 @@ public class PlayerController implements ActionListener, AnalogListener {
         if (isGun1Equipped && gun1WeaponNode != null) {
             updateGun1WeaponPosition();
         }
+
     }
 
     /**
@@ -1775,9 +2005,84 @@ public class PlayerController implements ActionListener, AnalogListener {
      * 设置世界节点（用于阴影射线检测）
      */
     public void setWorldNode(Node worldNode) {
+        this.currentWorldNode = worldNode;
+
         if (puppetPlayerController != null) {
             puppetPlayerController.setWorldNode(worldNode);
         }
+
+        // 同步当前武器的瞄准射线检测节点（如FlameWeapon），避免世界切换后
+        // 瞄准射线仍打在已从场景图摘除的旧世界节点上
+        if (currentWeapon instanceof com.Hecate.weapon.FlameWeapon) {
+            ((com.Hecate.weapon.FlameWeapon) currentWeapon).setWorldNode(worldNode);
+        }
+    }
+
+    /**
+     * 设置怪物管理器（用于/mob1命令生成怪物）
+     */
+    public void setMonsterManager(com.Hecate.monster.MonsterManager monsterManager) {
+        this.monsterManager = monsterManager;
+    }
+
+    /**
+     * "攻击弹道+1"buff的当前叠加数量（FlameWeapon开火时读取）
+     */
+    public int getExtraProjectiles() {
+        return extraProjectiles;
+    }
+
+    /**
+     * 弹出Buff三选一界面，锁定玩家操作直到选完。
+     * @param options 恰好3个候选buff
+     * @param onComplete 玩家选完并应用效果之后的回调（例如波次系统据此生成下一波怪物）
+     */
+    public void showBuffSelection(java.util.List<BuffType> options, Runnable onComplete) {
+        if (buffSelectUI == null) {
+            // 界面未就绪，直接跳过选择、立即执行后续动作，避免流程卡死
+            if (onComplete != null) {
+                onComplete.run();
+            }
+            return;
+        }
+
+        inputLocked = true;
+        buffSelectUI.show(options, (BuffType chosen) -> {
+            onBuffSelected(chosen);
+            inputLocked = false;
+            if (onComplete != null) {
+                onComplete.run();
+            }
+        });
+    }
+
+    /**
+     * 应用玩家选中的buff效果
+     */
+    private void onBuffSelected(BuffType type) {
+        switch (type) {
+            case FIRE_RATE_UP:
+                if (currentWeapon != null) {
+                    currentWeapon.getStats().multiplyFireRate(1f / 1.5f); // 间隔缩短=打得更快
+                }
+                break;
+            case EXTRA_PROJECTILE:
+                extraProjectiles++;
+                break;
+            case SPREAD_RANGE_UP:
+                if (currentWeapon != null) {
+                    currentWeapon.getStats().multiplySpreadAngle(1.5f);
+                }
+                break;
+            case RECOVERY_SPEED_UP:
+                recoveryPercentage *= 1.5f;
+                break;
+            case MOVE_SPEED_UP:
+                setSpeedMultiplier(getSpeedMultiplier() * 1.05f);
+                break;
+        }
+
+        LogUtils.debug(PlayerController.class, "已应用Buff: " + type.displayName);
     }
 
     /**

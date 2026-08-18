@@ -62,6 +62,14 @@ public class PlayerHealth {
             healthChangeListener.onHealthChanged(currentHealth, maxHealth);
         }
     }
+
+    /**
+     * 立即致死（不经过伤害数值计算），用于摔落虚空等瞬间死亡场景
+     */
+    public void kill() {
+        if (isDead) return;
+        takeDamage(currentHealth + 1); // 保证扣到0以下，触发死亡流程
+    }
     /**
      * 更新血量系统（处理自动恢复）
      * @param tpf 帧时间

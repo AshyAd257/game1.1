@@ -38,7 +38,7 @@ public class RegionMeshRenderer {
     private final SimpleApplication app;
     private final AssetManager assetManager;
     private final Node rootNode;
-    private final SparseGridManager gridManager;
+    private SparseGridManager gridManager;
     private final ColorResolver colorResolver;
 
     // 碰撞管理器（用于获取地形高度）
@@ -95,6 +95,23 @@ public class RegionMeshRenderer {
     public void setCollisionManager(CollisionManager collisionManager) {
         this.collisionManager = collisionManager;
         glowRenderer.setCollisionManager(collisionManager);
+    }
+
+    /**
+     * 切换所渲染的墨水数据源（用于世界切换，如进入/离开竞技场）
+     * <p>清除当前所有已渲染的墨水贴花（它们属于旧世界的数据），
+     * 后续 {@link #update()} 会根据新的 gridManager 重新按需生成。
+     */
+    public void setGridManager(SparseGridManager newGridManager) {
+        if (this.gridManager == newGridManager) {
+            return;
+        }
+        this.gridManager = newGridManager;
+
+        debugNode.detachAllChildren();
+        regionRenderers.clear();
+
+        glowRenderer.setGridManager(newGridManager);
     }
 
     /**

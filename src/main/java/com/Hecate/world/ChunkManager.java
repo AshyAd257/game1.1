@@ -13,13 +13,24 @@ public class ChunkManager {
     private final Node worldNode; // 包含所有区块的根节点
     private final ChunkSerializer serializer; // 区块序列化器
 
+    // 是否对磁盘上不存在的新区块自动生成程序化噪声地形（fillWithTestPattern）。
+    // 主世界需要（无限地形），像竞技场这种只应存在于手动生成范围内的封闭世界需要禁用，
+    // 否则玩家在场景内移动时，WorldModule的动态区块加载会在竞技场地板范围外自动
+    // "长出"一片普通地形，而不是保持虚空。
+    private final boolean generateTerrainOnLoad;
+
     public ChunkManager(Node worldNode) {
         this(worldNode, "world"); // 默认世界名为"world"
     }
 
     public ChunkManager(Node worldNode, String worldName) {
+        this(worldNode, worldName, true);
+    }
+
+    public ChunkManager(Node worldNode, String worldName, boolean generateTerrainOnLoad) {
         this.worldNode = worldNode;
         this.serializer = new ChunkSerializer(worldName);
+        this.generateTerrainOnLoad = generateTerrainOnLoad;
     }
 
     /**
@@ -41,7 +52,10 @@ public class ChunkManager {
         // 2. 如果文件不存在，生成新区块
         if (chunk == null) {
             chunk = new Chunk(position);
-            chunk.fillWithTestPattern(); // 生成默认地形
+            if (generateTerrainOnLoad) {
+                chunk.fillWithTestPattern(); // 生成默认地形
+            }
+            // 否则保持全空气/无地形数据的空区块（例如竞技场地板范围外的区域）
             // LogUtils.debug(ChunkManager.class, "生成新区块: " + position);
         } else {
             // LogUtils.debug(ChunkManager.class, "从文件加载区块: " + position);

@@ -139,6 +139,15 @@ public class AABB {
     }
 
     /**
+     * 检测点是否在包围盒内（含边界）
+     */
+    public boolean containsPoint(Vector3f point) {
+        return point.x >= min.x && point.x <= max.x &&
+               point.y >= min.y && point.y <= max.y &&
+               point.z >= min.z && point.z <= max.z;
+    }
+
+    /**
      * 检测两个AABB是否相交
      */
     public boolean intersects(AABB other) {

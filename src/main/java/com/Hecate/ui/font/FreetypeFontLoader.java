@@ -84,7 +84,7 @@ public class FreetypeFontLoader {
                 return null;
             }
 
-            long face = pFace.get(0);
+            FT_Face face = FT_Face.create(pFace.get(0));
             memFree(pFace);
 
             // 设置字体大小（宽度设为0表示根据高度自动计算）

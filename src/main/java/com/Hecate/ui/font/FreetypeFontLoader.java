@@ -2,6 +2,7 @@ package com.Hecate.ui.font;
 
 import com.jme3.asset.AssetManager;
 import com.jme3.font.BitmapFont;
+import org.lwjgl.PointerBuffer;
 import org.lwjgl.util.freetype.FT_Face;
 import org.lwjgl.util.freetype.FreeType;
 import org.slf4j.Logger;
@@ -30,15 +31,17 @@ public class FreetypeFontLoader {
             return true; // 已初始化
         }
 
-        long[] pLibrary = new long[1];
+        PointerBuffer pLibrary = memAllocPointer(1);
         int error = FT_Init_FreeType(pLibrary);
 
         if (error != 0) {
             logger.error("Failed to initialize FreeType library, error code: {}", error);
+            memFree(pLibrary);
             return false;
         }
 
-        ftLibrary = pLibrary[0];
+        ftLibrary = pLibrary.get(0);
+        memFree(pLibrary);
         logger.info("✓ FreeType library initialized successfully");
         return true;
     }
@@ -71,16 +74,18 @@ public class FreetypeFontLoader {
             fontBuffer.flip();
 
             // 创建 FreeType Face
-            long[] pFace = new long[1];
+            PointerBuffer pFace = memAllocPointer(1);
             int error = FT_New_Memory_Face(ftLibrary, fontBuffer, 0, pFace);
 
             if (error != 0) {
                 logger.error("Failed to load font face: {}, error: {}", fontPath, error);
+                memFree(pFace);
                 memFree(fontBuffer);
                 return null;
             }
 
-            long face = pFace[0];
+            long face = pFace.get(0);
+            memFree(pFace);
 
             // 设置字体大小（宽度设为0表示根据高度自动计算）
             error = FT_Set_Pixel_Sizes(face, 0, fontSize);

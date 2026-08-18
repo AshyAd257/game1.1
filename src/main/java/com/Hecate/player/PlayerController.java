@@ -2102,7 +2102,7 @@ public class PlayerController implements ActionListener, AnalogListener {
                 break;
         }
 
-        LogUtils.debug(PlayerController.class, "已应用Buff: " + type.displayName);
+        LogUtils.debug(PlayerController.class, "已应用Buff: " + type.getDisplayName());
     }
 
     /**

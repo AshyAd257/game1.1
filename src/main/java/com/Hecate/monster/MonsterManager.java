@@ -222,22 +222,22 @@ public class MonsterManager {
 
         if (waveActive && !waitingForBuffSelection && aliveInCurrentWave <= 0) {
             if (currentWaveNumber < WAVE_COUNTS.length) {
-                // 还不是最后一波：弹出buff选择，选完后由回调触发下一波
-                triggerBuffSelection();
-            } else {
-                // 已经是最后一波（Boss），直接结束遭遇战，不弹选择界面
+                // 还有下一小波：直接推进，不弹选择
                 advanceWave();
+            } else {
+                // 所有小波（1、2、3）都打完了：弹出buff选择，选完后开始新一轮
+                triggerBuffSelection();
             }
         }
     }
 
     /**
-     * 随机不重复抽取3个候选buff，弹出选择界面；玩家选完后自动推进到下一波。
+     * 随机不重复抽取3个候选buff，弹出选择界面；玩家选完后重新开始第一波（新一轮）。
      */
     private void triggerBuffSelection() {
         if (playerController == null) {
-            // 没有玩家控制器可弹窗，直接跳过选择进入下一波，避免卡死
-            advanceWave();
+            // 没有玩家控制器可弹窗，直接结束遭遇战，避免卡死
+            waveActive = false;
             return;
         }
 
@@ -250,6 +250,8 @@ public class MonsterManager {
 
         playerController.showBuffSelection(options, () -> {
             waitingForBuffSelection = false;
+            // 选完buff后重新开始第一波（新一轮，怪物会更强）
+            currentWaveNumber = 0;
             advanceWave();
         });
     }

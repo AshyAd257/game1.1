@@ -2049,11 +2049,31 @@ public class PlayerController implements ActionListener, AnalogListener {
         inputLocked = true;
         buffSelectUI.show(options, (BuffType chosen) -> {
             onBuffSelected(chosen);
+            resetInputStates();
             inputLocked = false;
             if (onComplete != null) {
                 onComplete.run();
             }
         });
+    }
+
+    /**
+     * 重置所有输入状态，防止按键卡住
+     */
+    private void resetInputStates() {
+        // 重置移动方向
+        moveDirection[0] = false;
+        moveDirection[1] = false;
+        moveDirection[2] = false;
+        moveDirection[3] = false;
+
+        // 重置按键状态
+        isShiftPressed = false;
+        isLeftButtonPressed = false;
+        isRightButtonPressed = false;
+
+        // 重置连发计时器
+        continuousFireTimer = 0f;
     }
 
     /**

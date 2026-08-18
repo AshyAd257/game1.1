@@ -13,6 +13,7 @@
         <maven.compiler.target>17</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <jme3.version>3.5.2-stable</jme3.version>
+        <lwjgl.version>3.3.2</lwjgl.version>
     </properties>
 
     <repositories>
@@ -31,6 +32,19 @@
             <url>https://jitpack.io</url>
         </repository>
     </repositories>
+
+    <!-- 依赖版本管理：强制所有 LWJGL 依赖使用 3.3.2 -->
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>org.lwjgl</groupId>
+                <artifactId>lwjgl-bom</artifactId>
+                <version>${lwjgl.version}</version>
+                <scope>import</scope>
+                <type>pom</type>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
 
     <dependencies>
         <!-- jMonkeyEngine核心依赖 -->
@@ -75,11 +89,66 @@
             <version>${jme3.version}</version>
         </dependency>
 
-        <!-- TTF字体渲染支持 -->
+        <!-- ==================== 字体渲染库 ==================== -->
+
+        <!-- jme-ttf: JME3 TTF字体加载器 (基于 FreeType) -->
         <dependency>
             <groupId>com.github.stephengold</groupId>
             <artifactId>jme-ttf</artifactId>
             <version>3.0.1</version>
+        </dependency>
+
+        <!-- LWJGL FreeType 原生绑定 -->
+        <dependency>
+            <groupId>org.lwjgl</groupId>
+            <artifactId>lwjgl-freetype</artifactId>
+            <version>${lwjgl.version}</version>
+        </dependency>
+        <!-- FreeType 原生库（Windows） -->
+        <dependency>
+            <groupId>org.lwjgl</groupId>
+            <artifactId>lwjgl-freetype</artifactId>
+            <version>${lwjgl.version}</version>
+            <classifier>natives-windows</classifier>
+        </dependency>
+        <!-- FreeType 原生库（Linux） -->
+        <dependency>
+            <groupId>org.lwjgl</groupId>
+            <artifactId>lwjgl-freetype</artifactId>
+            <version>${lwjgl.version}</version>
+            <classifier>natives-linux</classifier>
+        </dependency>
+        <!-- FreeType 原生库（macOS） -->
+        <dependency>
+            <groupId>org.lwjgl</groupId>
+            <artifactId>lwjgl-freetype</artifactId>
+            <version>${lwjgl.version}</version>
+            <classifier>natives-macos</classifier>
+        </dependency>
+
+        <!-- LWJGL STB TrueType (轻量级 TTF 解析器) -->
+        <dependency>
+            <groupId>org.lwjgl</groupId>
+            <artifactId>lwjgl-stb</artifactId>
+            <version>${lwjgl.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.lwjgl</groupId>
+            <artifactId>lwjgl-stb</artifactId>
+            <version>${lwjgl.version}</version>
+            <classifier>natives-windows</classifier>
+        </dependency>
+        <dependency>
+            <groupId>org.lwjgl</groupId>
+            <artifactId>lwjgl-stb</artifactId>
+            <version>${lwjgl.version}</version>
+            <classifier>natives-linux</classifier>
+        </dependency>
+        <dependency>
+            <groupId>org.lwjgl</groupId>
+            <artifactId>lwjgl-stb</artifactId>
+            <version>${lwjgl.version}</version>
+            <classifier>natives-macos</classifier>
         </dependency>
 
         <!-- 辅助库 -->

@@ -147,6 +147,9 @@ public class Main extends SimpleApplication {
 
         // 清除调试UI元素
         removeDebugTexts();
+
+        // 显示欢迎屏幕（TTF 字体测试）
+        // showWelcomeScreen();
     }
 
     /**
@@ -301,6 +304,19 @@ public class Main extends SimpleApplication {
     }
 
     // ==================== UI清理相关 ====================
+
+    /**
+     * 显示欢迎屏幕（TTF 字体测试）
+     */
+    private void showWelcomeScreen() {
+        try {
+            com.Hecate.ui.WelcomeScreen welcomeScreen = new com.Hecate.ui.WelcomeScreen(this);
+            welcomeScreen.show();
+        } catch (Exception e) {
+            System.err.println("[Main] 欢迎屏幕显示失败: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
 
     /**
      * 清除调试文本（仅在初始化时调用一次）

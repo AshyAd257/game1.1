@@ -1,8 +1,6 @@
 package com.Hecate.ui;
 
 import com.jme3.app.SimpleApplication;
-import com.jme3.font.BitmapFont;
-import com.jme3.font.BitmapText;
 import com.jme3.input.KeyInput;
 import com.jme3.input.controls.ActionListener;
 import com.jme3.input.controls.KeyTrigger;
@@ -13,6 +11,9 @@ import com.jme3.scene.Node;
 import com.jme3.ui.Picture;
 import com.Hecate.player.BuffType;
 import com.Hecate.localization.Localization;
+import com.Hecate.ui.common.TTFontLoader;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.List;
 import java.util.function.Consumer;
@@ -26,16 +27,20 @@ import java.util.function.Consumer;
  */
 public class BuffSelectUI implements ActionListener {
 
+    private static final Logger logger = LoggerFactory.getLogger(BuffSelectUI.class);
     private static final ColorRGBA NORMAL_COLOR = new ColorRGBA(0.7f, 0.7f, 0.7f, 1f);
     private static final ColorRGBA HIGHLIGHT_COLOR = ColorRGBA.Yellow;
+    private static final String FONT_PATH = "Interface/Fonts/ZLabsBitmap_12px_CN（简体中文）.ttf";
 
     private final SimpleApplication app;
     private final Node rootNode;
 
     private Node uiNode;
     private Picture background;
-    private BitmapText[] optionTexts;
-    private BitmapText titleText;
+    private Node[] optionTextNodes;
+    private Node titleTextNode;
+    private TTFontLoader titleFontLoader;
+    private TTFontLoader optionFontLoader;
 
     private List<BuffType> currentOptions;
     private int selectedIndex = 0;
@@ -45,6 +50,11 @@ public class BuffSelectUI implements ActionListener {
     public BuffSelectUI(SimpleApplication app) {
         this.app = app;
         this.rootNode = app.getGuiNode();
+        this.titleFontLoader = TTFontLoader.loadFontFromResource(app.getAssetManager(), FONT_PATH, 24f);
+        this.optionFontLoader = TTFontLoader.loadFontFromResource(app.getAssetManager(), FONT_PATH, 18f);
+        if (titleFontLoader == null || optionFontLoader == null) {
+            logger.error("加载TTF字体失败: {}", FONT_PATH);
+        }
         initializeUI();
         registerInputMappings();
     }
@@ -71,32 +81,41 @@ public class BuffSelectUI implements ActionListener {
 
         uiNode.attachChild(background);
 
-        // 使用 JME3 默认字体
-        BitmapFont font = app.getAssetManager().loadFont("Interface/Fonts/Default.fnt");
-
-        titleText = new BitmapText(font);
-        titleText.setText(Localization.get("buff.select.title"));
-        titleText.setSize(20);  // 设置字体大小
-        titleText.setLocalTranslation(
-                screenWidth / 2f - titleText.getLineWidth() / 2f,
-                panelY + panelHeight - 20,
+        // 使用 TTF 像素字体创建标题
+        titleTextNode = titleFontLoader.createText(
+                Localization.get("buff.select.title"),
+                ColorRGBA.White
+        );
+        titleTextNode.setLocalTranslation(
+                screenWidth / 2f - 100,  // 临时位置，稍后调整
+                panelY + panelHeight - 30,
                 0);
-        titleText.setColor(ColorRGBA.White);
-        uiNode.attachChild(titleText);
+        uiNode.attachChild(titleTextNode);
 
-        // 3个横排选项，均分屏幕宽度
-        optionTexts = new BitmapText[3];
+        // 3个横排选项（占位节点，实际内容在 show()/refreshHighlight() 中重建）
+        optionTextNodes = new Node[3];
         for (int i = 0; i < 3; i++) {
-            BitmapText text = new BitmapText(font);
-            text.setText("");
-            text.setSize(18);  // 选项字体稍小
-            text.setColor(NORMAL_COLOR);
-            optionTexts[i] = text;
-            uiNode.attachChild(text);
+            Node textNode = optionFontLoader.createText("", NORMAL_COLOR);
+            optionTextNodes[i] = textNode;
+            uiNode.attachChild(textNode);
         }
 
         uiNode.setCullHint(com.jme3.scene.Spatial.CullHint.Always);
         rootNode.attachChild(uiNode);
+    }
+
+    /**
+     * 用新内容替换指定下标的选项文本节点（TTFontLoader 不支持原地更新文本，需重建节点）
+     */
+    private void replaceOptionText(int index, String display, ColorRGBA color, float x, float y) {
+        Node oldNode = optionTextNodes[index];
+        if (oldNode != null) {
+            oldNode.removeFromParent();
+        }
+        Node newNode = optionFontLoader.createText(display, color);
+        newNode.setLocalTranslation(x, y, 0);
+        uiNode.attachChild(newNode);
+        optionTextNodes[index] = newNode;
     }
 
     private void registerInputMappings() {
@@ -116,26 +135,6 @@ public class BuffSelectUI implements ActionListener {
         this.onConfirm = onConfirm;
         this.selectedIndex = 0;
 
-        int screenWidth = app.getCamera().getWidth();
-        int screenHeight = app.getCamera().getHeight();
-        float panelHeight = 220f;
-        float panelY = screenHeight / 2f - panelHeight / 2f;
-
-        float slotWidth = screenWidth / 3f;
-        for (int i = 0; i < 3; i++) {
-            BitmapText text = optionTexts[i];
-            BuffType buff = options.get(i);
-
-            // 显示标题和描述（多行文本）
-            String display = buff.getDisplayName() + "\n" + buff.getDescription();
-            text.setText(display);
-
-            // 水平居中，垂直在面板中间
-            float textX = slotWidth * i + slotWidth / 2f - text.getLineWidth() / 2f;
-            float textY = panelY + panelHeight / 2f + 20;  // 稍微上移，留出描述空间
-            text.setLocalTranslation(textX, textY, 0);
-        }
-
         refreshHighlight();
 
         uiNode.setCullHint(com.jme3.scene.Spatial.CullHint.Never);
@@ -152,25 +151,23 @@ public class BuffSelectUI implements ActionListener {
     }
 
     private void refreshHighlight() {
-        for (int i = 0; i < optionTexts.length; i++) {
+        int screenWidth = app.getCamera().getWidth();
+        int screenHeight = app.getCamera().getHeight();
+        float panelHeight = 220f;
+        float panelY = screenHeight / 2f - panelHeight / 2f;
+        float slotWidth = screenWidth / 3f;
+
+        for (int i = 0; i < optionTextNodes.length; i++) {
             boolean selected = (i == selectedIndex);
-            optionTexts[i].setColor(selected ? HIGHLIGHT_COLOR : NORMAL_COLOR);
+            ColorRGBA color = selected ? HIGHLIGHT_COLOR : NORMAL_COLOR;
 
             BuffType buff = currentOptions.get(i);
             String display = buff.getDisplayName() + "\n" + buff.getDescription();
 
-            // 选中时不加括号，只用颜色高亮，避免文字宽度变化
-            optionTexts[i].setText(display);
-
-            // 重新居中
-            int screenWidth = app.getCamera().getWidth();
-            int screenHeight = app.getCamera().getHeight();
-            float panelHeight = 220f;
-            float panelY = screenHeight / 2f - panelHeight / 2f;
-            float slotWidth = screenWidth / 3f;
-            float textX = slotWidth * i + slotWidth / 2f - optionTexts[i].getLineWidth() / 2f;
+            // 重新居中并用新颜色重建文本节点
+            float textX = slotWidth * i + slotWidth / 2f - 80;
             float textY = panelY + panelHeight / 2f + 20;
-            optionTexts[i].setLocalTranslation(textX, textY, 0);
+            replaceOptionText(i, display, color, textX, textY);
         }
     }
 

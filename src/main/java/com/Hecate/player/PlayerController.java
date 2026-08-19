@@ -742,6 +742,11 @@ public class PlayerController implements ActionListener, AnalogListener {
     private void handlePlayerRevive() {
         isDead = false;
 
+        // 死亡期间 onAction 会因 isDead==true 而整体忽略输入事件，
+        // 若玩家死亡瞬间正按着移动键/鼠标键，松开事件也会被吞掉，
+        // 导致这些按键状态永久卡在"按下"——复活后必须显式清空，否则会自动移动/开火。
+        resetInputStates();
+
         // 移除死亡节点
         if (deadPlayerNode != null) {
             deadPlayerNode.removeFromParent();

@@ -12,16 +12,30 @@ public abstract class Weapon {
     // 武器属性
     protected final WeaponStats stats;
 
+    // 武器种类（步枪/狙击枪/.../战锤）。null表示未分类——现有的BasicShooter/
+    // SteampunkGun/FlameWeapon都是历史遗留武器，通过单参数构造函数创建，kind为null。
+    // PlayerController据此字段区分远程/近战分支（而不是instanceof判断），
+    // kind为null时按远程武器处理，与现状完全一致。
+    protected final WeaponKind kind;
+
     // 武器状态
     protected float timeSinceLastFire;       // 距离上次开火的时间
     protected float currentChargeTime = 0f;  // 当前蓄力时间
     protected boolean isCharging = false;    // 是否正在蓄力
 
     /**
-     * 构造函数
+     * 构造函数（不指定种类，兼容现有远程武器子类）
      */
     public Weapon(WeaponStats stats) {
+        this(stats, null);
+    }
+
+    /**
+     * 构造函数（指定武器种类）
+     */
+    public Weapon(WeaponStats stats, WeaponKind kind) {
         this.stats = stats;
+        this.kind = kind;
         // 初始化为已冷却状态，允许立即开火
         this.timeSinceLastFire = stats.getFireRate();
     }
@@ -153,6 +167,16 @@ public abstract class Weapon {
 
     // Getters
     public WeaponStats getStats() { return stats; }
+    public WeaponKind getKind() { return kind; }
+
+    /**
+     * 是否为近战武器。kind未设置（历史遗留远程武器）时返回false，
+     * 与"远程/近战二分、默认远程"的现状保持一致。
+     */
+    public boolean isMelee() {
+        return kind != null && kind.isMelee();
+    }
+
     public boolean canFire() { return timeSinceLastFire >= stats.getFireRate(); }
     public boolean isCharging() { return isCharging; }
     public float getChargeProgress() {

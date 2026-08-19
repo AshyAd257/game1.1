@@ -34,6 +34,15 @@ public class Projectile {
     // 状态标志
     private boolean alive;              // 是否存活
 
+    // 穿透剩余次数：初始等于profile.getHitEffect().pierceCount。
+    // 注意：Projectile自身不记录"已经命中过哪些目标"，同一发子弹是否会对
+    // 同一个目标重复计伤，需要调用hit()的一方（碰撞检测系统）自行去重
+    // （参考Monster.takeDamage的shotId去重机制）。
+    private int remainingPierces;
+
+    // 沿途涂墨计时器：仅profile.isPaintAlongPath()==true时使用
+    private float pathPaintTimer;
+
     // 发射信息（用于命中效果）
     private final float chargeMult;     // 蓄力倍率（影响伤害/射程）
     private final int teamId;           // 发射者队伍
@@ -68,6 +77,8 @@ public class Projectile {
         this.teamId = teamId;
         this.listeners = new ArrayList<>();
         this.eventBus = null;  // 默认不发射全局事件
+        this.remainingPierces = profile.getHitEffect() != null ? profile.getHitEffect().pierceCount : 0;
+        this.pathPaintTimer = 0.0f;
     }
 
     /**
@@ -90,6 +101,11 @@ public class Projectile {
             case HOMING:
                 updateHoming(deltaTime);
                 break;
+
+            case MELEE_SWING:
+                // TODO: 近战挥砍弧线（短程、慢速、沿弧形轨迹），占位阶段先落回直线
+                updateLinear(deltaTime);
+                break;
         }
 
         // 更新飞行距离
@@ -99,8 +115,33 @@ public class Projectile {
         // 更新存活时间
         lifetime += deltaTime;
 
+        // 沿途涂墨（狙击枪弹道痕迹、镰刀甩墨等）
+        if (profile.isPaintAlongPath()) {
+            updatePathPaint(deltaTime);
+        }
+
         // 检查生命周期结束条件
         checkLifecycle();
+    }
+
+    /**
+     * 沿飞行路径按固定间隔发出涂墨事件，与命中/超时时的单点涂墨互不影响。
+     * 半径复用hitEffect.inkRadius，强度固定为1（不受蓄力倍率影响，避免和命中涂墨的
+     * 强度语义混淆）。
+     */
+    private void updatePathPaint(float deltaTime) {
+        pathPaintTimer += deltaTime;
+        float interval = profile.getPathPaintInterval();
+        if (interval <= 0f || pathPaintTimer < interval) {
+            return;
+        }
+        pathPaintTimer = 0f;
+
+        if (eventBus != null && profile.getHitEffect() != null) {
+            PaintEvent pathPaintEvent = new PaintEvent(
+                    position, profile.getHitEffect().inkRadius, teamId, 1.0f);
+            eventBus.publish(pathPaintEvent);
+        }
     }
 
     /**
@@ -161,7 +202,14 @@ public class Projectile {
     public void hit(Vector3f hitPoint) {
         if (!alive) return;
 
-        alive = false;
+        // 穿透：还有剩余穿透次数时，子弹命中后继续存活（不发expire/不清alive），
+        // 只消耗一次穿透次数。伤害结算由调用方（碰撞检测系统）自行处理，
+        // Projectile本身不关心具体命中的是谁。
+        if (remainingPierces > 0) {
+            remainingPierces--;
+        } else {
+            alive = false;
+        }
 
         // 发射PaintEvent到事件总线（如果已连接）
         if (eventBus != null && profile.getHitEffect() != null) {
@@ -233,6 +281,7 @@ public class Projectile {
     public boolean isAlive() { return alive; }
     public float getChargeMult() { return chargeMult; }
     public int getTeamId() { return teamId; }
+    public int getRemainingPierces() { return remainingPierces; }
 
     /**
      * 子弹事件

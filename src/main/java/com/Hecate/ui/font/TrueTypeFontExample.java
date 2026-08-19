@@ -1,82 +1,131 @@
 package com.Hecate.ui.font;
 
+import com.atr.jme.font.TrueTypeBMP;
+import com.atr.jme.font.asset.TrueTypeLoader;
+import com.atr.jme.font.asset.TrueTypeKeyBMP;
+import com.atr.jme.font.shape.TrueTypeText;
+import com.atr.jme.font.util.Style;
 import com.jme3.app.SimpleApplication;
 import com.jme3.asset.AssetManager;
-import com.jme3.font.BitmapFont;
-import com.jme3.font.BitmapText;
 import com.jme3.math.ColorRGBA;
-import com.jme3.scene.Node;
-import jmettf.TrueTypeFont;
-import jmettf.TrueTypeMesh;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * 使用 jme-ttf 加载和渲染 TrueType 字体的示例。
- * <p>
- * jme-ttf 提供两种渲染模式：
- * 1. BitmapFont 模式 (TrueTypeFont): 预渲染字形到纹理图集
- * 2. 矢量模式 (TrueTypeMesh): 动态生成网格，支持任意大小
+ * TTF 字体加载示例
+ * 使用 jme-ttf 库的正确方式：通过 AssetManager 和 TrueTypeKeyBMP
  */
 public class TrueTypeFontExample {
+
     private static final Logger logger = LoggerFactory.getLogger(TrueTypeFontExample.class);
+    private static boolean loaderRegistered = false;
 
     /**
-     * 加载 TTF 字体并转换为 BitmapFont（适合游戏UI文本）
-     *
-     * @param assetManager JME3 资源管理器
-     * @param fontPath     字体文件路径（如 "Fonts/NotoSansCJK-Regular.ttf"）
-     * @param fontSize     字体大小（像素）
-     * @return BitmapFont 对象
+     * 注册 TTF 字体加载器（整个应用只需注册一次）
      */
-    public static BitmapFont loadTTFFont(AssetManager assetManager, String fontPath, int fontSize) {
+    public static void registerLoader(AssetManager assetManager) {
+        if (!loaderRegistered) {
+            assetManager.registerLoader(TrueTypeLoader.class, "ttf");
+            loaderRegistered = true;
+            logger.info("✓ TrueTypeLoader registered for .ttf files");
+        }
+    }
+
+    /**
+     * 加载并创建 TTF 字体文本
+     * @param app 应用实例
+     * @param text 要显示的文字
+     * @param fontPath TTF 字体文件路径（相对于 assets 根目录）
+     * @param fontSize 字体大小（单位：点）
+     * @return TrueTypeText 节点（可直接添加到 guiNode）
+     */
+    public static TrueTypeText createText(SimpleApplication app, String text, String fontPath, int fontSize) {
+        AssetManager assetManager = app.getAssetManager();
+
         try {
-            // 使用 jme-ttf 加载 TTF 字体
-            TrueTypeFont ttf = TrueTypeFont.create(assetManager, fontPath);
+            // 1. 确保加载器已注册
+            registerLoader(assetManager);
 
-            // 设置字体大小和DPI
-            ttf.setStyle(fontSize);
+            // 2. 创建字体加载 Key
+            TrueTypeKeyBMP fontKey = new TrueTypeKeyBMP(fontPath, Style.Plain, fontSize);
 
-            // 指定要预渲染的字符集（可选，默认为 ASCII）
-            // ttf.setCharacterSet("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%");
+            // 3. 加载字体
+            TrueTypeBMP font = (TrueTypeBMP) assetManager.loadAsset(fontKey);
 
-            // 转换为 BitmapFont
-            BitmapFont bitmapFont = ttf.getBitmapFont();
+            // 4. 创建文本节点（需要两个颜色参数：前景色和背景色）
+            TrueTypeText textNode = font.getText(text, 0, ColorRGBA.White, ColorRGBA.BlackNoAlpha);
 
-            logger.info("✓ TTF font loaded: {} (size: {})", fontPath, fontSize);
-            return bitmapFont;
+            logger.info("✓ TTF text created: \"{}\" using font: {} (size: {}pt)", text, fontPath, fontSize);
+            return textNode;
 
         } catch (Exception e) {
-            logger.error("Failed to load TTF font: {}", fontPath, e);
+            logger.error("Failed to create TTF text: {}", e.getMessage(), e);
             return null;
         }
     }
 
     /**
-     * 创建文本节点（使用 BitmapFont）
+     * 创建带样式和颜色的 TTF 文本
      */
-    public static BitmapText createText(BitmapFont font, String text, float x, float y) {
-        BitmapText textNode = new BitmapText(font);
-        textNode.setText(text);
-        textNode.setSize(font.getCharSet().getRenderedSize());
-        textNode.setColor(ColorRGBA.White);
-        textNode.setLocalTranslation(x, y, 0);
-        return textNode;
+    public static TrueTypeText createStyledText(
+            SimpleApplication app,
+            String text,
+            String fontPath,
+            int fontSize,
+            Style style,
+            ColorRGBA color
+    ) {
+        AssetManager assetManager = app.getAssetManager();
+
+        try {
+            registerLoader(assetManager);
+
+            TrueTypeKeyBMP fontKey = new TrueTypeKeyBMP(fontPath, style, fontSize);
+            TrueTypeBMP font = (TrueTypeBMP) assetManager.loadAsset(fontKey);
+            TrueTypeText textNode = font.getText(text, 0, color, ColorRGBA.BlackNoAlpha);
+
+            logger.info("✓ Styled TTF text created: \"{}\" (style: {}, color: {})", text, style, color);
+            return textNode;
+
+        } catch (Exception e) {
+            logger.error("Failed to create styled TTF text: {}", e.getMessage(), e);
+            return null;
+        }
     }
 
     /**
-     * 使用示例
+     * 创建缩放的高质量文本（推荐用于小字号）
+     * 官方文档推荐：对于小于 53pt 的字体，使用更大的字号渲染后缩小，可以获得更清晰的效果
      */
-    public static void example(SimpleApplication app) {
-        // 1. 加载字体
-        BitmapFont font = loadTTFFont(app.getAssetManager(), "Fonts/Arial.ttf", 24);
+    public static TrueTypeText createScaledText(
+            SimpleApplication app,
+            String text,
+            String fontPath,
+            int targetSize,
+            ColorRGBA color
+    ) {
+        AssetManager assetManager = app.getAssetManager();
 
-        if (font != null) {
-            // 2. 创建文本
-            BitmapText text = createText(font, "Hello World! 你好世界!", 100, 300);
+        try {
+            registerLoader(assetManager);
 
-            // 3. 添加到场景
-            app.getGuiNode().attachChild(text);
+            // 使用较大的渲染尺寸
+            int renderSize = (int) (targetSize * 1.5f);
+            float scale = (float) targetSize / renderSize;
+
+            TrueTypeKeyBMP fontKey = new TrueTypeKeyBMP(fontPath, Style.Plain, renderSize);
+            TrueTypeBMP font = (TrueTypeBMP) assetManager.loadAsset(fontKey);
+            font.setScale(scale);
+
+            TrueTypeText textNode = font.getText(text, 0, color, ColorRGBA.BlackNoAlpha);
+
+            logger.info("✓ Scaled TTF text created: \"{}\" (target: {}pt, render: {}pt, scale: {})",
+                       text, targetSize, renderSize, scale);
+            return textNode;
+
+        } catch (Exception e) {
+            logger.error("Failed to create scaled TTF text: {}", e.getMessage(), e);
+            return null;
         }
     }
 }

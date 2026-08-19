@@ -28,6 +28,11 @@ public class ProjectileProfile {
     private final HitEffect hitEffect;          // 命中时效果
     private final ExpireEffect expireEffect;    // 超时效果
 
+    // 沿途涂墨（狙击枪弹道沿途留下墨水痕迹、镰刀甩墨等）：false时行为与现状完全一致，
+    // 只在命中/超时的单一落点涂一次墨。
+    private final boolean paintAlongPath;       // 是否沿飞行路径持续涂墨
+    private final float pathPaintInterval;      // 沿途涂墨的时间间隔（秒），仅paintAlongPath=true时生效
+
     // 视觉效果
     private final VisualConfig visualConfig;    // 渲染配置
 
@@ -37,7 +42,10 @@ public class ProjectileProfile {
     public enum ArcType {
         LINEAR,         // 直线（忽略重力）
         BALLISTIC,      // 抛物线（受重力影响）
-        HOMING          // 追踪导弹（自动瞄准）
+        HOMING,         // 追踪导弹（自动瞄准）
+        // 近战剑类挥砍占位：短程、慢速、弧形轨迹。具体挥砍弧线公式待实现，
+        // Projectile.update()中当前直接落回updateLinear()。
+        MELEE_SWING
     }
 
     /**
@@ -50,20 +58,34 @@ public class ProjectileProfile {
         public final boolean ignite;            // 是否点燃墨水
         public final boolean explode;           // 是否爆炸
         public final float explosionRadius;     // 爆炸半径（米）
+        // 穿透次数：0表示命中一次即消失（当前所有已注册武器的行为），
+        // >0表示命中N个目标后才真正消失（狙击枪穿透用）。
+        public final int pierceCount;
 
         public HitEffect(float damage, float inkRadius, int inkTeam,
                         boolean ignite, boolean explode, float explosionRadius) {
+            this(damage, inkRadius, inkTeam, ignite, explode, explosionRadius, 0);
+        }
+
+        public HitEffect(float damage, float inkRadius, int inkTeam,
+                        boolean ignite, boolean explode, float explosionRadius, int pierceCount) {
             this.damage = damage;
             this.inkRadius = inkRadius;
             this.inkTeam = inkTeam;
             this.ignite = ignite;
             this.explode = explode;
             this.explosionRadius = explosionRadius;
+            this.pierceCount = pierceCount;
         }
 
-        // 简化构造（仅伤害和涂墨）
+        // 简化构造（仅伤害和涂墨，无穿透）
         public static HitEffect simple(float damage, float inkRadius, int inkTeam) {
-            return new HitEffect(damage, inkRadius, inkTeam, false, false, 0);
+            return new HitEffect(damage, inkRadius, inkTeam, false, false, 0, 0);
+        }
+
+        // 简化构造（伤害+涂墨+穿透次数，狙击枪一类武器用）
+        public static HitEffect piercing(float damage, float inkRadius, int inkTeam, int pierceCount) {
+            return new HitEffect(damage, inkRadius, inkTeam, false, false, 0, pierceCount);
         }
     }
 
@@ -96,12 +118,21 @@ public class ProjectileProfile {
         public final Vector3f color;            // 颜色（RGB）
         public final float scale;               // 尺寸缩放
         public final boolean trail;             // 是否有拖尾
+        // 贴图路径（相对于resources，例如"textures/weapons/projectiles/rifle_bullet.png"）。
+        // null表示暂无贴图，渲染层回退到纯色方块（Box几何体+color）。
+        // 先用单张贴图糊在一个立方体上占位，后续如果需要多面不同贴图，再拆分成多材质。
+        public final String texturePath;
 
         public VisualConfig(String particleType, Vector3f color, float scale, boolean trail) {
+            this(particleType, color, scale, trail, null);
+        }
+
+        public VisualConfig(String particleType, Vector3f color, float scale, boolean trail, String texturePath) {
             this.particleType = particleType;
             this.color = color;
             this.scale = scale;
             this.trail = trail;
+            this.texturePath = texturePath;
         }
 
         public static VisualConfig flame() {
@@ -110,6 +141,11 @@ public class ProjectileProfile {
 
         public static VisualConfig bullet() {
             return new VisualConfig("bullet", new Vector3f(1, 1, 0), 0.5f, false);
+        }
+
+        // 带贴图的方块占位（新武器体系默认走这条：一个立方体+一张贴图）
+        public static VisualConfig texturedBox(String texturePath) {
+            return new VisualConfig("box", new Vector3f(1, 1, 1), 1.0f, false, texturePath);
         }
     }
 
@@ -127,6 +163,8 @@ public class ProjectileProfile {
         this.maxRange = builder.maxRange;
         this.hitEffect = builder.hitEffect;
         this.expireEffect = builder.expireEffect;
+        this.paintAlongPath = builder.paintAlongPath;
+        this.pathPaintInterval = builder.pathPaintInterval;
         this.visualConfig = builder.visualConfig;
     }
 
@@ -141,6 +179,8 @@ public class ProjectileProfile {
     public float getMaxRange() { return maxRange; }
     public HitEffect getHitEffect() { return hitEffect; }
     public ExpireEffect getExpireEffect() { return expireEffect; }
+    public boolean isPaintAlongPath() { return paintAlongPath; }
+    public float getPathPaintInterval() { return pathPaintInterval; }
     public VisualConfig getVisualConfig() { return visualConfig; }
 
     /**
@@ -160,6 +200,8 @@ public class ProjectileProfile {
         private float maxRange = 100.0f;
         private HitEffect hitEffect = HitEffect.simple(10, 1, 0);
         private ExpireEffect expireEffect = ExpireEffect.none();
+        private boolean paintAlongPath = false;
+        private float pathPaintInterval = 0.1f;
         private VisualConfig visualConfig = VisualConfig.bullet();
 
         public Builder(String id, String displayName) {
@@ -175,6 +217,8 @@ public class ProjectileProfile {
         public Builder maxRange(float val) { maxRange = val; return this; }
         public Builder hitEffect(HitEffect val) { hitEffect = val; return this; }
         public Builder expireEffect(ExpireEffect val) { expireEffect = val; return this; }
+        public Builder paintAlongPath(boolean val) { paintAlongPath = val; return this; }
+        public Builder pathPaintInterval(float val) { pathPaintInterval = val; return this; }
         public Builder visualConfig(VisualConfig val) { visualConfig = val; return this; }
 
         public ProjectileProfile build() {

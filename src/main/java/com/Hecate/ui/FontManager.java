@@ -59,7 +59,9 @@ public class FontManager {
         // 检查 LWJGL FreeType
         try {
             Class.forName("org.lwjgl.util.freetype.FreeType");
-            boolean ftInit = FreetypeFontLoader.initialize();
+            // TODO: FreetypeFontLoader 尚未实现
+            // boolean ftInit = FreetypeFontLoader.initialize();
+            boolean ftInit = false;
             if (ftInit) {
                 logger.info("✓ LWJGL FreeType: Available and initialized");
             } else {
@@ -136,7 +138,7 @@ public class FontManager {
     /**
      * 加载 TrueType 字体（使用当前后端）
      */
-    private BitmapFont loadTrueTypeFont(String fontPath, int size) {
+    public BitmapFont loadTrueTypeFont(String fontPath, int size) {
         switch (currentBackend) {
             case JME_TTF:
                 return loadWithJmeTtf(fontPath, size);
@@ -166,7 +168,9 @@ public class FontManager {
      * 使用 LWJGL FreeType 加载
      */
     private BitmapFont loadWithLwjglFreetype(String fontPath, int size) {
-        BitmapFont font = FreetypeFontLoader.loadFont(assetManager, fontPath, size);
+        // TODO: FreetypeFontLoader 尚未实现
+        // BitmapFont font = FreetypeFontLoader.loadFont(assetManager, fontPath, size);
+        BitmapFont font = null;
         if (font != null) {
             return font;
         }

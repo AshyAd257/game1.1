@@ -123,12 +123,13 @@ public class FontSystemDiagnostics {
             result.status = "Library available, loader partially implemented";
 
             // 检查原生库
-            try {
-                FreetypeFontLoader.initialize();
-                result.issues.add("Native library loaded successfully");
-            } catch (Exception e) {
-                result.issues.add("Native library error: " + e.getMessage());
-            }
+            // TODO: FreetypeFontLoader 尚未实现
+            // try {
+            //     FreetypeFontLoader.initialize();
+            //     result.issues.add("Native library loaded successfully");
+            // } catch (Exception e) {
+            //     result.issues.add("Native library error: " + e.getMessage());
+            // }
 
         } catch (ClassNotFoundException e) {
             result.available = false;

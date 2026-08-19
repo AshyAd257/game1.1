@@ -15,6 +15,10 @@ public class WeaponDefinition {
     private final String id;                    // 武器ID（唯一标识）
     private final String displayName;           // 显示名称
 
+    // 武器种类（步枪/狙击枪/.../战锤）。同一个kind可以注册多个WeaponDefinition实例，
+    // 作为"同一种武器的多个变体"（例如两把数值不同的步枪都是RIFLE）。
+    private final WeaponKind kind;
+
     // 开火模式
     private final FireMode fireMode;            // auto/charge/single
 
@@ -63,6 +67,7 @@ public class WeaponDefinition {
     private WeaponDefinition(Builder builder) {
         this.id = builder.id;
         this.displayName = builder.displayName;
+        this.kind = builder.kind;
         this.fireMode = builder.fireMode;
         this.ammoMax = builder.ammoMax;
         this.ammoPerShot = builder.ammoPerShot;
@@ -75,6 +80,7 @@ public class WeaponDefinition {
     // Getters
     public String getId() { return id; }
     public String getDisplayName() { return displayName; }
+    public WeaponKind getKind() { return kind; }
     public FireMode getFireMode() { return fireMode; }
     public int getAmmoMax() { return ammoMax; }
     public float getAmmoPerShot() { return ammoPerShot; }
@@ -106,6 +112,9 @@ public class WeaponDefinition {
         private final String displayName;
 
         // 可选参数（设置默认值）
+        // kind默认null——现有三个已注册武器（smg_01/flame_thrower/steampunk_gun）暂不分类，
+        // 待正式接入新武器体系时再回填。
+        private WeaponKind kind = null;
         private FireMode fireMode = FireMode.AUTO;
         private int ammoMax = 100;
         private float ammoPerShot = 1.0f;
@@ -119,6 +128,7 @@ public class WeaponDefinition {
             this.displayName = displayName;
         }
 
+        public Builder kind(WeaponKind val) { kind = val; return this; }
         public Builder fireMode(FireMode val) { fireMode = val; return this; }
         public Builder ammoMax(int val) { ammoMax = val; return this; }
         public Builder ammoPerShot(float val) { ammoPerShot = val; return this; }

@@ -8,6 +8,8 @@ import com.Hecate.ink.SparseGridManager;
 import com.Hecate.physics.AABB;
 import com.Hecate.physics.CollisionManager;
 import com.Hecate.player.PlayerController;
+import com.Hecate.weapon.MeleeWeapon;
+import com.Hecate.weapon.Weapon;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -270,9 +272,30 @@ public class MonsterManager {
         }
 
         if (monster.getBoundingBox().intersects(playerBox)) {
-            playerController.getPlayerHealth().takeDamage(Monster.ATTACK_DAMAGE);
+            float damage = Monster.ATTACK_DAMAGE * (1.0f - getMeleeBlockReduction());
+            if (damage > 0f) {
+                playerController.getPlayerHealth().takeDamage(damage);
+            }
             monster.resetAttackCooldown();
         }
+    }
+
+    /**
+     * 查询玩家当前武器（如果是近战武器）是否处于格挡/弹反窗口，返回对应的伤害
+     * 减免比例（0=无减免，1=完全格挡）。默认（非近战武器/未格挡）返回0，
+     * 与改动前"接触伤害直接结算"的行为完全一致。
+     * <p>预留给迅捷剑/大剑弹反数值填充时使用，目前 {@link MeleeWeapon#isBlockingActive()}
+     * 始终返回false，本方法恒返回0。
+     */
+    private float getMeleeBlockReduction() {
+        Weapon weapon = playerController.getCurrentWeapon();
+        if (weapon instanceof MeleeWeapon) {
+            MeleeWeapon meleeWeapon = (MeleeWeapon) weapon;
+            if (meleeWeapon.isBlockingActive()) {
+                return meleeWeapon.getBlockDamageReduction();
+            }
+        }
+        return 0f;
     }
 
     /**

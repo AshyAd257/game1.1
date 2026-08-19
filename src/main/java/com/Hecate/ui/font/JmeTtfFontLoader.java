@@ -18,17 +18,11 @@ public class JmeTtfFontLoader {
      */
     public static boolean isAvailable() {
         try {
-            // jme-ttf 3.0+ 使用 TrueTypeFont 类
-            Class.forName("com.jme3x.jfx.injme.TrueTypeFont");
+            // jme-ttf 3.0.1 使用 com.atr.jme.font.TrueTypeFont
+            Class.forName("com.atr.jme.font.TrueTypeFont");
             return true;
         } catch (ClassNotFoundException e) {
-            // 尝试旧版本的类名
-            try {
-                Class.forName("jmettf.TrueTypeFont");
-                return true;
-            } catch (ClassNotFoundException ex) {
-                return false;
-            }
+            return false;
         }
     }
 
@@ -47,17 +41,23 @@ public class JmeTtfFontLoader {
         }
 
         try {
-            // jme-ttf 的典型用法：
-            // TrueTypeFont font = TrueTypeLoader.loadFont(assetManager, fontPath, fontSize);
-            // return font.getBitmapFont();
+            // 注册 jme-ttf 加载器
+            assetManager.registerLoader(com.atr.jme.font.asset.TrueTypeLoader.class, "ttf");
 
-            logger.warn("jme-ttf integration needs proper implementation");
-            logger.info("jme-ttf is available but loader not fully integrated");
+            // 创建 TrueTypeKeyBMP 用于位图字体渲染
+            com.atr.jme.font.asset.TrueTypeKeyBMP key =
+                new com.atr.jme.font.asset.TrueTypeKeyBMP(fontPath,
+                    com.atr.jme.font.util.Style.Plain, fontSize);
 
-            // TODO: 实现完整的 jme-ttf 集成
-            // 问题：jme-ttf 3.0.1 的 API 可能已更改
-            // 需要参考最新文档进行集成
+            // 加载 TrueTypeBMP（位图渲染模式）
+            com.atr.jme.font.TrueTypeBMP ttfBitmap =
+                (com.atr.jme.font.TrueTypeBMP) assetManager.loadAsset(key);
 
+            // jme-ttf 使用 TrueTypeText/TrueTypeNode，不直接返回 BitmapFont
+            // 我们需要另一种方法
+            logger.info("jme-ttf font loaded: {}", fontPath);
+
+            // jme-ttf 不返回 BitmapFont，返回 null 使用回退方案
             return null;
 
         } catch (Exception e) {

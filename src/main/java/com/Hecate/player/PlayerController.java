@@ -221,6 +221,11 @@ public class PlayerController implements ActionListener, AnalogListener {
     private Node gun1WeaponNode = null;  // Gun1武器模型节点
     private boolean isGun1Equipped = false;  // Gun1是否装备
 
+    // Gun2武器系统（狙击枪，模型先用方块占位，后续换真实模型时替换gun2WeaponNode里的几何体）
+    private Node gun2WeaponNode = null;  // Gun2武器占位方块节点
+    private boolean isGun2Equipped = false;  // Gun2是否装备
+    private com.Hecate.weapon.ProjectileManager projectileManager;  // 子弹更新循环（Gun2的子弹飞行/命中/涂墨都由它驱动）
+
     // 持枪状态系统
     private boolean isHoldingGun = false;  // 是否处于持枪状态
     private boolean isLeftButtonPressed = false;  // 左键是否按下（用于连发/蓄力）
@@ -426,6 +431,9 @@ public class PlayerController implements ActionListener, AnalogListener {
         // 注册Gun1命令 - 显示steampunkgun.glb模型
         registerGun1Command();
 
+        // 注册Gun2命令 - 装备/卸下狙击枪（模型先用方块占位）
+        registerGun2Command();
+
         // 注册Mob1命令 - 在玩家前方生成一只怪物
         registerMob1Command();
 
@@ -619,6 +627,103 @@ public class PlayerController implements ActionListener, AnalogListener {
         });
 
 
+    }
+
+    /**
+     * 注册Gun2命令 - 装备/卸下狙击枪
+     * 手持模型和子弹都先用纯色方块占位，后续有真实模型/贴图后再替换
+     */
+    private void registerGun2Command() {
+        gameConsole.registerCommand("gun2", new GameConsole.CommandHandler() {
+            @Override
+            public void execute(String[] args) {
+                app.enqueue(() -> {
+                    try {
+                        if (isGun2Equipped) {
+                            // 卸下武器
+                            if (gun2WeaponNode != null && gun2WeaponNode.getParent() != null) {
+                                gun2WeaponNode.removeFromParent();
+                            }
+                            isGun2Equipped = false;
+
+                            // 退出持枪状态
+                            isHoldingGun = false;
+                            isLeftButtonPressed = false;
+                            continuousFireTimer = 0f;
+                            if (currentWeapon != null) {
+                                currentWeapon.cancelCharge();
+                            }
+
+                            // 清空场上还在飞的狙击枪子弹
+                            if (projectileManager != null) {
+                                projectileManager.clear();
+                            }
+
+                            // 恢复默认武器
+                            setCurrentWeapon(BasicShooter.createDefault());
+
+                            gameConsole.addHistory("狙击枪已卸下");
+                            gameConsole.addHistory("已切换回默认武器");
+                            gameConsole.addHistory("已退出持枪状态");
+
+                        } else {
+                            // 装备武器：手持模型先用方块占位
+                            if (gun2WeaponNode == null) {
+                                Box box = new Box(0.1f, 0.1f, 0.4f);
+                                Geometry weaponGeom = new Geometry("Gun2_SniperRifle_Placeholder", box);
+                                Material mat = new Material(app.getAssetManager(), "Common/MatDefs/Misc/Unshaded.j3md");
+                                mat.setColor("Color", ColorRGBA.DarkGray);
+                                weaponGeom.setMaterial(mat);
+
+                                gun2WeaponNode = new Node("Gun2_SniperRifle");
+                                gun2WeaponNode.attachChild(weaponGeom);
+                            }
+
+                            app.getRootNode().attachChild(gun2WeaponNode);
+                            isGun2Equipped = true;
+
+                            // 进入持枪状态
+                            isHoldingGun = true;
+
+                            // 切换到狙击枪
+                            com.Hecate.weapon.SniperRifle sniperRifle = com.Hecate.weapon.SniperRifle.create();
+
+                            // 设置武器依赖项
+                            sniperRifle.setGridManager(gridManager);
+                            sniperRifle.setMonsterManager(monsterManager);
+                            sniperRifle.setWorldNode(app.getRootNode());
+                            sniperRifle.setPlayerTeam(getPlayerTeam());
+                            sniperRifle.setSpawnListener(projectile -> {
+                                if (projectileManager != null) {
+                                    projectileManager.spawn(projectile);
+                                }
+                            });
+
+                            setCurrentWeapon(sniperRifle);
+
+                            gameConsole.addHistory("狙击枪已装备");
+                            gameConsole.addHistory("━━━━━━━━━━━━━━━━");
+                            gameConsole.addHistory("左键: 蓄力（最长2秒），松开发射");
+                            gameConsole.addHistory("不蓄力开火伤害80，满蓄力伤害180");
+                            gameConsole.addHistory("射程6格，射程内可穿透任意数量目标");
+                            gameConsole.addHistory("子弹飞行沿途留下墨水痕迹");
+                            gameConsole.addHistory("武器将跟随玩家移动");
+                            gameConsole.addHistory("再次输入 /gun2 可以卸下武器");
+
+                        }
+                    } catch (Exception e) {
+                        LogUtils.error(PlayerController.class, "处理Gun2命令失败", e);
+                        gameConsole.addHistory("错误: " + e.getMessage());
+                    }
+                    return null;
+                });
+            }
+
+            @Override
+            public String getDescription() {
+                return "装备/卸下狙击枪（武器会跟随玩家）";
+            }
+        });
     }
 
     /**
@@ -1343,6 +1448,11 @@ public class PlayerController implements ActionListener, AnalogListener {
             currentWeapon.update(tpf);
         }
 
+        // 更新Gun2子弹更新循环（飞行/命中/穿透/沿途涂墨）
+        if (projectileManager != null) {
+            projectileManager.update(tpf);
+        }
+
         // 【地面类型检测】检测玩家脚下的墨水类型
         updateGroundType();
 
@@ -1608,16 +1718,20 @@ public class PlayerController implements ActionListener, AnalogListener {
 
         // 更新Gun1武器位置（如果已装备）
         if (isGun1Equipped && gun1WeaponNode != null) {
-            updateGun1WeaponPosition();
+            updateHeldWeaponPosition(gun1WeaponNode);
+        }
+
+        // 更新Gun2武器位置（如果已装备）
+        if (isGun2Equipped && gun2WeaponNode != null) {
+            updateHeldWeaponPosition(gun2WeaponNode);
         }
 
     }
 
     /**
-     * 更新Gun1武器位置
-     * 使武器跟随玩家，出现在玩家面前
+     * 更新手持武器模型位置（Gun1/Gun2共用），使武器跟随玩家，出现在玩家面前
      */
-    private void updateGun1WeaponPosition() {
+    private void updateHeldWeaponPosition(Node weaponNode) {
         // 获取摄像机朝向（玩家面向的方向）
         Vector3f forward = getCameraFacingDirection();
         Vector3f right = getCameraRightDirection();
@@ -1640,13 +1754,13 @@ public class PlayerController implements ActionListener, AnalogListener {
         // 添加微小的垂直跟随（减少到原来的20%）
         weaponPos.y += 0.6f + (forward.y * 0f);
 
-        gun1WeaponNode.setLocalTranslation(weaponPos);
+        weaponNode.setLocalTranslation(weaponPos);
 
         // 设置武器旋转，使其朝向与玩家相同
         // 使用水平朝向计算旋转
         Quaternion rotation = new Quaternion();
         rotation.lookAt(horizontalForward, Vector3f.UNIT_Y);
-        gun1WeaponNode.setLocalRotation(rotation);
+        weaponNode.setLocalRotation(rotation);
     }
 
     /**
@@ -2021,6 +2135,28 @@ public class PlayerController implements ActionListener, AnalogListener {
         if (currentWeapon instanceof com.Hecate.weapon.FlameWeapon) {
             ((com.Hecate.weapon.FlameWeapon) currentWeapon).setWorldNode(worldNode);
         }
+
+        // 世界切换时Gun2的子弹更新循环也要重新指向新世界节点
+        refreshProjectileManager();
+    }
+
+    /**
+     * (重新)构建Gun2的子弹更新循环。gridManager/monsterManager/currentWorldNode
+     * 三者的setter调用顺序不固定（ApplicationContext.connectSystems()里setWorldNode
+     * 先于setGridManager/setMonsterManager），所以每个setter都调用本方法，
+     * 以最新的三个依赖重建，避免捕获到尚未注入的null依赖。
+     * <p>重建前会清空旧的子弹更新循环，防止旧世界节点下的子弹方块残留。
+     */
+    private void refreshProjectileManager() {
+        if (projectileManager != null) {
+            projectileManager.clear();
+        }
+        if (currentWorldNode != null) {
+            projectileManager = new com.Hecate.weapon.ProjectileManager(
+                    app.getAssetManager(), currentWorldNode, monsterManager, gridManager);
+        } else {
+            projectileManager = null;
+        }
     }
 
     /**
@@ -2028,6 +2164,7 @@ public class PlayerController implements ActionListener, AnalogListener {
      */
     public void setMonsterManager(com.Hecate.monster.MonsterManager monsterManager) {
         this.monsterManager = monsterManager;
+        refreshProjectileManager();
     }
 
     /**
@@ -2121,6 +2258,7 @@ public class PlayerController implements ActionListener, AnalogListener {
         if (recoveryManager != null) {
             recoveryManager.setGridManager(gridManager);
         }
+        refreshProjectileManager();
     }
 
     /**

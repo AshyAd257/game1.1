@@ -46,7 +46,7 @@ public class ColorResolverTestScenario {
             }
         }
 
-        System.out.println("  提示：按F5切换视角，按F6切换战斗状态");
+
     }
 
     /**

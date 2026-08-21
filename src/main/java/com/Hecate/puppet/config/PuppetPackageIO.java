@@ -157,8 +157,20 @@ public class PuppetPackageIO {
             PuppetConfig config = null;
             Map<String, Path> extractedTextures = new HashMap<>();
 
+            // 优先尝试从classpath加载
+            InputStream resourceStream = PuppetPackageIO.class.getClassLoader().getResourceAsStream(packagePath);
+            InputStream zipInputStream;
+
+            if (resourceStream != null) {
+                // 从classpath资源加载
+                zipInputStream = resourceStream;
+            } else {
+                // 回退到文件系统路径
+                zipInputStream = new FileInputStream(packagePath);
+            }
+
             // 2. 解压ZIP文件
-            try (ZipInputStream zis = new ZipInputStream(new FileInputStream(packagePath))) {
+            try (ZipInputStream zis = new ZipInputStream(zipInputStream)) {
                 ZipEntry entry;
                 while ((entry = zis.getNextEntry()) != null) {
                     String entryName = entry.getName();

@@ -138,14 +138,14 @@ public class MonsterManager {
 
         if (currentWaveNumber > WAVE_COUNTS.length) {
             waveActive = false;
-            System.out.println("[波次] 遭遇战结束");
+
             return;
         }
 
         if (playerController == null || activeWaveWorldNode == null) {
             // 依赖未就位，无法生成怪物，直接结束遭遇战避免卡死在"进行中"状态
             waveActive = false;
-            System.err.println("[波次] 无法开始：玩家控制器或世界节点未就绪");
+
             return;
         }
 
@@ -163,7 +163,7 @@ public class MonsterManager {
             aliveInCurrentWave++;
         }
 
-        System.out.println("[波次] 第 " + currentWaveNumber + " 波开始：" + count + " 只 " + variant);
+
     }
 
     /**

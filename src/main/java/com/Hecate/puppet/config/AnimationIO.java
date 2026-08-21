@@ -97,9 +97,17 @@ public class AnimationIO {
     }
 
     /**
-     * 从文件加载动画配置
+     * 从文件加载动画配置（支持classpath资源和文件系统）
      */
     public static AnimationConfig loadAnimation(String filePath) throws IOException {
+        // 优先尝试从classpath加载
+        InputStream resourceStream = AnimationIO.class.getClassLoader().getResourceAsStream(filePath);
+        if (resourceStream != null) {
+            try (Reader reader = new InputStreamReader(resourceStream)) {
+                return gson.fromJson(reader, AnimationConfig.class);
+            }
+        }
+        // 回退到文件系统路径
         try (Reader reader = new FileReader(filePath)) {
             return gson.fromJson(reader, AnimationConfig.class);
         }

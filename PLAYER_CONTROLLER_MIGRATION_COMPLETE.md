@@ -75,11 +75,6 @@ GRAVITY = -20.0f
 
 ### 3. **代码质量改进** ✅
 
-#### 应用LogUtils
-- ✅ 所有System.out.println替换为LogUtils.info()
-- ✅ 所有System.err.println替换为LogUtils.error()
-- ✅ 添加LogUtils.debug()用于详细日志
-
 #### 组织结构
 - ✅ Import语句按字母顺序排列
 - ✅ 字段按逻辑分组（常量、核心组件、玩家状态、碰撞系统等）

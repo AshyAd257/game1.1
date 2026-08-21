@@ -19,7 +19,7 @@ public class SteampunkGun extends Weapon {
     private SimpleFlameRenderer flameRenderer;  // 火焰渲染器（用于发射子弹视觉效果）
     private SparseGridManager gridManager;      // 墨水系统
     private Node worldNode;                     // 世界节点（用于射线检测）
-    private int playerTeam = 0;                 // 玩家队伍
+    private int playerFactionId = com.Hecate.ink.FactionRegistry.DARK_DEFAULT;  // 玩家阵营ID
 
     /**
      * 构造函数
@@ -50,10 +50,22 @@ public class SteampunkGun extends Weapon {
     }
 
     /**
-     * 设置玩家队伍
+     * 设置玩家阵营ID（同时更新火焰渲染器的阵营）
      */
+    public void setPlayerFactionId(int factionId) {
+        this.playerFactionId = factionId;
+        // 同步更新火焰渲染器的阵营ID，确保墨水颜色一致
+        if (flameRenderer != null) {
+            flameRenderer.getParticleSystem().setFactionId(factionId);
+        }
+    }
+
+    @Deprecated
     public void setPlayerTeam(int team) {
-        this.playerTeam = team;
+        // 向后兼容：将 team 映射到 factionId
+        this.playerFactionId = (team == 0)
+            ? com.Hecate.ink.FactionRegistry.LIGHT_DEFAULT
+            : com.Hecate.ink.FactionRegistry.DARK_DEFAULT;
     }
 
     /**

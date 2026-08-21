@@ -4,6 +4,8 @@ import com.Hecate.block.CorpseBlock;
 import com.Hecate.block.CorpseBlockManager;
 import com.Hecate.physics.AABB;
 import com.Hecate.physics.CollisionManager;
+import com.Hecate.player.inventory.PlayerStateManager;
+import com.Hecate.player.effect.ActiveEffect;
 import com.Hecate.ui.BloodDripOverlay;
 import com.Hecate.ui.GameConsole;
 import com.Hecate.ui.InventoryUI;
@@ -116,9 +118,6 @@ public class PlayerController implements ActionListener, AnalogListener {
     private boolean inputLocked = false;
     private com.Hecate.ui.BuffSelectUI buffSelectUI;
 
-    // "攻击弹道+1"buff的叠加计数：额外发射的偏移弹道数量（FlameWeapon读取）
-    private int extraProjectiles = 0;
-
     // 双击检测（用于疾跑）
     private float[] lastKeyPressTime = new float[4]; // W, A, S, D
     private static final float DOUBLE_TAP_THRESHOLD = 0.3f; // 300ms内算双击
@@ -137,24 +136,24 @@ public class PlayerController implements ActionListener, AnalogListener {
     // 弹药系统
     private PlayerAmmo playerAmmo;
 
-    // 恢复管理器
-    private PlayerRecoveryManager recoveryManager;
+    // 战斗控制器（武器、攻击逻辑）
+    private PlayerCombatController combatController;
 
-    // 武器系统
-    private Weapon currentWeapon;
+    // 体素交互控制器（地形挖掘）
+    private PlayerVoxelInteraction voxelInteraction;
+
+    // 调试命令处理器
+    private PlayerDebugCommands debugCommands;
+
+    // 子弹管理器
+    private com.Hecate.weapon.ProjectileManager projectileManager;
 
     // 玩家阵营（默认暗属性）
     private int playerFactionId = com.Hecate.ink.FactionRegistry.DARK_DEFAULT;
 
-    // 玩家状态系统（三选二规则）
-    private boolean isRecovering = false;     // 恢复状态
-    private boolean isHidingOnInk = false;    // 在涂墨地面的隐藏状态
-    private boolean isHidingOnEmpty = false;  // 在无墨地面的隐藏状态
-    private boolean isFastMoving = false;     // 快速移动状态
-    private java.util.LinkedList<String> stateHistory = new java.util.LinkedList<>(); // 状态历史（用于"丢失最早状态"）
-
     // 按键状态
     private boolean isShiftPressed = false;   // Shift键是否按下
+    private boolean isCtrlPressed = false;    // Ctrl键是否按下
     private boolean isRightButtonPressed = false; // 右键是否按下
 
     // 地面类型枚举
@@ -165,8 +164,15 @@ public class PlayerController implements ActionListener, AnalogListener {
     }
     private GroundType currentGroundType = GroundType.NONE;
 
-    // 恢复速率（每秒5%）——非final：波次buff系统（"恢复速度变快"）需要在运行时提高这个值
-    private float recoveryPercentage = 0.05f;
+    // 【三选二状态机】友方墨水上可激活的三种能力，最多同时激活两种
+    // 按键组合决定激活哪两种：
+    // - 仅右键：恢复 + 加速
+    // - 仅Shift：隐藏 + 加速
+    // - Shift + 右键：隐藏 + 恢复（无加速，无法移动）
+    private boolean hasRecoveryState = false;   // 恢复状态：回血回弹药
+    private boolean hasHidingState = false;     // 隐藏状态：不可见（暂未实现视觉效果）
+    private boolean hasSpeedState = false;      // 加速状态：移动速度提升
+    private boolean isFastMoving = false;       // 当前是否在快速移动（通过加速状态触发）
 
     // 死亡系统
     private float deathAnimationProgress = 0f;
@@ -202,6 +208,9 @@ public class PlayerController implements ActionListener, AnalogListener {
     // 墨水网格系统
     private com.Hecate.ink.SparseGridManager gridManager;
 
+    // 玩家状态管理器（物品栏系统）
+    private PlayerStateManager playerStateManager;
+
     // 火焰渲染器（用于子弹粒子效果）
     private com.Hecate.flame.SimpleFlameRenderer flameRenderer;
 
@@ -214,22 +223,8 @@ public class PlayerController implements ActionListener, AnalogListener {
 
     // 怪物系统
     private com.Hecate.monster.MonsterManager monsterManager;
-    // 当前活动世界的场景节点（随setWorldNode同步更新），用于/mob1命令生成怪物到正确的世界
+    // 当前活动世界的场景节点（随setWorldNode同步更新）
     private Node currentWorldNode;
-
-    // Gun1武器系统
-    private Node gun1WeaponNode = null;  // Gun1武器模型节点
-    private boolean isGun1Equipped = false;  // Gun1是否装备
-
-    // Gun2武器系统（狙击枪，模型先用方块占位，后续换真实模型时替换gun2WeaponNode里的几何体）
-    private Node gun2WeaponNode = null;  // Gun2武器占位方块节点
-    private boolean isGun2Equipped = false;  // Gun2是否装备
-    private com.Hecate.weapon.ProjectileManager projectileManager;  // 子弹更新循环（Gun2的子弹飞行/命中/涂墨都由它驱动）
-
-    // 持枪状态系统
-    private boolean isHoldingGun = false;  // 是否处于持枪状态
-    private boolean isLeftButtonPressed = false;  // 左键是否按下（用于连发/蓄力）
-    private float continuousFireTimer = 0f;  // 连发计时器
 
     // 调试计数器
     private float debugTimer = 0f;
@@ -246,6 +241,10 @@ public class PlayerController implements ActionListener, AnalogListener {
 
         // 初始化血量系统
         initializeHealthSystem();
+
+        // 初始化战斗控制器
+        combatController = new PlayerCombatController(app, playerAmmo);
+        combatController.setPositionProvider(() -> playerPosition);
 
         // 初始化玩家
         initializePlayer();
@@ -270,6 +269,21 @@ public class PlayerController implements ActionListener, AnalogListener {
         // 初始化游戏控制台
         initializeGameConsole();
 
+        // 初始化调试命令处理器
+        debugCommands = new PlayerDebugCommands(app, gameConsole, combatController);
+        debugCommands.setPlayerInfoProvider(new PlayerDebugCommands.PlayerInfoProvider() {
+            @Override
+            public Vector3f getPosition() {
+                return playerPosition;
+            }
+
+            @Override
+            public float getFacing() {
+                return playerFacing;
+            }
+        });
+        debugCommands.registerAllCommands();
+
         // 初始化背包UI
         initializeInventoryUI();
 
@@ -282,6 +296,9 @@ public class PlayerController implements ActionListener, AnalogListener {
      */
     public void setCollisionManager(CollisionManager collisionManager) {
         this.collisionManager = collisionManager;
+
+        // 初始化体素交互控制器
+        voxelInteraction = new PlayerVoxelInteraction(camera, collisionManager);
     }
 
     /**
@@ -358,13 +375,6 @@ public class PlayerController implements ActionListener, AnalogListener {
 
             }
         });
-
-        // 初始化武器系统（默认使用BasicShooter，可通过setFlameRenderer切换到FlameWeapon）
-        currentWeapon = BasicShooter.createDefault();
-
-        // 初始化恢复管理器
-        recoveryManager = new PlayerRecoveryManager(playerHealth, playerAmmo);
-
     }
 
     /**
@@ -374,10 +384,13 @@ public class PlayerController implements ActionListener, AnalogListener {
         // 保存火焰渲染器引用
         this.flameRenderer = flameRenderer;
 
+        // 传递给战斗控制器
+        combatController.setFlameRenderer(flameRenderer);
+
         // 创建火焰武器并设置为默认武器
         com.Hecate.weapon.FlameWeapon flameWeapon = com.Hecate.weapon.FlameWeapon.createDefault(flameRenderer, camera);
         flameWeapon.setPlayerController(this);
-        this.currentWeapon = flameWeapon;
+        combatController.setCurrentWeapon(flameWeapon);
     }
 
     /**
@@ -427,303 +440,6 @@ public class PlayerController implements ActionListener, AnalogListener {
 
         // 初始化Buff选择界面（波次结算后弹出）
         buffSelectUI = new com.Hecate.ui.BuffSelectUI(app);
-
-        // 注册Gun1命令 - 显示steampunkgun.glb模型
-        registerGun1Command();
-
-        // 注册Gun2命令 - 装备/卸下狙击枪（模型先用方块占位）
-        registerGun2Command();
-
-        // 注册Mob1命令 - 在玩家前方生成一只怪物
-        registerMob1Command();
-
-        // 注册Wave1命令 - 开始三波递进的刷怪遭遇战
-        registerWave1Command();
-    }
-
-    /**
-     * 注册Wave1命令 - 开始一次三波递进的刷怪遭遇战
-     * （第1波3只慢速怪 -> 第2波6只普通怪 -> 第3波1只小Boss，杀光当前波自动进下一波）
-     */
-    private void registerWave1Command() {
-        gameConsole.registerCommand("wave1", new GameConsole.CommandHandler() {
-            @Override
-            public void execute(String[] args) {
-                app.enqueue(() -> {
-                    try {
-                        if (monsterManager == null) {
-                            gameConsole.addHistory("错误: 怪物系统未初始化");
-                            return null;
-                        }
-                        if (currentWorldNode == null) {
-                            gameConsole.addHistory("错误: 当前世界节点未就绪");
-                            return null;
-                        }
-
-                        boolean started = monsterManager.startWaveEncounter(currentWorldNode);
-                        if (started) {
-                            gameConsole.addHistory("遭遇战开始：第1波（3只慢速怪）");
-                        } else {
-                            gameConsole.addHistory("遭遇战已在进行中");
-                        }
-                    } catch (Exception e) {
-                        LogUtils.error(PlayerController.class, "处理Wave1命令失败", e);
-                        gameConsole.addHistory("错误: " + e.getMessage());
-                    }
-                    return null;
-                });
-            }
-
-            @Override
-            public String getDescription() {
-                return "开始三波递进的刷怪遭遇战";
-            }
-        });
-    }
-
-    /**
-     * 注册Mob1命令 - 在玩家面前生成一只怪物（最初的怪物原型：1x1红色方块）
-     */
-    private void registerMob1Command() {
-        gameConsole.registerCommand("mob1", new GameConsole.CommandHandler() {
-            @Override
-            public void execute(String[] args) {
-                app.enqueue(() -> {
-                    try {
-                        if (monsterManager == null) {
-                            gameConsole.addHistory("错误: 怪物系统未初始化");
-                            return null;
-                        }
-                        if (currentWorldNode == null) {
-                            gameConsole.addHistory("错误: 当前世界节点未就绪");
-                            return null;
-                        }
-
-                        // 玩家前方3米处生成，脚底高度取当前玩家所在的地形高度
-                        Vector3f forward = camera.getDirection().clone();
-                        forward.y = 0;
-                        if (forward.lengthSquared() < 0.001f) {
-                            forward.set(0, 0, 1);
-                        } else {
-                            forward.normalizeLocal();
-                        }
-
-                        Vector3f spawnPos = playerPosition.clone().addLocal(forward.mult(3f));
-
-                        if (collisionManager != null) {
-                            float terrainHeight = collisionManager.getTerrainHeightAt(spawnPos.x, spawnPos.z);
-                            if (!Float.isNaN(terrainHeight)) {
-                                spawnPos.y = terrainHeight;
-                            }
-                        }
-
-                        monsterManager.spawnMonster(currentWorldNode, spawnPos);
-                        gameConsole.addHistory("已在玩家前方生成一只怪物");
-                    } catch (Exception e) {
-                        LogUtils.error(PlayerController.class, "处理Mob1命令失败", e);
-                        gameConsole.addHistory("错误: " + e.getMessage());
-                    }
-                    return null;
-                });
-            }
-
-            @Override
-            public String getDescription() {
-                return "在玩家前方生成一只怪物";
-            }
-        });
-    }
-
-    /**
-     * 注册Gun1命令 - 装备/卸下蒸汽朋克枪模型
-     */
-    private void registerGun1Command() {
-        gameConsole.registerCommand("gun1", new GameConsole.CommandHandler() {
-            @Override
-            public void execute(String[] args) {
-                app.enqueue(() -> {
-                    try {
-                        if (isGun1Equipped) {
-                            // 卸下武器
-                            if (gun1WeaponNode != null && gun1WeaponNode.getParent() != null) {
-                                gun1WeaponNode.removeFromParent();
-                            }
-                            isGun1Equipped = false;
-
-                            // 退出持枪状态
-                            isHoldingGun = false;
-                            isLeftButtonPressed = false;
-                            continuousFireTimer = 0f;
-
-                            // 恢复默认武器
-                            setCurrentWeapon(BasicShooter.createDefault());
-
-                            gameConsole.addHistory("蒸汽朋克枪已卸下");
-                            gameConsole.addHistory("已切换回默认武器");
-                            gameConsole.addHistory("已退出持枪状态");
-
-                        } else {
-                            // 装备武器
-                            if (gun1WeaponNode == null) {
-                                // 首次加载模型
-                                Spatial weaponModel = app.getAssetManager().loadModel("weapons/steampunkgun.glb");
-
-                                if (weaponModel == null) {
-                                    gameConsole.addHistory("错误: 无法加载模型 weapons/steampunkgun.glb");
-
-                                    return null;
-                                }
-
-                                // 创建节点容器
-                                gun1WeaponNode = new Node("Gun1_SteampunkGun");
-                                gun1WeaponNode.attachChild(weaponModel);
-
-                                // 调整模型缩放
-                                gun1WeaponNode.setLocalScale(0.3f);  // 缩小模型，适合持枪
-
-
-                            }
-
-                            // 添加到场景（位置会在update中更新）
-                            app.getRootNode().attachChild(gun1WeaponNode);
-                            isGun1Equipped = true;
-
-                            // 进入持枪状态
-                            isHoldingGun = true;
-
-                            // 切换到蒸汽朋克枪武器
-                            com.Hecate.weapon.SteampunkGun steampunkGun = com.Hecate.weapon.SteampunkGun.create();
-
-                            // 设置武器依赖项
-                            steampunkGun.setFlameRenderer(flameRenderer);  // 设置火焰渲染器（用于子弹效果）
-                            steampunkGun.setGridManager(gridManager);
-                            steampunkGun.setWorldNode(app.getRootNode());
-                            steampunkGun.setPlayerTeam(getPlayerTeam());
-
-                            setCurrentWeapon(steampunkGun);
-
-                            gameConsole.addHistory("蒸汽朋克枪已装备");
-                            gameConsole.addHistory(steampunkGun.getInfo());
-                            gameConsole.addHistory("━━━━━━━━━━━━━━━━");
-                            gameConsole.addHistory("已进入持枪状态");
-                            gameConsole.addHistory("左键: 攻击（长按连发）");
-                            gameConsole.addHistory("武器将跟随玩家移动");
-                            gameConsole.addHistory("再次输入 /gun1 可以卸下武器");
-
-
-                        }
-                    } catch (Exception e) {
-                        LogUtils.error(PlayerController.class, "处理Gun1命令失败", e);
-                        gameConsole.addHistory("错误: " + e.getMessage());
-                    }
-                    return null;
-                });
-            }
-
-            @Override
-            public String getDescription() {
-                return "装备/卸下蒸汽朋克枪（武器会跟随玩家）";
-            }
-        });
-
-
-    }
-
-    /**
-     * 注册Gun2命令 - 装备/卸下狙击枪
-     * 手持模型和子弹都先用纯色方块占位，后续有真实模型/贴图后再替换
-     */
-    private void registerGun2Command() {
-        gameConsole.registerCommand("gun2", new GameConsole.CommandHandler() {
-            @Override
-            public void execute(String[] args) {
-                app.enqueue(() -> {
-                    try {
-                        if (isGun2Equipped) {
-                            // 卸下武器
-                            if (gun2WeaponNode != null && gun2WeaponNode.getParent() != null) {
-                                gun2WeaponNode.removeFromParent();
-                            }
-                            isGun2Equipped = false;
-
-                            // 退出持枪状态
-                            isHoldingGun = false;
-                            isLeftButtonPressed = false;
-                            continuousFireTimer = 0f;
-                            if (currentWeapon != null) {
-                                currentWeapon.cancelCharge();
-                            }
-
-                            // 清空场上还在飞的狙击枪子弹
-                            if (projectileManager != null) {
-                                projectileManager.clear();
-                            }
-
-                            // 恢复默认武器
-                            setCurrentWeapon(BasicShooter.createDefault());
-
-                            gameConsole.addHistory("狙击枪已卸下");
-                            gameConsole.addHistory("已切换回默认武器");
-                            gameConsole.addHistory("已退出持枪状态");
-
-                        } else {
-                            // 装备武器：手持模型先用方块占位
-                            if (gun2WeaponNode == null) {
-                                Box box = new Box(0.1f, 0.1f, 0.4f);
-                                Geometry weaponGeom = new Geometry("Gun2_SniperRifle_Placeholder", box);
-                                Material mat = new Material(app.getAssetManager(), "Common/MatDefs/Misc/Unshaded.j3md");
-                                mat.setColor("Color", ColorRGBA.DarkGray);
-                                weaponGeom.setMaterial(mat);
-
-                                gun2WeaponNode = new Node("Gun2_SniperRifle");
-                                gun2WeaponNode.attachChild(weaponGeom);
-                            }
-
-                            app.getRootNode().attachChild(gun2WeaponNode);
-                            isGun2Equipped = true;
-
-                            // 进入持枪状态
-                            isHoldingGun = true;
-
-                            // 切换到狙击枪
-                            com.Hecate.weapon.SniperRifle sniperRifle = com.Hecate.weapon.SniperRifle.create();
-
-                            // 设置武器依赖项
-                            sniperRifle.setGridManager(gridManager);
-                            sniperRifle.setMonsterManager(monsterManager);
-                            sniperRifle.setWorldNode(app.getRootNode());
-                            sniperRifle.setPlayerTeam(getPlayerTeam());
-                            sniperRifle.setSpawnListener(projectile -> {
-                                if (projectileManager != null) {
-                                    projectileManager.spawn(projectile);
-                                }
-                            });
-
-                            setCurrentWeapon(sniperRifle);
-
-                            gameConsole.addHistory("狙击枪已装备");
-                            gameConsole.addHistory("━━━━━━━━━━━━━━━━");
-                            gameConsole.addHistory("左键: 蓄力（最长2秒），松开发射");
-                            gameConsole.addHistory("不蓄力开火伤害80，满蓄力伤害180");
-                            gameConsole.addHistory("射程6格，射程内可穿透任意数量目标");
-                            gameConsole.addHistory("子弹飞行沿途留下墨水痕迹");
-                            gameConsole.addHistory("武器将跟随玩家移动");
-                            gameConsole.addHistory("再次输入 /gun2 可以卸下武器");
-
-                        }
-                    } catch (Exception e) {
-                        LogUtils.error(PlayerController.class, "处理Gun2命令失败", e);
-                        gameConsole.addHistory("错误: " + e.getMessage());
-                    }
-                    return null;
-                });
-            }
-
-            @Override
-            public String getDescription() {
-                return "装备/卸下狙击枪（武器会跟随玩家）";
-            }
-        });
     }
 
     /**
@@ -1101,11 +817,20 @@ public class PlayerController implements ActionListener, AnalogListener {
                 break;
             case "RotateLeft":
                 if (isPressed) {
-                    float oldFacing = playerFacing;
-                    // 按一次立刻转90度（逆时针）
-                    playerFacing -= FastMath.HALF_PI;
-                    // 标准化角度
-                    while (playerFacing < 0) playerFacing += FastMath.TWO_PI;
+                    LogUtils.debug(PlayerController.class, "按下Q键，isCtrlPressed=" + isCtrlPressed);
+                    if (isCtrlPressed) {
+                        // Ctrl + Q：旋转模型（原功能）
+                        float oldFacing = playerFacing;
+                        // 按一次立刻转90度（逆时针）
+                        playerFacing -= FastMath.HALF_PI;
+                        // 标准化角度
+                        while (playerFacing < 0) playerFacing += FastMath.TWO_PI;
+                        LogUtils.debug(PlayerController.class, "执行旋转模型");
+                    } else {
+                        // 单独按Q：扔掉当前手持物品
+                        LogUtils.debug(PlayerController.class, "尝试扔掉物品");
+                        dropCurrentItem();
+                    }
                 }
                 break;
             case "RotateRight":
@@ -1134,27 +859,27 @@ public class PlayerController implements ActionListener, AnalogListener {
                 }
                 break;
             case "DigTerrain":
-                // 根据持枪状态决定左键行为
+                // 左键行为：委托给战斗控制器或体素交互
                 if (isPressed) {
-
-                    isLeftButtonPressed = true;
-
-                    if (isHoldingGun) {
-                        // 持枪状态：开始攻击或蓄力
-
-                        performGunAttack();
+                    if (combatController.isHoldingWeapon()) {
+                        // 持枪状态：记录按下状态（驱动连发），并立即开火/开始蓄力
+                        combatController.setLeftButtonPressed(true);
+                        Vector3f fireOrigin = playerPosition.clone();
+                        fireOrigin.y += 1.0f;
+                        Vector3f fireDirection = camera.getDirection().clone();
+                        combatController.performGunAttack(fireOrigin, fireDirection);
                     } else {
-                        // 无枪状态：挖掘地形（原始行为）
-
-                        performTerrainDig();
+                        // 无枪状态：挖掘地形（委托给体素交互组件）
+                        voxelInteraction.performTerrainDig();
                     }
                 } else {
-                    // 按键松开
-                    isLeftButtonPressed = false;
-
-                    // 如果正在蓄力，释放蓄力攻击
-                    if (isHoldingGun && currentWeapon != null && currentWeapon.isCharging()) {
-                        releaseChargedAttack();
+                    // 按键松开：停止连发，如果正在蓄力则释放蓄力攻击
+                    if (combatController.isHoldingWeapon()) {
+                        combatController.setLeftButtonPressed(false);
+                        Vector3f fireOrigin = playerPosition.clone();
+                        fireOrigin.y += 1.0f;
+                        Vector3f fireDirection = camera.getDirection().clone();
+                        combatController.releaseChargedAttack(fireOrigin, fireDirection);
                     }
                 }
                 break;
@@ -1178,13 +903,17 @@ public class PlayerController implements ActionListener, AnalogListener {
             case "NormalMode":
             case "NormalModeAlt":
                 // 【新增】按住Ctrl切换到普通模式，松开回到圆盘模式
+                isCtrlPressed = isPressed;
                 if (puppetPlayerController != null) {
                     puppetPlayerController.setNormalMode(isPressed);
                 }
                 break;
             case "FireWeapon":
                 if (isPressed) {
-                    performWeaponFire();
+                    Vector3f fireOrigin = playerPosition.clone();
+                    fireOrigin.y += 1.0f;
+                    Vector3f fireDirection = camera.getDirection().clone();
+                    combatController.performGunAttack(fireOrigin, fireDirection);
                 }
                 break;
         }
@@ -1438,114 +1167,56 @@ public class PlayerController implements ActionListener, AnalogListener {
             playerHealth.update(tpf);
         }
 
-        // 更新恢复管理器
-        if (recoveryManager != null) {
-            recoveryManager.update(tpf, playerPosition);
-        }
-
-        // 更新武器系统
-        if (currentWeapon != null) {
-            currentWeapon.update(tpf);
-        }
-
-        // 更新Gun2子弹更新循环（飞行/命中/穿透/沿途涂墨）
-        if (projectileManager != null) {
-            projectileManager.update(tpf);
-        }
+        // 更新战斗控制器
+        combatController.update(tpf);
 
         // 【地面类型检测】检测玩家脚下的墨水类型
         updateGroundType();
 
         // 【三选二状态管理】在友方墨水上根据按键决定激活哪两种状态
-        // 三种状态：恢复、隐藏、加速
-        // 按键组合：
-        // - 无按键：无效果
-        // - 仅右键：恢复 + 加速
-        // - 仅Shift：隐藏 + 加速
-        // - Shift + 右键：隐藏 + 恢复（无加速，无法移动）
-        boolean hasRecovery = false;
-        boolean hasHiding = false;
-        boolean hasSpeed = false;
-
         if (currentGroundType == GroundType.FRIENDLY) {
             boolean bothPressed = isShiftPressed && isRightButtonPressed;
 
             if (bothPressed) {
                 // 同时按下：隐藏 + 恢复
-                hasHiding = true;
-                hasRecovery = true;
-                hasSpeed = false;
+                hasHidingState = true;
+                hasRecoveryState = true;
+                hasSpeedState = false;
             } else if (isRightButtonPressed) {
                 // 仅右键：恢复 + 加速
-                hasRecovery = true;
-                hasSpeed = true;
-                hasHiding = false;
+                hasRecoveryState = true;
+                hasSpeedState = true;
+                hasHidingState = false;
             } else if (isShiftPressed) {
                 // 仅Shift：隐藏 + 加速
-                hasHiding = true;
-                hasSpeed = true;
-                hasRecovery = false;
+                hasHidingState = true;
+                hasSpeedState = true;
+                hasRecoveryState = false;
             } else {
                 // 无按键：无特殊效果
-                hasSpeed = false;
-                hasRecovery = false;
-                hasHiding = false;
+                hasSpeedState = false;
+                hasRecoveryState = false;
+                hasHidingState = false;
             }
         } else {
             // 非友方墨水：无特殊状态
-            hasRecovery = false;
-            hasHiding = false;
-            hasSpeed = false;
-        }
-
-        // 持枪状态下的连发机制
-        if (isHoldingGun && isLeftButtonPressed && currentWeapon != null && playerAmmo != null) {
-            // 只对不支持蓄力的武器（连发武器）生效
-            if (!currentWeapon.getStats().hasCharge()) {
-                continuousFireTimer += tpf;
-
-                // 根据武器射速持续开火
-                float fireRate = currentWeapon.getStats().getFireRate();
-                if (continuousFireTimer >= fireRate) {
-                    continuousFireTimer = 0f;
-
-                    // 尝试开火
-                    Vector3f fireOrigin = playerPosition.clone();
-                    fireOrigin.y += 1.0f;
-                    Vector3f fireDirection = camera.getDirection().clone();
-
-                    boolean fired = currentWeapon.tryFire(playerAmmo, fireOrigin, fireDirection);
-                    if (fired) {
-                        LogUtils.debug(PlayerController.class, "连发攻击");
-                    }
-                }
-            }
-        } else {
-            // 重置连发计时器
-            continuousFireTimer = 0f;
+            hasRecoveryState = false;
+            hasHidingState = false;
+            hasSpeedState = false;
         }
 
         // 应用恢复状态（三选二规则）
-        if (hasRecovery && currentGroundType == GroundType.FRIENDLY) {
-            // 恢复血量
-            if (playerHealth != null && !playerHealth.isFullHealth()) {
-                playerHealth.recoverByPercentage(recoveryPercentage, tpf);
-            }
-            // 恢复弹药
-            if (playerAmmo != null && !playerAmmo.isFull()) {
-                playerAmmo.recoverByPercentage(recoveryPercentage, tpf);
-            }
-        }
+        if (hasRecoveryState && currentGroundType == GroundType.FRIENDLY) {
+            // 计算实际恢复速率（基础值 * buff叠加）
+            float actualRecoveryRate = getActualRecoveryRate();
 
-        // 旧的状态恢复系统（已被新系统替代，保留以防其他地方使用）
-        if (isRecovering && currentGroundType == GroundType.FRIENDLY) {
             // 恢复血量
             if (playerHealth != null && !playerHealth.isFullHealth()) {
-                playerHealth.recoverByPercentage(recoveryPercentage, tpf);
+                playerHealth.recoverByPercentage(actualRecoveryRate, tpf);
             }
             // 恢复弹药
             if (playerAmmo != null && !playerAmmo.isFull()) {
-                playerAmmo.recoverByPercentage(recoveryPercentage, tpf);
+                playerAmmo.recoverByPercentage(actualRecoveryRate, tpf);
             }
         }
 
@@ -1587,28 +1258,13 @@ public class PlayerController implements ActionListener, AnalogListener {
 
             isMoving = movement.lengthSquared() > 0;
 
-            // 【隐藏状态】如果正在移动，自动脱离隐藏状态
-            if (isMoving && (isHidingOnInk || isHidingOnEmpty)) {
-                if (isHidingOnInk) {
-                    isHidingOnInk = false;
-                    stateHistory.remove("hidingOnInk");
-
-                }
-                if (isHidingOnEmpty) {
-                    isHidingOnEmpty = false;
-                    stateHistory.remove("hidingOnEmpty");
-
-                }
-                updateFastMovingState();
-            }
-
             if (isMoving) {
                 movement.normalizeLocal();
 
                 // 【墨水系统】应用基于地面状态的速度倍率
                 // 规则：
                 // - 敌方减速：始终生效
-                // - 友方加速：根据hasSpeed状态（三选二规则）
+                // - 友方加速：根据hasSpeedState状态（三选二规则）
                 float inkSpeedMultiplier = 1.0f;
                 if (usePuppetMode && puppetPlayerController != null) {
                     float rawMultiplier = puppetPlayerController.getSpeedMultiplier();
@@ -1616,15 +1272,15 @@ public class PlayerController implements ActionListener, AnalogListener {
                     if (rawMultiplier < 1.0f) {
                         // 敌方减速：始终生效
                         inkSpeedMultiplier = rawMultiplier;
-                    } else if (rawMultiplier > 1.0f && hasSpeed) {
-                        // 友方加速：根据三选二规则的hasSpeed状态
+                    } else if (rawMultiplier > 1.0f && hasSpeedState) {
+                        // 友方加速：根据三选二规则的hasSpeedState状态
                         inkSpeedMultiplier = rawMultiplier;
                     }
                     // else: 保持1.0f（普通地面或无加速状态）
                 }
 
-                // 根据快速移动状态选择速度
-                float baseSpeed = isFastMoving ? FAST_MOVE_SPEED : WALK_SPEED;
+                // 根据快速移动状态选择速度（三选二规则的hasSpeedState决定加速）
+                float baseSpeed = hasSpeedState ? FAST_MOVE_SPEED : WALK_SPEED;
 
                 // 应用疾跑速度倍率
                 float sprintMultiplier = isSprinting ? SPRINT_SPEED_MULTIPLIER : 1.0f;
@@ -1715,16 +1371,6 @@ public class PlayerController implements ActionListener, AnalogListener {
 
         updateScreenShake(tpf);
         updateCameraPosition();
-
-        // 更新Gun1武器位置（如果已装备）
-        if (isGun1Equipped && gun1WeaponNode != null) {
-            updateHeldWeaponPosition(gun1WeaponNode);
-        }
-
-        // 更新Gun2武器位置（如果已装备）
-        if (isGun2Equipped && gun2WeaponNode != null) {
-            updateHeldWeaponPosition(gun2WeaponNode);
-        }
 
     }
 
@@ -2025,6 +1671,35 @@ public class PlayerController implements ActionListener, AnalogListener {
         return playerPosition.clone();
     }
 
+    // 【三选二状态机】状态查询接口
+    /**
+     * 查询当前是否处于恢复状态（回血回弹药）
+     */
+    public boolean hasRecoveryState() {
+        return hasRecoveryState;
+    }
+
+    /**
+     * 查询当前是否处于隐藏状态（不可见）
+     */
+    public boolean hasHidingState() {
+        return hasHidingState;
+    }
+
+    /**
+     * 查询当前是否处于加速状态（移动速度提升）
+     */
+    public boolean hasSpeedState() {
+        return hasSpeedState;
+    }
+
+    /**
+     * 查询当前地面类型（NONE/FRIENDLY/IGNITED）
+     */
+    public String getCurrentGroundType() {
+        return currentGroundType.name();
+    }
+
     public AABB getPlayerBox() {
         return playerBox;
     }
@@ -2100,9 +1775,31 @@ public class PlayerController implements ActionListener, AnalogListener {
 
     /**
      * 获取速度倍数
+     * 现在从效果系统读取叠加的移动速度buff
      */
     public float getSpeedMultiplier() {
-        return speedMultiplier;
+        float baseMultiplier = speedMultiplier; // /speed指令设置的基础倍数
+
+        if (playerStateManager == null) {
+            return baseMultiplier;
+        }
+
+        // 使用PlayerStateManager提供的速度倍率（已经整合了所有速度相关效果）
+        return baseMultiplier * playerStateManager.getSpeedMultiplier();
+    }
+
+    /**
+     * 获取实际恢复速率（基础值 * buff叠加）
+     */
+    private float getActualRecoveryRate() {
+        float baseRate = 0.05f; // 基础恢复速率 5%每秒
+
+        if (playerStateManager == null) {
+            return baseRate;
+        }
+
+        // 使用PlayerStateManager提供的恢复速率倍率
+        return baseRate * playerStateManager.getRecoveryMultiplier();
     }
 
     /**
@@ -2130,10 +1827,15 @@ public class PlayerController implements ActionListener, AnalogListener {
             puppetPlayerController.setWorldNode(worldNode);
         }
 
-        // 同步当前武器的瞄准射线检测节点（如FlameWeapon），避免世界切换后
-        // 瞄准射线仍打在已从场景图摘除的旧世界节点上
-        if (currentWeapon instanceof com.Hecate.weapon.FlameWeapon) {
-            ((com.Hecate.weapon.FlameWeapon) currentWeapon).setWorldNode(worldNode);
+        // 同步调试命令的世界节点
+        if (debugCommands != null) {
+            debugCommands.setCurrentWorldNode(worldNode);
+        }
+
+        // 传递世界节点给战斗控制器（用于 SteampunkGun 等武器）
+        if (combatController != null) {
+            combatController.setWorldNode(worldNode);
+            combatController.updateWeaponWorldNode(worldNode);
         }
 
         // 世界切换时Gun2的子弹更新循环也要重新指向新世界节点
@@ -2154,24 +1856,33 @@ public class PlayerController implements ActionListener, AnalogListener {
         if (currentWorldNode != null) {
             projectileManager = new com.Hecate.weapon.ProjectileManager(
                     app.getAssetManager(), currentWorldNode, monsterManager, gridManager);
+            combatController.setProjectileManager(projectileManager);
         } else {
             projectileManager = null;
+            combatController.setProjectileManager(null);
         }
     }
 
     /**
-     * 设置怪物管理器（用于/mob1命令生成怪物）
+     * 设置怪物管理器（用于调试命令）
      */
     public void setMonsterManager(com.Hecate.monster.MonsterManager monsterManager) {
         this.monsterManager = monsterManager;
+        combatController.setMonsterManager(monsterManager);
+        debugCommands.setMonsterManager(monsterManager);
         refreshProjectileManager();
     }
 
     /**
      * "攻击弹道+1"buff的当前叠加数量（FlameWeapon开火时读取）
+     * 现在从效果系统读取
      */
     public int getExtraProjectiles() {
-        return extraProjectiles;
+        if (playerStateManager == null) {
+            return 0;
+        }
+        ActiveEffect effect = playerStateManager.getEffectManager().getEffect("extra_projectile");
+        return effect != null ? effect.getStacks() : 0;
     }
 
     /**
@@ -2211,40 +1922,43 @@ public class PlayerController implements ActionListener, AnalogListener {
 
         // 重置按键状态
         isShiftPressed = false;
-        isLeftButtonPressed = false;
+        isCtrlPressed = false;
         isRightButtonPressed = false;
-
-        // 重置连发计时器
-        continuousFireTimer = 0f;
     }
 
     /**
      * 应用玩家选中的buff效果
+     * 现在使用效果系统，而非硬编码字段修改
      */
     private void onBuffSelected(BuffType type) {
+        if (playerStateManager == null) {
+            LogUtils.warning(PlayerController.class, "PlayerStateManager未初始化，无法应用Buff");
+            return;
+        }
+
+        String effectId = null;
         switch (type) {
             case FIRE_RATE_UP:
-                if (currentWeapon != null) {
-                    currentWeapon.getStats().multiplyFireRate(1f / 1.5f); // 间隔缩短=打得更快
-                }
+                effectId = "fire_rate_boost";
                 break;
             case EXTRA_PROJECTILE:
-                extraProjectiles++;
+                effectId = "extra_projectile";
                 break;
             case SPREAD_RANGE_UP:
-                if (currentWeapon != null) {
-                    currentWeapon.getStats().multiplySpreadAngle(1.5f);
-                }
+                effectId = "spread_range_boost";
                 break;
             case RECOVERY_SPEED_UP:
-                recoveryPercentage *= 1.5f;
+                effectId = "recovery_boost";
                 break;
             case MOVE_SPEED_UP:
-                setSpeedMultiplier(getSpeedMultiplier() * 1.05f);
+                effectId = "move_speed_boost";
                 break;
         }
 
-        LogUtils.debug(PlayerController.class, "已应用Buff: " + type.getDisplayName());
+        if (effectId != null) {
+            playerStateManager.getEffectManager().applyEffect(effectId);
+            LogUtils.debug(PlayerController.class, "已应用Buff效果: " + type.getDisplayName() + " -> " + effectId);
+        }
     }
 
     /**
@@ -2252,11 +1966,12 @@ public class PlayerController implements ActionListener, AnalogListener {
      */
     public void setGridManager(com.Hecate.ink.SparseGridManager gridManager) {
         this.gridManager = gridManager;
+
+        // 传递给战斗控制器
+        combatController.setGridManager(gridManager);
+
         if (puppetPlayerController != null) {
             puppetPlayerController.setGridManager(gridManager);
-        }
-        if (recoveryManager != null) {
-            recoveryManager.setGridManager(gridManager);
         }
         refreshProjectileManager();
     }
@@ -2266,11 +1981,15 @@ public class PlayerController implements ActionListener, AnalogListener {
      * @param team 队伍编号（0=A队，1=B队）
      */
     public void setPlayerTeam(int team) {
+        // team(0/1) 需要映射为阵营ID后再传给战斗控制器，否则墨水颜色会查错
+        // （FactionRegistry里 LIGHT_DEFAULT=1、DARK_DEFAULT=2，与team编号并不相等）
+        int factionId = (team == 0)
+                ? com.Hecate.ink.FactionRegistry.LIGHT_DEFAULT
+                : com.Hecate.ink.FactionRegistry.DARK_DEFAULT;
+        combatController.setPlayerFactionId(factionId);
+
         if (puppetPlayerController != null) {
             puppetPlayerController.setPlayerTeam(team);
-        }
-        if (recoveryManager != null) {
-            recoveryManager.setPlayerTeam(team);
         }
     }
 
@@ -2282,6 +2001,23 @@ public class PlayerController implements ActionListener, AnalogListener {
             return puppetPlayerController.getPlayerTeam();
         }
         return 1; // 默认B队（暗属性）
+    }
+
+    /**
+     * 设置玩家状态管理器（物品栏系统）
+     */
+    public void setPlayerStateManager(PlayerStateManager playerStateManager) {
+        this.playerStateManager = playerStateManager;
+    }
+
+    /**
+     * 获取玩家阵营ID（用于墨水系统）
+     */
+    public int getPlayerFactionId() {
+        if (puppetPlayerController != null) {
+            return puppetPlayerController.getPlayerFactionId();
+        }
+        return com.Hecate.ink.FactionRegistry.DARK_DEFAULT; // 默认暗属性阵营
     }
 
     /**
@@ -2299,26 +2035,27 @@ public class PlayerController implements ActionListener, AnalogListener {
     }
 
     /**
-     * 获取当前武器
+     * 获取当前武器（委托给 CombatController）
      */
     public Weapon getCurrentWeapon() {
-        return currentWeapon;
+        return combatController != null ? combatController.getCurrentWeapon() : null;
     }
 
     /**
-     * 设置当前武器
+     * 设置当前武器（委托给 CombatController）
+     * 自动将PlayerStateManager传递给武器的WeaponStats，以便动态计算buff加成
      */
     public void setCurrentWeapon(Weapon weapon) {
-        this.currentWeapon = weapon;
+        if (combatController != null) {
+            combatController.setCurrentWeapon(weapon);
 
+            // 将PlayerStateManager传递给武器属性，使其能动态计算buff
+            if (weapon != null && weapon.getStats() != null && playerStateManager != null) {
+                weapon.getStats().setPlayerStateManager(playerStateManager);
+            }
+        }
     }
 
-    /**
-     * 获取玩家阵营ID
-     */
-    public int getPlayerFactionId() {
-        return playerFactionId;
-    }
 
     /**
      * 设置玩家阵营ID
@@ -2329,81 +2066,12 @@ public class PlayerController implements ActionListener, AnalogListener {
     }
 
     /**
-     * 执行武器开火
+     * 扔掉当前手持物品（委托给 CombatController）
      */
-    private void performWeaponFire() {
-        // 攻击时清除所有状态
-        clearAllStates();
-
-        // 检查游戏状态是否允许攻击（现在总是允许，因为攻击会清除状态）
-        // if (!gameState.canAttack()) {
-        //     LogUtils.debug(PlayerController.class, "当前状态不允许攻击: " + gameState.getDescription());
-        //     return;
-        // }
-
-        // 尝试开火
-        Vector3f fireOrigin = playerPosition.clone();
-        fireOrigin.y += 1.0f; // 从玩家胸部位置发射
-
-        Vector3f fireDirection = camera.getDirection().clone();
-
-        // 调用武器的tryFire方法
-        if (currentWeapon != null && playerAmmo != null) {
-            boolean fired = currentWeapon.tryFire(playerAmmo, fireOrigin, fireDirection);
-            if (fired) {
-
-            } else {
-
-            }
+    private void dropCurrentItem() {
+        if (combatController != null) {
+            combatController.dropCurrentItem();
         }
-    }
-
-    /**
-     * 持枪状态下的攻击处理
-     * 根据武器类型决定是连发还是蓄力
-     */
-    private void performGunAttack() {
-        if (currentWeapon == null || playerAmmo == null) {
-            return;
-        }
-
-        // 清除所有状态（与原始攻击行为一致）
-        clearAllStates();
-
-        // 检查武器是否支持蓄力
-        if (currentWeapon.getStats().hasCharge()) {
-            // 支持蓄力：开始蓄力
-            currentWeapon.startCharge();
-        } else {
-            // 不支持蓄力：立即开火（连发武器）
-            Vector3f fireOrigin = playerPosition.clone();
-            fireOrigin.y += 1.0f; // 从玩家胸部位置发射
-
-            Vector3f fireDirection = camera.getDirection().clone();
-
-            boolean fired = currentWeapon.tryFire(playerAmmo, fireOrigin, fireDirection);
-            if (fired) {
-                // 重置连发计时器，从首次开火开始计算连发间隔
-                continuousFireTimer = 0f;
-            }
-        }
-    }
-
-    /**
-     * 释放蓄力攻击
-     */
-    private void releaseChargedAttack() {
-        if (currentWeapon == null || playerAmmo == null) {
-            return;
-        }
-
-        Vector3f fireOrigin = playerPosition.clone();
-        fireOrigin.y += 1.0f;
-
-        Vector3f fireDirection = camera.getDirection().clone();
-
-        // 释放蓄力攻击
-        currentWeapon.releaseCharge(playerAmmo, fireOrigin, fireDirection);
     }
 
     /**
@@ -2417,140 +2085,6 @@ public class PlayerController implements ActionListener, AnalogListener {
     }
 
     /**
-     * 切换状态
-     * @param stateName "recovery", "hidingOnInk", 或 "hidingOnEmpty"
-     */
-    private void toggleState(String stateName) {
-        boolean currentState;
-        if (stateName.equals("recovery")) {
-            currentState = isRecovering;
-        } else if (stateName.equals("hidingOnInk")) {
-            currentState = isHidingOnInk;
-        } else if (stateName.equals("hidingOnEmpty")) {
-            currentState = isHidingOnEmpty;
-        } else {
-            return;
-        }
-
-        // 如果当前状态已激活，则关闭它
-        if (currentState) {
-            if (stateName.equals("recovery")) {
-                isRecovering = false;
-                stateHistory.remove("recovery");
-            } else if (stateName.equals("hidingOnInk")) {
-                isHidingOnInk = false;
-                stateHistory.remove("hidingOnInk");
-            } else if (stateName.equals("hidingOnEmpty")) {
-                isHidingOnEmpty = false;
-                stateHistory.remove("hidingOnEmpty");
-            }
-            LogUtils.debug(PlayerController.class, "关闭状态: " + stateName);
-            updateFastMovingState();
-            return;
-        }
-
-        // 计算当前激活的状态数量
-        int activeStates = 0;
-        if (isRecovering) activeStates++;
-        if (isHidingOnInk) activeStates++;
-        if (isHidingOnEmpty) activeStates++;
-
-        // 根据地面类型确定最大状态数
-        int maxStates;
-        switch (currentGroundType) {
-            case NONE:
-                maxStates = 1;
-                break;
-            case FRIENDLY:
-                maxStates = 2;
-                break;
-            case IGNITED:
-                maxStates = 3;
-                break;
-            default:
-                maxStates = 1;
-        }
-
-        // 如果已达到最大状态数，移除最早的状态
-        if (activeStates >= maxStates) {
-            String oldestState = stateHistory.poll();
-            if (oldestState != null) {
-                if (oldestState.equals("recovery")) {
-                    isRecovering = false;
-                } else if (oldestState.equals("hidingOnInk")) {
-                    isHidingOnInk = false;
-                } else if (oldestState.equals("hidingOnEmpty")) {
-                    isHidingOnEmpty = false;
-                }
-                LogUtils.debug(PlayerController.class, "移除最早状态: " + oldestState);
-            }
-        }
-
-        // 激活新状态
-        if (stateName.equals("recovery")) {
-            isRecovering = true;
-        } else if (stateName.equals("hidingOnInk")) {
-            isHidingOnInk = true;
-        } else if (stateName.equals("hidingOnEmpty")) {
-            isHidingOnEmpty = true;
-        }
-        stateHistory.add(stateName);
-        LogUtils.debug(PlayerController.class, "激活状态: " + stateName);
-
-        // 更新快速移动状态
-        updateFastMovingState();
-    }
-
-    /**
-     * 更新快速移动状态（基于地面类型和其他状态）
-     */
-    private void updateFastMovingState() {
-        boolean oldFastMoving = isFastMoving;
-
-        switch (currentGroundType) {
-            case NONE:
-                // 无墨地面：只能通过双击触发，这里不改变
-                LogUtils.debug(PlayerController.class, "[快速移动] 无墨地面，保持当前状态: " + isFastMoving);
-                break;
-            case FRIENDLY:
-                // 友方墨水：一个状态激活=快速移动，两个状态激活=无快速移动
-                int activeStates = 0;
-                if (isRecovering) activeStates++;
-                if (isHidingOnInk) activeStates++;
-                if (isHidingOnEmpty) activeStates++;
-                isFastMoving = (activeStates == 1);
-
-                break;
-            case IGNITED:
-                // 点燃墨水：总是快速移动
-                isFastMoving = true;
-                break;
-        }
-
-    }
-
-    /**
-     * 清除所有状态（攻击时调用）
-     */
-    private void clearAllStates() {
-        if (isRecovering || isHidingOnInk || isHidingOnEmpty || isFastMoving) {
-            isRecovering = false;
-            isHidingOnInk = false;
-            isHidingOnEmpty = false;
-            isFastMoving = false;
-            stateHistory.clear();
-            LogUtils.debug(PlayerController.class, "攻击：清除所有状态");
-        }
-    }
-
-    /**
-     * 获取恢复管理器
-     */
-    public PlayerRecoveryManager getRecoveryManager() {
-        return recoveryManager;
-    }
-
-    /**
      * 设置右键用于恢复（由PlayerControlModule调用）
      */
     public void setRightButtonForRecovery(boolean pressed) {
@@ -2560,207 +2094,6 @@ public class PlayerController implements ActionListener, AnalogListener {
         } else {
 
         }
-        if (recoveryManager != null) {
-            recoveryManager.setLeftButtonPressed(pressed);
-        }
     }
 
-    /**
-     * 执行地形挖掘 - 鼠标左键点击挖掘
-     */
-    private void performTerrainDig() {
-        // 攻击时清除所有状态
-        clearAllStates();
-
-        if (collisionManager == null) {
-            return;
-        }
-
-        // 发射射线检测地形
-        com.jme3.math.Ray ray = new com.jme3.math.Ray(camera.getLocation(), camera.getDirection());
-
-        // 使用改进的射线检测算法
-        // 最大检测距离20个单位
-        float maxDistance = 20.0f;
-        Vector3f hitPoint = null;
-        float hitDistance = Float.MAX_VALUE;
-
-        // 更精细的步进检测（0.1步长）
-        for (float distance = 0.1f; distance < maxDistance; distance += 0.1f) {
-            Vector3f testPoint = ray.getOrigin().add(ray.getDirection().mult(distance));
-            float terrainHeight = collisionManager.getTerrainHeightAt(testPoint.x, testPoint.z);
-
-            // 检查是否击中地形（允许一定误差范围）
-            if (!Float.isNaN(terrainHeight)) {
-                // 如果测试点在地形下方或非常接近地形表面
-                if (testPoint.y <= terrainHeight + 0.2f && testPoint.y >= terrainHeight - 0.5f) {
-                    if (distance < hitDistance) {
-                        hitPoint = new Vector3f(testPoint.x, terrainHeight, testPoint.z);
-                        hitDistance = distance;
-                        break;
-                    }
-                }
-            }
-        }
-
-        if (hitPoint == null) {
-            LogUtils.debug(PlayerController.class, "未检测到地形命中点");
-            return;
-        }
-
-        // 计算chunk坐标
-        int chunkX = (int) Math.floor(hitPoint.x / com.Hecate.world.Chunk.SIZE);
-        int chunkZ = (int) Math.floor(hitPoint.z / com.Hecate.world.Chunk.SIZE);
-        com.Hecate.world.ChunkPosition chunkPos = new com.Hecate.world.ChunkPosition(chunkX, 0, chunkZ);
-
-        // 获取chunk
-        com.Hecate.world.ChunkManager chunkManager = collisionManager.getChunkManager();
-        if (chunkManager == null) {
-            LogUtils.debug(PlayerController.class, "ChunkManager为null");
-            return;
-        }
-
-        com.Hecate.world.Chunk chunk = chunkManager.getChunk(chunkPos);
-        if (chunk == null) {
-            LogUtils.debug(PlayerController.class, "Chunk不存在: " + chunkPos);
-            return;
-        }
-
-        if (!chunk.hasTerrainData()) {
-            LogUtils.debug(PlayerController.class, "Chunk没有地形数据: " + chunkPos);
-            return;
-        }
-
-        // 计算chunk内坐标
-        float localX = hitPoint.x - (chunkX * com.Hecate.world.Chunk.SIZE);
-        float localZ = hitPoint.z - (chunkZ * com.Hecate.world.Chunk.SIZE);
-
-        // 边界检查
-        if (localX < 0) localX = 0;
-        if (localZ < 0) localZ = 0;
-        if (localX >= com.Hecate.world.Chunk.SIZE) localX = com.Hecate.world.Chunk.SIZE - 0.01f;
-        if (localZ >= com.Hecate.world.Chunk.SIZE) localZ = com.Hecate.world.Chunk.SIZE - 0.01f;
-
-        // 找到最接近点击位置的顶点（而不是整个tile）
-        // 顶点坐标范围是0-16
-        int vertexX = Math.round(localX);
-        int vertexZ = Math.round(localZ);
-
-        // 确保顶点坐标在有效范围内
-        vertexX = Math.max(0, Math.min(16, vertexX));
-        vertexZ = Math.max(0, Math.min(16, vertexZ));
-
-        // 获取高度图
-        com.Hecate.world.HeightMap heightMap = chunk.getSurfaceHeightMap();
-
-        // 使用半径挖掘，避免单点极度拉伸
-        int digRadius = 1; // 挖掘半径（顶点数）
-        float centerDig = -0.25f; // 中心降低量
-
-        // 记录需要标记为脏的区块
-        java.util.Set<com.Hecate.world.ChunkPosition> dirtyChunks = new java.util.HashSet<>();
-        dirtyChunks.add(chunkPos);
-
-        // 对半径范围内的顶点应用渐变降低
-        for (int dx = -digRadius; dx <= digRadius; dx++) {
-            for (int dz = -digRadius; dz <= digRadius; dz++) {
-                int nx = vertexX + dx;
-                int nz = vertexZ + dz;
-
-                // 计算距离中心的距离
-                float distance = (float) Math.sqrt(dx * dx + dz * dz);
-
-                // 基于距离的衰减系数（中心为1.0，边缘为0.0）
-                float falloff = Math.max(0, 1.0f - (distance / (digRadius + 1)));
-
-                // 应用带衰减的降低
-                float digAmount = centerDig * falloff;
-
-                // 检查是否在当前区块范围内
-                if (nx >= 0 && nx <= 16 && nz >= 0 && nz <= 16) {
-                    heightMap.modifyHeight(nx, nz, digAmount);
-
-                    // 检查是否在区块边界，需要同步相邻区块
-                    if (nx == 0 && chunkX > 0) {
-                        // 左边界，更新左侧区块
-                        com.Hecate.world.ChunkPosition leftChunk = new com.Hecate.world.ChunkPosition(chunkX - 1, 0, chunkZ);
-                        com.Hecate.world.Chunk leftChunkObj = chunkManager.getChunk(leftChunk);
-                        if (leftChunkObj != null && leftChunkObj.hasTerrainData()) {
-                            leftChunkObj.getSurfaceHeightMap().modifyHeight(16, nz, digAmount);
-                            dirtyChunks.add(leftChunk);
-                        }
-                    } else if (nx == 16) {
-                        // 右边界，更新右侧区块
-                        com.Hecate.world.ChunkPosition rightChunk = new com.Hecate.world.ChunkPosition(chunkX + 1, 0, chunkZ);
-                        com.Hecate.world.Chunk rightChunkObj = chunkManager.getChunk(rightChunk);
-                        if (rightChunkObj != null && rightChunkObj.hasTerrainData()) {
-                            rightChunkObj.getSurfaceHeightMap().modifyHeight(0, nz, digAmount);
-                            dirtyChunks.add(rightChunk);
-                        }
-                    }
-
-                    if (nz == 0 && chunkZ > 0) {
-                        // 前边界，更新前侧区块
-                        com.Hecate.world.ChunkPosition frontChunk = new com.Hecate.world.ChunkPosition(chunkX, 0, chunkZ - 1);
-                        com.Hecate.world.Chunk frontChunkObj = chunkManager.getChunk(frontChunk);
-                        if (frontChunkObj != null && frontChunkObj.hasTerrainData()) {
-                            frontChunkObj.getSurfaceHeightMap().modifyHeight(nx, 16, digAmount);
-                            dirtyChunks.add(frontChunk);
-                        }
-                    } else if (nz == 16) {
-                        // 后边界，更新后侧区块
-                        com.Hecate.world.ChunkPosition backChunk = new com.Hecate.world.ChunkPosition(chunkX, 0, chunkZ + 1);
-                        com.Hecate.world.Chunk backChunkObj = chunkManager.getChunk(backChunk);
-                        if (backChunkObj != null && backChunkObj.hasTerrainData()) {
-                            backChunkObj.getSurfaceHeightMap().modifyHeight(nx, 0, digAmount);
-                            dirtyChunks.add(backChunk);
-                        }
-                    }
-
-                    // 处理角点（同时在两个边界上）
-                    if (nx == 0 && nz == 0 && chunkX > 0 && chunkZ > 0) {
-                        // 左前角
-                        com.Hecate.world.ChunkPosition cornerChunk = new com.Hecate.world.ChunkPosition(chunkX - 1, 0, chunkZ - 1);
-                        com.Hecate.world.Chunk cornerChunkObj = chunkManager.getChunk(cornerChunk);
-                        if (cornerChunkObj != null && cornerChunkObj.hasTerrainData()) {
-                            cornerChunkObj.getSurfaceHeightMap().modifyHeight(16, 16, digAmount);
-                            dirtyChunks.add(cornerChunk);
-                        }
-                    } else if (nx == 16 && nz == 0 && chunkZ > 0) {
-                        // 右前角
-                        com.Hecate.world.ChunkPosition cornerChunk = new com.Hecate.world.ChunkPosition(chunkX + 1, 0, chunkZ - 1);
-                        com.Hecate.world.Chunk cornerChunkObj = chunkManager.getChunk(cornerChunk);
-                        if (cornerChunkObj != null && cornerChunkObj.hasTerrainData()) {
-                            cornerChunkObj.getSurfaceHeightMap().modifyHeight(0, 16, digAmount);
-                            dirtyChunks.add(cornerChunk);
-                        }
-                    } else if (nx == 0 && nz == 16 && chunkX > 0) {
-                        // 左后角
-                        com.Hecate.world.ChunkPosition cornerChunk = new com.Hecate.world.ChunkPosition(chunkX - 1, 0, chunkZ + 1);
-                        com.Hecate.world.Chunk cornerChunkObj = chunkManager.getChunk(cornerChunk);
-                        if (cornerChunkObj != null && cornerChunkObj.hasTerrainData()) {
-                            cornerChunkObj.getSurfaceHeightMap().modifyHeight(16, 0, digAmount);
-                            dirtyChunks.add(cornerChunk);
-                        }
-                    } else if (nx == 16 && nz == 16) {
-                        // 右后角
-                        com.Hecate.world.ChunkPosition cornerChunk = new com.Hecate.world.ChunkPosition(chunkX + 1, 0, chunkZ + 1);
-                        com.Hecate.world.Chunk cornerChunkObj = chunkManager.getChunk(cornerChunk);
-                        if (cornerChunkObj != null && cornerChunkObj.hasTerrainData()) {
-                            cornerChunkObj.getSurfaceHeightMap().modifyHeight(0, 0, digAmount);
-                            dirtyChunks.add(cornerChunk);
-                        }
-                    }
-                }
-            }
-        }
-
-        // 标记所有受影响的区块为脏
-        for (com.Hecate.world.ChunkPosition dirtyChunkPos : dirtyChunks) {
-            com.Hecate.world.Chunk dirtyChunk = chunkManager.getChunk(dirtyChunkPos);
-            if (dirtyChunk != null) {
-                dirtyChunk.setDirty();
-            }
-        }
-    }
 }

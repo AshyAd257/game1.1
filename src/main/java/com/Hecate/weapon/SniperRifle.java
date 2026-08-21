@@ -26,7 +26,7 @@ public class SniperRifle extends Weapon {
     private SparseGridManager gridManager;
     private MonsterManager monsterManager;
     private Node worldNode;
-    private int playerTeam = 0;
+    private int playerFactionId = com.Hecate.ink.FactionRegistry.DARK_DEFAULT;  // 玩家阵营ID
 
     // 每次开火产生的子弹交给外部监听器处理（PlayerController里的子弹更新循环）
     private ProjectileSpawnListener spawnListener;
@@ -48,8 +48,16 @@ public class SniperRifle extends Weapon {
         this.worldNode = worldNode;
     }
 
+    public void setPlayerFactionId(int factionId) {
+        this.playerFactionId = factionId;
+    }
+
+    @Deprecated
     public void setPlayerTeam(int team) {
-        this.playerTeam = team;
+        // 向后兼容：将 team 映射到 factionId
+        this.playerFactionId = (team == 0)
+            ? com.Hecate.ink.FactionRegistry.LIGHT_DEFAULT
+            : com.Hecate.ink.FactionRegistry.DARK_DEFAULT;
     }
 
     public void setSpawnListener(ProjectileSpawnListener listener) {
@@ -83,7 +91,7 @@ public class SniperRifle extends Weapon {
         ProjectileProfile.HitEffect scaledHitEffect = ProjectileProfile.HitEffect.piercing(
                 damage,
                 projectileProfile.getHitEffect().inkRadius,
-                playerTeam,
+                playerFactionId,  // 使用玩家阵营ID而非team
                 projectileProfile.getHitEffect().pierceCount
         );
         ProjectileProfile shotProfile = new ProjectileProfile.Builder(projectileProfile.getId(), projectileProfile.getDisplayName())
@@ -100,7 +108,7 @@ public class SniperRifle extends Weapon {
                 .visualConfig(projectileProfile.getVisualConfig())
                 .build();
 
-        Projectile projectile = new Projectile(shotProfile, origin, direction, 1.0f, playerTeam);
+        Projectile projectile = new Projectile(shotProfile, origin, direction, 1.0f, playerFactionId);
 
         if (spawnListener != null) {
             spawnListener.onProjectileSpawned(projectile);

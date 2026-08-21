@@ -204,6 +204,20 @@ public class PuppetIO {
     }
 
     /**
+     * 从 classpath 资源加载 Puppet 配置
+     * @param resourcePath 相对于 classpath 的资源路径，例如 "puppets/successv5.puppet"
+     */
+    public static PuppetConfig loadFromResource(String resourcePath) throws IOException {
+        InputStream inputStream = PuppetIO.class.getClassLoader().getResourceAsStream(resourcePath);
+        if (inputStream == null) {
+            throw new IOException("资源未找到: " + resourcePath);
+        }
+        try (Reader reader = new InputStreamReader(inputStream)) {
+            return gson.fromJson(reader, PuppetConfig.class);
+        }
+    }
+
+    /**
      * 转换纹理路径为jME3兼容格式
      * 支持相对路径、绝对路径和file://协议
      */

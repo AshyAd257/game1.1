@@ -404,6 +404,10 @@ public class WorldModule extends AbstractGameModule {
         return worldNode;
     }
 
+    public BlockRegistry getBlockRegistry() {
+        return blockRegistry;
+    }
+
     /**
      * 切换渲染/更新循环所驱动的活动世界（用于世界切换，如竞技场）
      * <p>复用现有的 onUpdate 区块加载/渲染管线，只是重新指向新的 ChunkManager 和场景节点。

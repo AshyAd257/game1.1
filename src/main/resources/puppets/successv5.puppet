@@ -1,0 +1,1494 @@
+{
+  "name": "TestPuppet",
+  "version": "1.0",
+  "bones": [
+    {
+      "name": "Body",
+      "restPosition": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "restRotation": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0,
+        "w": 1.0
+      },
+      "restScale": {
+        "x": 1.0,
+        "y": 1.0,
+        "z": 1.0
+      },
+      "currentPosition": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "currentRotation": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0,
+        "w": 1.0
+      },
+      "currentScale": {
+        "x": 1.0,
+        "y": 1.0,
+        "z": 1.0
+      },
+      "partConfig": {
+        "width": 1.5,
+        "height": 3.0,
+        "offset": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        },
+        "customRotationX": 0.0,
+        "customRotationZ": 0.0,
+        "pivotPoint": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        },
+        "texturePath": "textures/body_front.png",
+        "directionTextures": {
+          "left": "textures/body_left.png",
+          "back": "textures/body_back.png",
+          "front": "textures/body_front.png",
+          "right": "textures/body_left.png",
+          "up": "textures/blank.png",
+          "down": "textures/blank.png"
+        },
+        "currentDirection": "front",
+        "priority": 0,
+        "uvOffsetX": 0.0,
+        "uvOffsetY": 0.0,
+        "uvScaleX": 1.0,
+        "uvScaleY": 1.0,
+        "directionUVs": {
+          "front": [
+            0.0,
+            0.0,
+            1.0,
+            1.0
+          ]
+        },
+        "directionPriorities": {
+          "left": 0,
+          "back": 0,
+          "front": 0,
+          "right": 0,
+          "up": 0,
+          "down": 0
+        },
+        "directionWidths": {
+          "back": 1.5,
+          "front": 1.5,
+          "right": 1.5
+        },
+        "directionHeights": {
+          "back": 3.0,
+          "front": 3.0,
+          "right": 3.0
+        },
+        "directionOffsets": {
+          "back": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "front": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "right": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "directionRotations": {
+          "back": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "front": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "right": [
+            0.0,
+            0.0
+          ]
+        },
+        "directionTextureRotations": {},
+        "billboardEnabled": true
+      },
+      "boneType": "CONNECTED",
+      "gravityDirection": "CUSTOM",
+      "customGravityVector": {
+        "x": 0.0,
+        "y": -1.0,
+        "z": 0.0
+      },
+      "freedomValue": 0.5,
+      "multiDirectionTextureEnabled": true
+    },
+    {
+      "name": "Head",
+      "parentName": "Body",
+      "restPosition": {
+        "x": 0.0,
+        "y": 2.0,
+        "z": 0.0
+      },
+      "restRotation": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0,
+        "w": 1.0
+      },
+      "restScale": {
+        "x": 1.0,
+        "y": 1.0,
+        "z": 1.0
+      },
+      "currentPosition": {
+        "x": 0.0,
+        "y": 2.0,
+        "z": 0.0
+      },
+      "currentRotation": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0,
+        "w": 1.0
+      },
+      "currentScale": {
+        "x": 1.0,
+        "y": 1.0,
+        "z": 1.0
+      },
+      "partConfig": {
+        "width": 2.0,
+        "height": 2.0,
+        "offset": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        },
+        "customRotationX": 0.0,
+        "customRotationZ": 0.0,
+        "pivotPoint": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        },
+        "texturePath": "textures/head_front.png",
+        "directionTextures": {
+          "left": "textures/head_right.png",
+          "back": "textures/head_back.png",
+          "front": "textures/head_front.png",
+          "right": "textures/head_left.png",
+          "up": "textures/head_front.png",
+          "down": "textures/head_front.png"
+        },
+        "currentDirection": "front",
+        "priority": -2,
+        "uvOffsetX": 0.0,
+        "uvOffsetY": 0.0,
+        "uvScaleX": 1.0,
+        "uvScaleY": 1.0,
+        "directionUVs": {
+          "front": [
+            0.0,
+            0.0,
+            1.0,
+            1.0
+          ]
+        },
+        "directionPriorities": {
+          "left": -2
+        },
+        "directionWidths": {
+          "back": 2.0,
+          "front": 2.0,
+          "right": 2.0
+        },
+        "directionHeights": {
+          "back": 2.0,
+          "front": 2.0,
+          "right": 2.0
+        },
+        "directionOffsets": {
+          "back": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "front": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "right": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "directionRotations": {
+          "back": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "front": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "right": [
+            0.0,
+            0.0
+          ]
+        },
+        "directionTextureRotations": {
+          "up": 180.0
+        },
+        "billboardEnabled": true
+      },
+      "boneType": "CONNECTED",
+      "gravityDirection": "CUSTOM",
+      "customGravityVector": {
+        "x": 0.0,
+        "y": -1.0,
+        "z": 0.0
+      },
+      "freedomValue": 0.5,
+      "multiDirectionTextureEnabled": true
+    },
+    {
+      "name": "LeftUpperArm",
+      "parentName": "Body",
+      "restPosition": {
+        "x": -0.7500018,
+        "y": 1.05,
+        "z": 0.0
+      },
+      "restRotation": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0,
+        "w": 1.0
+      },
+      "restScale": {
+        "x": 1.0,
+        "y": 1.0,
+        "z": 1.0
+      },
+      "currentPosition": {
+        "x": -0.7500018,
+        "y": 1.05,
+        "z": 0.0
+      },
+      "currentRotation": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0,
+        "w": 1.0
+      },
+      "currentScale": {
+        "x": 1.0,
+        "y": 1.0,
+        "z": 1.0
+      },
+      "partConfig": {
+        "width": 2.0,
+        "height": 2.0,
+        "offset": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        },
+        "customRotationX": 0.0,
+        "customRotationZ": 0.0,
+        "pivotPoint": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        },
+        "texturePath": "textures/shoulder_left_front.png",
+        "directionTextures": {
+          "left": "textures/shoulder_left_front.png",
+          "back": "textures/shoulder_left.png",
+          "front": "textures/shoulder_left_front.png",
+          "right": "textures/shoulder_left_front.png"
+        },
+        "currentDirection": "front",
+        "priority": 0,
+        "uvOffsetX": 0.0,
+        "uvOffsetY": 0.0,
+        "uvScaleX": 1.0,
+        "uvScaleY": 1.0,
+        "directionUVs": {
+          "front": [
+            0.0,
+            0.0,
+            1.0,
+            1.0
+          ]
+        },
+        "directionPriorities": {},
+        "directionWidths": {
+          "back": 2.0,
+          "front": 2.0,
+          "right": 2.0
+        },
+        "directionHeights": {
+          "back": 2.0,
+          "front": 2.0,
+          "right": 2.0
+        },
+        "directionOffsets": {
+          "back": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "front": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "right": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "directionRotations": {
+          "back": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "front": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "right": [
+            0.0,
+            0.0
+          ]
+        },
+        "directionTextureRotations": {},
+        "billboardEnabled": true
+      },
+      "boneType": "CONNECTED",
+      "gravityDirection": "CUSTOM",
+      "customGravityVector": {
+        "x": 0.0,
+        "y": -1.0,
+        "z": 0.0
+      },
+      "freedomValue": 0.5,
+      "multiDirectionTextureEnabled": true
+    },
+    {
+      "name": "LeftLowerArm",
+      "parentName": "LeftUpperArm",
+      "restPosition": {
+        "x": 0.1071434,
+        "y": -0.8214303,
+        "z": 0.0
+      },
+      "restRotation": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0,
+        "w": 1.0
+      },
+      "restScale": {
+        "x": 1.0,
+        "y": 1.0,
+        "z": 1.0
+      },
+      "currentPosition": {
+        "x": 0.1071434,
+        "y": -0.8214303,
+        "z": 0.0
+      },
+      "currentRotation": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0,
+        "w": 1.0
+      },
+      "currentScale": {
+        "x": 1.0,
+        "y": 1.0,
+        "z": 1.0
+      },
+      "partConfig": {
+        "width": 2.0,
+        "height": 2.0,
+        "offset": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        },
+        "customRotationX": 0.0,
+        "customRotationZ": 0.0,
+        "pivotPoint": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        },
+        "texturePath": "textures/arm.png",
+        "directionTextures": {
+          "left": "textures/arm.png",
+          "back": "textures/arm.png",
+          "front": "textures/arm.png",
+          "right": "textures/arm.png",
+          "up": "textures/arm.png",
+          "down": "textures/arm.png"
+        },
+        "currentDirection": "front",
+        "priority": 1,
+        "uvOffsetX": 0.0,
+        "uvOffsetY": 0.0,
+        "uvScaleX": 1.0,
+        "uvScaleY": 1.0,
+        "directionUVs": {
+          "front": [
+            0.0,
+            0.0,
+            1.0,
+            1.0
+          ]
+        },
+        "directionPriorities": {
+          "front": 1
+        },
+        "directionWidths": {
+          "back": 2.0,
+          "front": 2.0,
+          "right": 2.0
+        },
+        "directionHeights": {
+          "back": 2.0,
+          "front": 2.0,
+          "right": 2.0
+        },
+        "directionOffsets": {
+          "back": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "front": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "right": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "directionRotations": {
+          "back": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "front": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "right": [
+            0.0,
+            0.0
+          ]
+        },
+        "directionTextureRotations": {},
+        "billboardEnabled": true
+      },
+      "boneType": "CONNECTED",
+      "gravityDirection": "CUSTOM",
+      "customGravityVector": {
+        "x": 0.0,
+        "y": -1.0,
+        "z": 0.0
+      },
+      "freedomValue": 0.5,
+      "multiDirectionTextureEnabled": true
+    },
+    {
+      "name": "RightUpperArm",
+      "parentName": "Body",
+      "restPosition": {
+        "x": 0.7142844,
+        "y": 1.05,
+        "z": 0.0
+      },
+      "restRotation": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0,
+        "w": 1.0
+      },
+      "restScale": {
+        "x": 1.0,
+        "y": 1.0,
+        "z": 1.0
+      },
+      "currentPosition": {
+        "x": 0.7142844,
+        "y": 1.05,
+        "z": 0.0
+      },
+      "currentRotation": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0,
+        "w": 1.0
+      },
+      "currentScale": {
+        "x": 1.0,
+        "y": 1.0,
+        "z": 1.0
+      },
+      "partConfig": {
+        "width": 2.0,
+        "height": 2.0,
+        "offset": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        },
+        "customRotationX": 0.0,
+        "customRotationZ": 0.0,
+        "pivotPoint": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        },
+        "texturePath": "textures/shoulder_right_front.png",
+        "directionTextures": {
+          "left": "textures/shoulder_right_front.png",
+          "back": "textures/shoulder_right.png",
+          "front": "textures/shoulder_right_front.png",
+          "right": "textures/shoulder_right_front.png"
+        },
+        "currentDirection": "front",
+        "priority": 1,
+        "uvOffsetX": 0.0,
+        "uvOffsetY": 0.0,
+        "uvScaleX": 1.0,
+        "uvScaleY": 1.0,
+        "directionUVs": {
+          "front": [
+            0.0,
+            0.0,
+            1.0,
+            1.0
+          ]
+        },
+        "directionPriorities": {
+          "left": 1,
+          "back": 1,
+          "right": 1,
+          "front": 1,
+          "up": 1,
+          "down": 1
+        },
+        "directionWidths": {
+          "back": 2.0,
+          "front": 2.0,
+          "right": 2.0
+        },
+        "directionHeights": {
+          "back": 2.0,
+          "front": 2.0,
+          "right": 2.0
+        },
+        "directionOffsets": {
+          "back": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "front": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "right": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "directionRotations": {
+          "back": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "front": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "right": [
+            0.0,
+            0.0
+          ]
+        },
+        "directionTextureRotations": {},
+        "billboardEnabled": true
+      },
+      "boneType": "CONNECTED",
+      "gravityDirection": "CUSTOM",
+      "customGravityVector": {
+        "x": 0.0,
+        "y": -1.0,
+        "z": 0.0
+      },
+      "freedomValue": 0.5,
+      "multiDirectionTextureEnabled": true
+    },
+    {
+      "name": "RightLowerArm",
+      "parentName": "RightUpperArm",
+      "restPosition": {
+        "x": -0.071427226,
+        "y": -0.78571475,
+        "z": 0.0
+      },
+      "restRotation": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0,
+        "w": 1.0
+      },
+      "restScale": {
+        "x": 1.0,
+        "y": 1.0,
+        "z": 1.0
+      },
+      "currentPosition": {
+        "x": -0.071427226,
+        "y": -0.78571475,
+        "z": 0.0
+      },
+      "currentRotation": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0,
+        "w": 1.0
+      },
+      "currentScale": {
+        "x": 1.0,
+        "y": 1.0,
+        "z": 1.0
+      },
+      "partConfig": {
+        "width": 2.0,
+        "height": 2.0,
+        "offset": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        },
+        "customRotationX": 0.0,
+        "customRotationZ": 0.0,
+        "pivotPoint": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        },
+        "texturePath": "textures/arm.png",
+        "directionTextures": {
+          "left": "textures/arm.png",
+          "back": "textures/arm.png",
+          "front": "textures/arm.png",
+          "right": "textures/arm.png",
+          "up": "textures/arm.png",
+          "down": "textures/arm.png"
+        },
+        "currentDirection": "front",
+        "priority": 1,
+        "uvOffsetX": 0.0,
+        "uvOffsetY": 0.0,
+        "uvScaleX": 1.0,
+        "uvScaleY": 1.0,
+        "directionUVs": {
+          "front": [
+            0.0,
+            0.0,
+            1.0,
+            1.0
+          ]
+        },
+        "directionPriorities": {
+          "right": 2,
+          "front": 1,
+          "left": -15
+        },
+        "directionWidths": {
+          "back": 2.0,
+          "front": 2.0,
+          "right": 2.0
+        },
+        "directionHeights": {
+          "back": 2.0,
+          "front": 2.0,
+          "right": 2.0
+        },
+        "directionOffsets": {
+          "back": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "front": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "right": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "directionRotations": {
+          "back": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "front": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "right": [
+            0.0,
+            0.0
+          ]
+        },
+        "directionTextureRotations": {},
+        "billboardEnabled": true
+      },
+      "boneType": "CONNECTED",
+      "gravityDirection": "CUSTOM",
+      "customGravityVector": {
+        "x": 0.0,
+        "y": -1.0,
+        "z": 0.0
+      },
+      "freedomValue": 0.5,
+      "multiDirectionTextureEnabled": true
+    },
+    {
+      "name": "LeftUpperLeg",
+      "parentName": "Body",
+      "restPosition": {
+        "x": -0.32142812,
+        "y": -0.71428615,
+        "z": 0.0
+      },
+      "restRotation": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0,
+        "w": 1.0
+      },
+      "restScale": {
+        "x": 1.0,
+        "y": 1.0,
+        "z": 1.0
+      },
+      "currentPosition": {
+        "x": -0.32142812,
+        "y": -0.71428615,
+        "z": 0.0
+      },
+      "currentRotation": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0,
+        "w": 1.0
+      },
+      "currentScale": {
+        "x": 1.0,
+        "y": 1.0,
+        "z": 1.0
+      },
+      "partConfig": {
+        "width": 2.2,
+        "height": 2.2,
+        "offset": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        },
+        "customRotationX": 0.0,
+        "customRotationZ": 0.0,
+        "pivotPoint": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        },
+        "texturePath": "textures/thigh.png",
+        "directionTextures": {
+          "left": "textures/thigh.png",
+          "back": "textures/thigh.png",
+          "front": "textures/thigh.png",
+          "right": "textures/thigh.png",
+          "up": "textures/thigh.png",
+          "down": "textures/thigh.png"
+        },
+        "currentDirection": "front",
+        "priority": -13,
+        "uvOffsetX": 0.0,
+        "uvOffsetY": 0.0,
+        "uvScaleX": 1.0,
+        "uvScaleY": 1.0,
+        "directionUVs": {
+          "front": [
+            0.0,
+            0.0,
+            1.0,
+            1.0
+          ],
+          "right": [
+            0.030555565,
+            0.14821431,
+            0.9166666,
+            0.85317457
+          ],
+          "left": [
+            0.08333334,
+            0.14682542,
+            0.9166666,
+            0.85317457
+          ]
+        },
+        "directionPriorities": {
+          "left": -13,
+          "back": -13,
+          "front": -13,
+          "right": -13,
+          "up": -13,
+          "down": -13
+        },
+        "directionWidths": {
+          "back": 2.2,
+          "front": 2.2,
+          "right": 2.0
+        },
+        "directionHeights": {
+          "back": 2.2,
+          "front": 2.2,
+          "right": 2.0
+        },
+        "directionOffsets": {
+          "back": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "front": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "right": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "directionRotations": {
+          "back": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "front": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "right": [
+            0.0,
+            0.0
+          ]
+        },
+        "directionTextureRotations": {},
+        "billboardEnabled": true
+      },
+      "boneType": "CONNECTED",
+      "gravityDirection": "CUSTOM",
+      "customGravityVector": {
+        "x": 0.0,
+        "y": -1.0,
+        "z": 0.0
+      },
+      "freedomValue": 0.5,
+      "multiDirectionTextureEnabled": true
+    },
+    {
+      "name": "LeftLowerLeg",
+      "parentName": "LeftUpperLeg",
+      "restPosition": {
+        "x": -0.07,
+        "y": -1.0,
+        "z": 0.0
+      },
+      "restRotation": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0,
+        "w": 1.0
+      },
+      "restScale": {
+        "x": 1.0,
+        "y": 1.0,
+        "z": 1.0
+      },
+      "currentPosition": {
+        "x": -0.07,
+        "y": -1.0,
+        "z": 0.0
+      },
+      "currentRotation": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0,
+        "w": 1.0
+      },
+      "currentScale": {
+        "x": 1.0,
+        "y": 1.0,
+        "z": 1.0
+      },
+      "partConfig": {
+        "width": 2.13,
+        "height": 2.13,
+        "offset": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        },
+        "customRotationX": 0.0,
+        "customRotationZ": 0.0,
+        "pivotPoint": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        },
+        "texturePath": "textures/shoe_left_front.png",
+        "directionTextures": {
+          "left": "textures/shoe_right_side.png",
+          "back": "textures/shoe_right_back.png",
+          "front": "textures/shoe_left_front.png",
+          "right": "textures/shoe_left_side.png"
+        },
+        "currentDirection": "front",
+        "priority": -10,
+        "uvOffsetX": 0.0,
+        "uvOffsetY": 0.0,
+        "uvScaleX": 1.0,
+        "uvScaleY": 1.0,
+        "directionUVs": {
+          "front": [
+            0.0,
+            0.0,
+            1.0,
+            1.0
+          ]
+        },
+        "directionPriorities": {
+          "left": -10,
+          "back": -10,
+          "front": -10,
+          "right": -10,
+          "up": -10,
+          "down": -10
+        },
+        "directionWidths": {
+          "back": 2.13,
+          "front": 2.13,
+          "right": 2.0
+        },
+        "directionHeights": {
+          "back": 2.13,
+          "front": 2.13,
+          "right": 2.0
+        },
+        "directionOffsets": {
+          "back": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "front": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "right": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "directionRotations": {
+          "back": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "front": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "right": [
+            0.0,
+            0.0
+          ]
+        },
+        "directionTextureRotations": {},
+        "billboardEnabled": true
+      },
+      "boneType": "CONNECTED",
+      "gravityDirection": "CUSTOM",
+      "customGravityVector": {
+        "x": 0.0,
+        "y": -1.0,
+        "z": 0.0
+      },
+      "freedomValue": 0.5,
+      "multiDirectionTextureEnabled": true
+    },
+    {
+      "name": "RightUpperLeg",
+      "parentName": "Body",
+      "restPosition": {
+        "x": 0.35713896,
+        "y": -0.7857152,
+        "z": 0.0
+      },
+      "restRotation": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0,
+        "w": 1.0
+      },
+      "restScale": {
+        "x": 1.0,
+        "y": 1.0,
+        "z": 1.0
+      },
+      "currentPosition": {
+        "x": 0.35713896,
+        "y": -0.7857152,
+        "z": 0.0
+      },
+      "currentRotation": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0,
+        "w": 1.0
+      },
+      "currentScale": {
+        "x": 1.0,
+        "y": 1.0,
+        "z": 1.0
+      },
+      "partConfig": {
+        "width": 2.2,
+        "height": 2.2,
+        "offset": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        },
+        "customRotationX": 0.0,
+        "customRotationZ": 0.0,
+        "pivotPoint": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        },
+        "texturePath": "textures/thigh.png",
+        "directionTextures": {
+          "left": "textures/thigh.png",
+          "back": "textures/thigh.png",
+          "front": "textures/thigh.png",
+          "right": "textures/thigh.png",
+          "up": "textures/thigh.png",
+          "down": "textures/thigh.png"
+        },
+        "currentDirection": "front",
+        "priority": -13,
+        "uvOffsetX": 0.0,
+        "uvOffsetY": 0.0,
+        "uvScaleX": 1.0,
+        "uvScaleY": 1.0,
+        "directionUVs": {
+          "front": [
+            0.0,
+            0.0,
+            1.0,
+            1.0
+          ]
+        },
+        "directionPriorities": {
+          "left": -13,
+          "back": -13,
+          "right": -13,
+          "front": -13,
+          "up": -13,
+          "down": -13
+        },
+        "directionWidths": {
+          "back": 2.2,
+          "front": 2.2,
+          "right": 2.0
+        },
+        "directionHeights": {
+          "back": 2.2,
+          "front": 2.2,
+          "right": 2.0
+        },
+        "directionOffsets": {
+          "back": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "front": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "right": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "directionRotations": {
+          "back": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "front": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "right": [
+            0.0,
+            0.0
+          ]
+        },
+        "directionTextureRotations": {},
+        "billboardEnabled": true
+      },
+      "boneType": "CONNECTED",
+      "gravityDirection": "CUSTOM",
+      "customGravityVector": {
+        "x": 0.0,
+        "y": -1.0,
+        "z": 0.0
+      },
+      "freedomValue": 0.5,
+      "multiDirectionTextureEnabled": true
+    },
+    {
+      "name": "RightLowerLeg",
+      "parentName": "RightUpperLeg",
+      "restPosition": {
+        "x": 0.05,
+        "y": -0.86,
+        "z": 0.0
+      },
+      "restRotation": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0,
+        "w": 1.0
+      },
+      "restScale": {
+        "x": 1.0,
+        "y": 1.0,
+        "z": 1.0
+      },
+      "currentPosition": {
+        "x": 0.05,
+        "y": -0.86,
+        "z": 0.0
+      },
+      "currentRotation": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0,
+        "w": 1.0
+      },
+      "currentScale": {
+        "x": 1.0,
+        "y": 1.0,
+        "z": 1.0
+      },
+      "partConfig": {
+        "width": 2.13,
+        "height": 2.13,
+        "offset": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        },
+        "customRotationX": 0.0,
+        "customRotationZ": 0.0,
+        "pivotPoint": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        },
+        "texturePath": "textures/shoe_right_front.png",
+        "directionTextures": {
+          "left": "textures/shoe_right_side.png",
+          "back": "textures/shoe_left_back.png",
+          "front": "textures/shoe_right_front.png",
+          "right": "textures/shoe_left_side.png"
+        },
+        "currentDirection": "front",
+        "priority": -10,
+        "uvOffsetX": 0.0,
+        "uvOffsetY": 0.030555556,
+        "uvScaleX": 1.0,
+        "uvScaleY": 1.0,
+        "directionUVs": {
+          "front": [
+            0.0,
+            0.030555556,
+            1.0,
+            1.0
+          ]
+        },
+        "directionPriorities": {
+          "left": -10,
+          "back": -10,
+          "right": -10,
+          "front": -10,
+          "up": -10,
+          "down": -10
+        },
+        "directionWidths": {
+          "back": 2.13,
+          "front": 2.13,
+          "right": 2.0
+        },
+        "directionHeights": {
+          "back": 2.13,
+          "front": 2.13,
+          "right": 2.0
+        },
+        "directionOffsets": {
+          "back": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "front": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "right": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "directionRotations": {
+          "back": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "front": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "right": [
+            0.0,
+            0.0
+          ]
+        },
+        "directionTextureRotations": {},
+        "billboardEnabled": true
+      },
+      "boneType": "CONNECTED",
+      "gravityDirection": "CUSTOM",
+      "customGravityVector": {
+        "x": 0.0,
+        "y": -1.0,
+        "z": 0.0
+      },
+      "freedomValue": 0.5,
+      "multiDirectionTextureEnabled": true
+    },
+    {
+      "name": "Part_11",
+      "parentName": "Body",
+      "restPosition": {
+        "x": 0.0,
+        "y": -0.57142836,
+        "z": 0.0
+      },
+      "restRotation": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0,
+        "w": 1.0
+      },
+      "restScale": {
+        "x": 1.0,
+        "y": 1.0,
+        "z": 1.0
+      },
+      "currentPosition": {
+        "x": 0.0,
+        "y": -0.57142836,
+        "z": 0.0
+      },
+      "currentRotation": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0,
+        "w": 1.0
+      },
+      "currentScale": {
+        "x": 1.0,
+        "y": 1.0,
+        "z": 1.0
+      },
+      "partConfig": {
+        "width": 2.0,
+        "height": 2.0,
+        "offset": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        },
+        "customRotationX": 0.0,
+        "customRotationZ": 0.0,
+        "pivotPoint": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        },
+        "texturePath": "textures/butt_flap.png",
+        "directionTextures": {
+          "left": "textures/butt_flap.png",
+          "back": "textures/butt_flap.png",
+          "front": "textures/butt_flap.png",
+          "right": "textures/butt_flap.png",
+          "up": "textures/butt_flap.png",
+          "down": "textures/butt_flap.png"
+        },
+        "currentDirection": "front",
+        "priority": -15,
+        "uvOffsetX": 0.0,
+        "uvOffsetY": 0.0,
+        "uvScaleX": 1.0,
+        "uvScaleY": 1.0,
+        "directionUVs": {
+          "right": [
+            0.0,
+            0.0,
+            1.0,
+            1.0
+          ]
+        },
+        "directionPriorities": {
+          "front": -15
+        },
+        "directionWidths": {
+          "back": 2.0,
+          "front": 2.0,
+          "right": 2.0
+        },
+        "directionHeights": {
+          "back": 2.0,
+          "front": 2.0,
+          "right": 2.0
+        },
+        "directionOffsets": {
+          "back": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "right": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "front": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "directionRotations": {
+          "back": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "right": [
+            0.0,
+            0.0
+          ],
+          "front": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "directionTextureRotations": {},
+        "billboardEnabled": true
+      },
+      "boneType": "CONNECTED",
+      "gravityDirection": "CUSTOM",
+      "customGravityVector": {
+        "x": 0.0,
+        "y": -1.0,
+        "z": 0.0
+      },
+      "freedomValue": 0.5,
+      "multiDirectionTextureEnabled": true
+    }
+  ],
+  "billboardMode": "UNIFIED"
+}

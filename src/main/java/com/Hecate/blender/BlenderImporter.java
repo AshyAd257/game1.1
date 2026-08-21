@@ -184,7 +184,7 @@ public class BlenderImporter {
             }
         }
 
-        LogUtils.info(getClass(), "批量导入完成: " + modelCount + "/" + results.size());
+
         return results;
     }
 

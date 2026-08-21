@@ -144,7 +144,7 @@ public class WorldSwitcher {
     }
 
     private void enterArena() {
-        System.out.println("正在切换到竞技场...");
+
 
         // 1. 保存主世界玩家位置
         savedMainWorldPosition = playerController.getPlayerPosition().clone();

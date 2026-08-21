@@ -65,7 +65,7 @@ public class Localization {
             }
             // 使用 UTF-8 编码读取
             texts.load(new InputStreamReader(in, StandardCharsets.UTF_8));
-            System.out.println("已加载语言: " + language.displayName);
+
         } catch (IOException e) {
             System.err.println("加载语言文件失败: " + path);
             e.printStackTrace();

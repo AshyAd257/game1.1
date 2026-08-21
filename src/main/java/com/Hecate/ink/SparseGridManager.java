@@ -37,8 +37,9 @@ public class SparseGridManager {
     private static final int MAX_UPDATES_PER_FRAME = 10; // 每帧最多更新10个区域
 
     // 墨水参数
-    private float inkDecayTime = 60.0f;    // 墨水60秒后消退
+    private float inkDecayTime = 75.0f;    // 墨水75秒后消退
     private float igniteDecayTime = 10.0f; // 点燃10秒后降级为涂墨
+    private float fadeStartTime = 15.0f;   // 墨水最后15秒开始淡化
 
     // 当前时间
     private float currentTime = 0f;
@@ -78,7 +79,7 @@ public class SparseGridManager {
 
         for (GridRegion region : regions.values()) {
             if (region.hasAnyInk()) {
-                region.update(currentTime, inkDecayTime, igniteDecayTime);
+                region.update(currentTime, inkDecayTime, igniteDecayTime, fadeStartTime);
                 updatesThisFrame++;
                 regionsWithInk++;
             } else {
@@ -341,6 +342,14 @@ public class SparseGridManager {
 
     public void setIgniteDecayTime(float igniteDecayTime) {
         this.igniteDecayTime = igniteDecayTime;
+    }
+
+    public float getFadeStartTime() {
+        return fadeStartTime;
+    }
+
+    public void setFadeStartTime(float fadeStartTime) {
+        this.fadeStartTime = fadeStartTime;
     }
 
     public float getCurrentTime() {

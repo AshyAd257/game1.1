@@ -73,8 +73,9 @@ public class GridCell {
      * @param currentTime 当前时间
      * @param inkDecayTime 墨水消退时间（秒）
      * @param igniteDecayTime 点燃持续时间（秒）
+     * @param fadeStartTime 墨水开始淡化的时间（距离消退前多少秒开始）
      */
-    public void update(float currentTime, float inkDecayTime, float igniteDecayTime) {
+    public void update(float currentTime, float inkDecayTime, float igniteDecayTime, float fadeStartTime) {
         float elapsed = currentTime - timestamp;
 
         if (elapsed < 0) {
@@ -95,11 +96,21 @@ public class GridCell {
                 intensity = 0.8f; // 降级后强度降低
             }
         } else {
-            // 普通涂墨：逐渐消退
+            // 普通涂墨：分阶段消退
             if (elapsed > inkDecayTime) {
+                // 超时，清除墨水
                 clear();
             } else {
-                intensity = 1.0f - (elapsed / inkDecayTime);
+                float fadeThreshold = inkDecayTime - fadeStartTime;
+
+                if (elapsed < fadeThreshold) {
+                    // 前期：保持满强度
+                    intensity = 1.0f;
+                } else {
+                    // 后期（最后 fadeStartTime 秒）：线性淡化
+                    float fadeProgress = (elapsed - fadeThreshold) / fadeStartTime;
+                    intensity = 1.0f - fadeProgress; // 1.0 -> 0.0
+                }
             }
         }
     }

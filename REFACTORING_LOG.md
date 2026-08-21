@@ -27,11 +27,9 @@
 - `TextureManager.java` (deprecated) - 1处替换
 
 **日志级别映射**:
-- `System.out.println` → `LogUtils.info()` 或 `LogUtils.debug()`
-- `System.err.println` → `LogUtils.error()` 或 `LogUtils.warning()`
 - 保留了异常堆栈跟踪 (`e.printStackTrace()` 已通过 `LogUtils.error(, e)` 处理)
 
-### 4. 清理Emoji注释 ✅
+### 4. 清理Emoji注释 
 移除代码中的装饰性emoji符号以提高代码专业性和可读性
 
 **修改的文件**:
@@ -50,24 +48,22 @@
 #### PlayerControlModule.java
 - 改进错误处理，使用 `LogUtils.error(class, message, exception)`
 - 将调试信息改为 `LogUtils.debug()`
-- 将用户操作反馈改为 `LogUtils.info()`
+
 
 #### BlockTextureManager.java
 - 统一错误报告格式
 - 改进异常日志记录
-- 使用 LogUtils.error() 进行异常记录
+
 
 #### BlockRegistry.java
-- 将废弃警告改为 `LogUtils.warning()`
-- 调试输出改为 `LogUtils.debug()`
 
 ## 技术债务解决
 
 ### 已解决
-1. ✅ 重复的方法注释
-2. ✅ 未使用的方法（dead code）
-3. ✅ 不一致的日志输出
-4. ✅ Emoji装饰符号
+1. 重复的方法注释
+2. 未使用的方法（dead code）
+3.  不一致的日志输出
+4.  Emoji装饰符号
 
 ### 仍需关注（建议后续优化）
 1. ⚠️ **Singleton模式过度使用** - BlockRegistry, BlenderModelRegistry等使用getInstance()，增加了耦合度

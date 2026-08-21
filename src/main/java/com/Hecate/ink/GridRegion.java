@@ -104,8 +104,9 @@ public class GridRegion {
      * @param currentTime 当前时间
      * @param inkDecayTime 墨水消退时间
      * @param igniteDecayTime 点燃持续时间
+     * @param fadeStartTime 墨水开始淡化的时间
      */
-    public void update(float currentTime, float inkDecayTime, float igniteDecayTime) {
+    public void update(float currentTime, float inkDecayTime, float igniteDecayTime, float fadeStartTime) {
         boolean stillHasInk = false;
         boolean anyChanged = false;
 
@@ -115,7 +116,7 @@ public class GridRegion {
                 if (!cell.isEmpty()) {
                     float oldIntensity = cell.getIntensity();
 
-                    cell.update(currentTime, inkDecayTime, igniteDecayTime);
+                    cell.update(currentTime, inkDecayTime, igniteDecayTime, fadeStartTime);
 
                     if (cell.isEmpty() || Math.abs(cell.getIntensity() - oldIntensity) > 0.001f) {
                         anyChanged = true;

@@ -1,5 +1,7 @@
 package com.Hecate.weapon;
 
+import com.Hecate.player.inventory.PlayerStateManager;
+
 /**
  * 武器属性配置类
  * 定义武器的各项参数
@@ -10,12 +12,11 @@ public class WeaponStats {
     private final String weaponId;           // 武器ID
     private final String weaponName;         // 武器名称
 
-    // 攻击属性
-    // 注：fireRate/spreadAngle 不是 final —— 波次buff系统需要在武器生命周期内原地修饰这两个数值
-    private float fireRate;                  // 攻击间隔（秒）- 两次攻击之间的最小时间
+    // 攻击属性（现在改为保存基础值，通过getter动态计算buff加成）
+    private final float baseFireRate;        // 基础攻击间隔（秒）
     private final float projectileSpawnRate; // 发射子弹的速度（每次攻击发射的子弹数量/秒）
     private final float projectileVelocity;  // 射出的子弹的速度（米/秒）- 子弹飞行速度
-    private float spreadAngle;               // 弹药乱数（度）- 散射角度范围
+    private final float baseSpreadAngle;     // 基础散射角度（度）
     private final float maxRange;            // 攻击距离（米）- 子弹最大飞行距离
     private final float ammoCost;            // 发射消耗的弹药（每次攻击）
 
@@ -28,16 +29,19 @@ public class WeaponStats {
     private final float baseDamage;          // 基础伤害
     private final float inkRadius;           // 涂墨半径（米）
 
+    // 效果系统引用（用于动态计算buff加成）
+    private PlayerStateManager playerStateManager;
+
     /**
      * 构造函数 - 使用Builder模式创建
      */
     private WeaponStats(Builder builder) {
         this.weaponId = builder.weaponId;
         this.weaponName = builder.weaponName;
-        this.fireRate = builder.fireRate;
+        this.baseFireRate = builder.fireRate;
         this.projectileSpawnRate = builder.projectileSpawnRate;
         this.projectileVelocity = builder.projectileVelocity;
-        this.spreadAngle = builder.spreadAngle;
+        this.baseSpreadAngle = builder.spreadAngle;
         this.maxRange = builder.maxRange;
         this.ammoCost = builder.ammoCost;
         this.hasCharge = builder.hasCharge;
@@ -45,15 +49,49 @@ public class WeaponStats {
         this.chargeMultiplier = builder.chargeMultiplier;
         this.baseDamage = builder.baseDamage;
         this.inkRadius = builder.inkRadius;
+        this.playerStateManager = null; // 默认为null，通过setPlayerStateManager设置
     }
 
-    // Getters
+    /**
+     * 设置PlayerStateManager引用（用于动态计算buff加成）
+     */
+    public void setPlayerStateManager(PlayerStateManager manager) {
+        this.playerStateManager = manager;
+    }
+
+    // Getters（动态计算buff加成）
     public String getWeaponId() { return weaponId; }
     public String getWeaponName() { return weaponName; }
-    public float getFireRate() { return fireRate; }
+
+    /**
+     * 获取实际射速（基础值 * buff加成）
+     */
+    public float getFireRate() {
+        float rate = baseFireRate;
+        if (playerStateManager != null) {
+            int stacks = playerStateManager.getEffectStacks("fire_rate_boost");
+            float buffMultiplier = (float) Math.pow(1f / 1.5f, stacks); // 每层缩短到2/3，可叠加
+            rate *= buffMultiplier;
+        }
+        return rate;
+    }
+
     public float getProjectileSpawnRate() { return projectileSpawnRate; }
     public float getProjectileVelocity() { return projectileVelocity; }
-    public float getSpreadAngle() { return spreadAngle; }
+
+    /**
+     * 获取实际散射角度（基础值 * buff加成）
+     */
+    public float getSpreadAngle() {
+        float angle = baseSpreadAngle;
+        if (playerStateManager != null) {
+            int stacks = playerStateManager.getEffectStacks("spread_range_boost");
+            float buffMultiplier = (float) Math.pow(1.5f, stacks); // 每层1.5倍，可叠加
+            angle *= buffMultiplier;
+        }
+        return angle;
+    }
+
     public float getMaxRange() { return maxRange; }
     public float getAmmoCost() { return ammoCost; }
     public boolean hasCharge() { return hasCharge; }
@@ -63,17 +101,19 @@ public class WeaponStats {
     public float getInkRadius() { return inkRadius; }
 
     /**
-     * 原地修饰攻击间隔（波次buff系统用）。factor小于1使间隔变短（打得更快）。
+     * @deprecated 不再需要直接修改值，现在通过效果系统动态计算
      */
+    @Deprecated
     public void multiplyFireRate(float factor) {
-        this.fireRate *= factor;
+        // 空实现，保留接口兼容性
     }
 
     /**
-     * 原地修饰散射角度（波次buff系统用）。factor大于1使散射范围变大。
+     * @deprecated 不再需要直接修改值，现在通过效果系统动态计算
      */
+    @Deprecated
     public void multiplySpreadAngle(float factor) {
-        this.spreadAngle *= factor;
+        // 空实现，保留接口兼容性
     }
 
     /**
@@ -122,6 +162,6 @@ public class WeaponStats {
     @Override
     public String toString() {
         return String.format("Weapon[%s] - FireRate: %.2fs, Velocity: %.1fm/s, Range: %.1fm, AmmoCost: %.0f",
-                weaponName, fireRate, projectileVelocity, maxRange, ammoCost);
+                weaponName, baseFireRate, projectileVelocity, maxRange, ammoCost);
     }
 }

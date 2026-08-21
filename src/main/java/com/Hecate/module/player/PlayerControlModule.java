@@ -12,8 +12,13 @@ import com.Hecate.module.AbstractGameModule;
 import com.Hecate.module.Version;
 import com.Hecate.block.BlockInteraction;
 import com.Hecate.block.BlockBreaking;
+import com.Hecate.block.BlockRegistry;
 import com.Hecate.world.ChunkManager;
 import com.Hecate.player.PlayerController;
+import com.Hecate.player.inventory.PlayerStateManager;
+import com.Hecate.player.inventory.PlayerHotbar;
+import com.Hecate.player.inventory.HeldItem;
+import com.Hecate.weapon.WeaponRegistry;
 import com.Hecate.utils.LogUtils;
 
 /**
@@ -25,6 +30,7 @@ public class PlayerControlModule extends AbstractGameModule implements ActionLis
 
     private final SimpleApplication app;
     private PlayerController playerController;
+    private PlayerStateManager playerStateManager;
 
     // 方块交互系统
     private BlockInteraction blockInteraction;
@@ -35,9 +41,6 @@ public class PlayerControlModule extends AbstractGameModule implements ActionLis
     public PlayerController getPlayerController() {
         return playerController;
     }
-
-    // 当前选中的方块类型
-    private String selectedBlockType = "stone";
 
     public PlayerControlModule(SimpleApplication app) {
         this.app = app;
@@ -55,13 +58,25 @@ public class PlayerControlModule extends AbstractGameModule implements ActionLis
 
     @Override
     public void onInitialize() {
-
         // 初始化玩家控制器
         playerController = new PlayerController(app);
 
+        // 初始化玩家状态管理器（物品栏系统）
+        BlockRegistry blockRegistry = BlockRegistry.getInstance();
+        WeaponRegistry weaponRegistry = WeaponRegistry.getInstance();
+        playerStateManager = new PlayerStateManager(blockRegistry, weaponRegistry);
+        playerController.setPlayerStateManager(playerStateManager);
+
+        // 初始化快捷栏并添加默认方块
+        PlayerHotbar hotbar = playerStateManager.getEquipment().getHotbar();
+        hotbar.setSlot(0, HeldItem.block("stone"));
+        hotbar.setSlot(1, HeldItem.block("dirt"));
+        hotbar.setSlot(2, HeldItem.block("grass"));
+        hotbar.setSlot(3, HeldItem.block("glass"));
+        hotbar.selectSlot(0); // 默认选中第一个槽位
+
         // 设置方块交互输入
         setupBlockInteractionInputs();
-
     }
 
     @Override
@@ -145,16 +160,17 @@ public class PlayerControlModule extends AbstractGameModule implements ActionLis
         app.getInputManager().addMapping("BreakBlock", new MouseButtonTrigger(MouseInput.BUTTON_LEFT));
         app.getInputManager().addMapping("PlaceBlock", new MouseButtonTrigger(MouseInput.BUTTON_RIGHT));
 
-        // 方块选择
-        app.getInputManager().addMapping("SelectStone", new KeyTrigger(KeyInput.KEY_1));
-        app.getInputManager().addMapping("SelectDirt", new KeyTrigger(KeyInput.KEY_2));
-        app.getInputManager().addMapping("SelectGrass", new KeyTrigger(KeyInput.KEY_3));
-        app.getInputManager().addMapping("SelectGlass", new KeyTrigger(KeyInput.KEY_4));
+        // 快捷栏选择（1-9键）
+        for (int i = 0; i < 9; i++) {
+            String mappingName = "SelectSlot" + i;
+            app.getInputManager().addMapping(mappingName, new KeyTrigger(KeyInput.KEY_1 + i));
+        }
 
         // 注册监听器
         app.getInputManager().addListener(this,
                 "BreakBlock", "PlaceBlock",
-                "SelectStone", "SelectDirt", "SelectGrass", "SelectGlass");
+                "SelectSlot0", "SelectSlot1", "SelectSlot2", "SelectSlot3",
+                "SelectSlot4", "SelectSlot5", "SelectSlot6", "SelectSlot7", "SelectSlot8");
     }
 
     @Override
@@ -188,58 +204,31 @@ public class PlayerControlModule extends AbstractGameModule implements ActionLis
     @Override
     public void onAction(String name, boolean isPressed, float tpf) {
         // 方块交互
-        switch (name) {
-            case "BreakBlock":
-                if (blockInteraction != null && blockBreaking != null) {
-                    if (isPressed) {
-                        BlockInteraction.BlockHitResult hitResult = blockInteraction.raycastBlock();
-                        if (hitResult.isHit()) {
-                            blockBreaking.startBreaking(hitResult.getBlockPosition());
-                        }
-                    } else {
-                        blockBreaking.stopBreaking();
+        if (name.equals("BreakBlock")) {
+            if (blockInteraction != null && blockBreaking != null) {
+                if (isPressed) {
+                    BlockInteraction.BlockHitResult hitResult = blockInteraction.raycastBlock();
+                    if (hitResult.isHit()) {
+                        blockBreaking.startBreaking(hitResult.getBlockPosition());
                     }
+                } else {
+                    blockBreaking.stopBreaking();
                 }
-                break;
+            }
+        } else if (name.equals("PlaceBlock")) {
+            // 右键用于恢复，不再用于放置方块
+            if (playerController != null) {
+                playerController.setRightButtonForRecovery(isPressed);
+            }
+        } else if (name.startsWith("SelectSlot") && isPressed) {
+            // 动态处理快捷栏选择（1-9键）
+            int slotIndex = Integer.parseInt(name.substring("SelectSlot".length()));
+            PlayerHotbar hotbar = playerStateManager.getEquipment().getHotbar();
+            hotbar.selectSlot(slotIndex);
 
-            case "PlaceBlock":
-                // 右键用于恢复，不再用于放置方块
-                if (playerController != null) {
-                    playerController.setRightButtonForRecovery(isPressed);
-                }
-                break;
+            HeldItem selectedItem = hotbar.getCurrentItem();
 
-            case "PlaceBlockOld":
-                if (isPressed && blockInteraction != null) {
-                    blockInteraction.placeBlock(selectedBlockType);
-                }
-                break;
 
-            // 方块选择
-            case "SelectStone":
-                if (isPressed) {
-                    selectedBlockType = "stone";
-
-                }
-                break;
-            case "SelectDirt":
-                if (isPressed) {
-                    selectedBlockType = "dirt";
-
-                }
-                break;
-            case "SelectGrass":
-                if (isPressed) {
-                    selectedBlockType = "grass";
-
-                }
-                break;
-            case "SelectGlass":
-                if (isPressed) {
-                    selectedBlockType = "glass";
-
-                }
-                break;
         }
     }
 }

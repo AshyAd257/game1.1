@@ -37,7 +37,7 @@ public class ArenaWorld {
      * @param diameter 直径（方块数量）
      */
     public void generateArena(float centerX, float centerZ, int diameter) {
-        LogUtils.info(ArenaWorld.class, "开始生成竞技场 - 中心: (" + centerX + ", " + centerZ + "), 直径: " + diameter);
+
 
         float radius = diameter / 2.0f;
 
@@ -97,7 +97,7 @@ public class ArenaWorld {
             }
         }
 
-        LogUtils.info(ArenaWorld.class, "竞技场生成完成 - 共生成 " + floorCells + " 个地表格子");
+
     }
 
     /**
@@ -141,7 +141,7 @@ public class ArenaWorld {
             }
         }
 
-        LogUtils.info(ArenaWorld.class, "竞技场已清空");
+
     }
 
     /**

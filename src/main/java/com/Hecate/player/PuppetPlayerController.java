@@ -60,10 +60,10 @@ public class PuppetPlayerController {
     // 【模式控制】
     private boolean isNormalMode = false;  // false=圆盘模式（默认），true=普通模式（按住Ctrl）
 
-    // 动画文件路径
-    private static final String PUPPET_PATH = "C:/Users/29232/OneDrive/文档/successv5.puppet";
-    private static final String WALK_ANIM_PATH = "C:/Users/29232/OneDrive/文档/walknew.anim";
-    private static final String JUMP_ANIM_PATH = "C:/Users/29232/OneDrive/文档/jump.anim";
+    // 动画文件路径（使用classpath资源）
+    private static final String PUPPET_PATH = "puppets/successv5.puppet";
+    private static final String WALK_ANIM_PATH = "puppets/walknew.anim";
+    private static final String JUMP_ANIM_PATH = "puppets/jump.anim";
 
     // Puppet 渲染偏移（防止穿模）
     private static final float PUPPET_Y_OFFSET = 0.8f;  // 向上偏移，防止沉入地面
@@ -82,8 +82,8 @@ public class PuppetPlayerController {
      */
     private void initializePuppetSystem() {
         try {
-            // 加载 puppet 配置
-            PuppetConfig puppetConfig = PuppetIO.loadFromFile(PUPPET_PATH);
+            // 加载 puppet 配置（从 classpath 资源）
+            PuppetConfig puppetConfig = PuppetIO.loadFromResource(PUPPET_PATH);
 
             // 创建空的 Skeleton 和 PuppetRenderer
             com.Hecate.puppet.core.Skeleton skeleton = new com.Hecate.puppet.core.Skeleton(puppetConfig.getName());

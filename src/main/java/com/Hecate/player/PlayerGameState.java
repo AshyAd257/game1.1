@@ -2,7 +2,16 @@ package com.Hecate.player;
 
 /**
  * 玩家游戏状态枚举
- * 四种状态及其能力组合（在己方涂墨上只能在"高速移动/恢复/隐藏"中三选二）：
+ *
+ * @deprecated 此枚举已废弃，不再使用。
+ * 当前的"三选二"状态机直接在 {@link PlayerController} 中通过实例字段管理：
+ * <ul>
+ *   <li>{@link PlayerController#hasRecoveryState()} - 恢复状态（回血回弹药）</li>
+ *   <li>{@link PlayerController#hasHidingState()} - 隐藏状态（不可见）</li>
+ *   <li>{@link PlayerController#hasSpeedState()} - 加速状态（快速移动）</li>
+ * </ul>
+ *
+ * 原设计的四种状态及其能力组合（在己方涂墨上只能在"高速移动/恢复/隐藏"中三选二）：
  *
  * 1. NORMAL（普通）: 可走路 + 可攻击 + 可见 + 不可恢复
  *    - 在普通地面或敌方地面上的状态
@@ -16,6 +25,7 @@ package com.Hecate.player;
  * 4. HIDING_FAST（隐藏快速移动）: 不可攻击 + 可快速移动 + 不可见 + 不可恢复
  *    - 在己方涂墨上：选择了"高速移动"和"隐藏"
  */
+@Deprecated
 public enum PlayerGameState {
     /**
      * 普通状态 - 可走路、可攻击、可见、不可恢复

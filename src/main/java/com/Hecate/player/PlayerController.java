@@ -299,6 +299,9 @@ public class PlayerController implements ActionListener, AnalogListener {
 
         // 初始化体素交互控制器
         voxelInteraction = new PlayerVoxelInteraction(camera, collisionManager);
+
+        // 子弹的地形碰撞检测也依赖同一个碰撞管理器
+        refreshProjectileManager();
     }
 
     /**
@@ -1279,8 +1282,10 @@ public class PlayerController implements ActionListener, AnalogListener {
                     // else: 保持1.0f（普通地面或无加速状态）
                 }
 
-                // 根据快速移动状态选择速度（三选二规则的hasSpeedState决定加速）
-                float baseSpeed = hasSpeedState ? FAST_MOVE_SPEED : WALK_SPEED;
+                // 基础速度始终是步行速度：己方墨水加速完全由inkSpeedMultiplier（1.6/2.0倍）
+                // 体现，不再叠加FAST_MOVE_SPEED换挡——此前两者同时生效会导致重复叠加
+                // （7 * 1.6 = 11.2，相当于步行速度的3.4倍，远超GridCell里设计的1.6倍）
+                float baseSpeed = WALK_SPEED;
 
                 // 应用疾跑速度倍率
                 float sprintMultiplier = isSprinting ? SPRINT_SPEED_MULTIPLIER : 1.0f;
@@ -1843,10 +1848,10 @@ public class PlayerController implements ActionListener, AnalogListener {
     }
 
     /**
-     * (重新)构建Gun2的子弹更新循环。gridManager/monsterManager/currentWorldNode
-     * 三者的setter调用顺序不固定（ApplicationContext.connectSystems()里setWorldNode
-     * 先于setGridManager/setMonsterManager），所以每个setter都调用本方法，
-     * 以最新的三个依赖重建，避免捕获到尚未注入的null依赖。
+     * (重新)构建武器共享的子弹更新循环。gridManager/monsterManager/collisionManager/
+     * currentWorldNode 四者的setter调用顺序不固定（ApplicationContext.connectSystems()里
+     * setWorldNode先于setGridManager/setMonsterManager/setCollisionManager），所以每个
+     * setter都调用本方法，以最新的四个依赖重建，避免捕获到尚未注入的null依赖。
      * <p>重建前会清空旧的子弹更新循环，防止旧世界节点下的子弹方块残留。
      */
     private void refreshProjectileManager() {
@@ -1855,7 +1860,7 @@ public class PlayerController implements ActionListener, AnalogListener {
         }
         if (currentWorldNode != null) {
             projectileManager = new com.Hecate.weapon.ProjectileManager(
-                    app.getAssetManager(), currentWorldNode, monsterManager, gridManager);
+                    app.getAssetManager(), currentWorldNode, monsterManager, gridManager, collisionManager);
             combatController.setProjectileManager(projectileManager);
         } else {
             projectileManager = null;
@@ -2008,6 +2013,14 @@ public class PlayerController implements ActionListener, AnalogListener {
      */
     public void setPlayerStateManager(PlayerStateManager playerStateManager) {
         this.playerStateManager = playerStateManager;
+    }
+
+    /**
+     * 获取玩家状态管理器（装备系统+效果系统），可能为null（未初始化完成前）。
+     * 供怪物攻击行为（如中毒/流血DOT）施加效果到玩家身上。
+     */
+    public PlayerStateManager getPlayerStateManager() {
+        return playerStateManager;
     }
 
     /**

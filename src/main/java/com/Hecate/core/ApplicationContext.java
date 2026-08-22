@@ -78,6 +78,15 @@ public class ApplicationContext {
     // ==================== 怪物系统 ====================
     private com.Hecate.monster.MonsterManager monsterManager;
 
+    // ==================== 固定逻辑刻 ====================
+    // 战斗判定（怪物攻击冷却、未来的buff/DOT结算、技能计时）挂在这里，
+    // 保证判定时序在任意渲染帧率下一致。详见 FixedTickScheduler。
+    private final FixedTickScheduler fixedTickScheduler = new FixedTickScheduler();
+
+    // ==================== 游戏内时间调度器 ====================
+    // 植物生长、环境演化等粗粒度的延迟/周期任务。详见 GameScheduler。
+    private final GameScheduler gameScheduler = new GameScheduler();
+
     /**
      * 构造函数
      *
@@ -126,6 +135,13 @@ public class ApplicationContext {
         // 初始化玩家控制模块
         playerControlModule = new PlayerControlModule(app);
         playerControlModule.onInitialize();
+
+        // 玩家效果系统（buff/debuff剩余时长倒计时、持续伤害等）挂在固定逻辑刻上，
+        // 保证在任意渲染帧率下的判定时序一致。此前这套系统一直存在但未被任何地方调用。
+        if (playerControlModule.getPlayerStateManager() != null) {
+            fixedTickScheduler.register(
+                    dt -> playerControlModule.getPlayerStateManager().getEffectManager().update(dt));
+        }
 
         // 后初始化阶段
         worldModule.onPostInitialize();
@@ -191,6 +207,9 @@ public class ApplicationContext {
     public void initializeMonsterSystem() {
         monsterManager = new com.Hecate.monster.MonsterManager(app.getAssetManager());
         com.Hecate.flame.FlameParticle.setMonsterManager(monsterManager);
+
+        // 怪物的攻击冷却判定挂在固定逻辑刻上（详见 FixedTickScheduler）
+        fixedTickScheduler.register(monsterManager::fixedUpdate);
 
         // 碰撞管理器：用于怪物AI移动时查询地形高度、避免走入虚空
         if (collisionManager != null) {
@@ -339,6 +358,12 @@ public class ApplicationContext {
             monsterManager.update(tpf);
         }
 
+        // 固定逻辑刻：战斗判定（攻击冷却到期判断等），与渲染帧率解耦
+        fixedTickScheduler.update(tpf);
+
+        // 游戏内时间调度器：植物生长/环境演化等延迟/周期任务
+        gameScheduler.update(tpf);
+
         // 更新涂墨网格系统
         // 若WorldSwitcher存在，由它统一更新主世界+竞技场两份独立的墨水网格
         // （确保未激活的那一份墨水也按真实时间衰减，不会被"冻结"）；
@@ -451,5 +476,13 @@ public class ApplicationContext {
 
     public com.Hecate.monster.MonsterManager getMonsterManager() {
         return monsterManager;
+    }
+
+    public FixedTickScheduler getFixedTickScheduler() {
+        return fixedTickScheduler;
+    }
+
+    public GameScheduler getGameScheduler() {
+        return gameScheduler;
     }
 }

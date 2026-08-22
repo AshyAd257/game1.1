@@ -3,6 +3,7 @@ package com.Hecate.monster;
 import com.jme3.material.Material;
 import com.jme3.material.RenderState;
 import com.jme3.math.ColorRGBA;
+import com.jme3.math.FastMath;
 import com.jme3.math.Vector3f;
 import com.jme3.renderer.queue.RenderQueue;
 import com.jme3.scene.Geometry;
@@ -29,7 +30,7 @@ import java.util.Set;
  */
 public class Monster {
 
-    // 基础数值：MonsterVariant 的倍率相对这些基准值应用
+    // 基础数值：MonsterDefinition 的倍率相对这些基准值应用
     private static final float BASE_SIZE = 1.0f;
     private static final float BASE_MAX_HEALTH = 30.0f;
     // 基础移动速度：略慢于玩家步行速度（PlayerController.WALK_SPEED = 3.25），
@@ -39,8 +40,7 @@ public class Monster {
     private static final float FLASH_DURATION = 0.05f;
     private static final int HITSTOP_FRAMES = 3; // 命中瞬间暂停的帧数（2~3帧取上限）
 
-    // 接触攻击的冷却时间：避免怪物贴着玩家时每帧都判定命中（60次/秒），
-    // 而是像"打一下"那样有节奏地扣血。
+    // 保留作为向后兼容的默认值（MonsterDefinition.Builder 的默认攻击数值取自这里）
     public static final float ATTACK_COOLDOWN = 1.0f;
     public static final float ATTACK_DAMAGE = 10.0f;
 
@@ -50,7 +50,10 @@ public class Monster {
     private final Geometry geometry;
     private final Material material;
 
-    // 本实例的实际数值（基础值 x 对应MonsterVariant的倍率）
+    // 本怪物的数据定义（数值+行为配置），取代过去"只有倍率"的 MonsterVariant
+    private final MonsterDefinition definition;
+
+    // 本实例的实际数值（基础值 x 对应MonsterDefinition的倍率）
     private final float size;
     private final float moveSpeed;
 
@@ -58,11 +61,18 @@ public class Monster {
     private float health;
     private boolean alive = true;
 
+    // 水平朝向角（弧度）。定义域按需wrap到[-PI, PI]，0表示朝+X方向。
+    private float facingYaw = 0f;
+
     private float flashTimer = 0f;
     private int hitStopFramesRemaining = 0;
 
     // 距离上次成功命中玩家的时间，用于攻击冷却
     private float attackCooldownRemaining = 0f;
+
+    // 本怪物的攻击行为（由definition.attackBehaviorFactory创建，每只怪物独立一份，
+    // 因为部分行为实现需要持有各自独立的武器冷却状态）
+    private final MonsterAttackBehavior attackBehavior;
 
     // 本怪物所属的波次编号（由MonsterManager的波次系统设置）。-1表示不属于任何波次
     // （例如 /mob1 命令生成的测试怪物），波次完成判定不会将其计入。
@@ -77,12 +87,23 @@ public class Monster {
     /**
      * @param spawnFootPosition 出生点（脚底位置，世界坐标）。构造函数内部会按本怪物的
      *                          实际体型（受variant影响）把它转换为几何中心坐标。
-     * @param variant 怪物变体，决定体型/血量/移速的倍率
+     * @param variant 怪物变体，决定体型/血量/移速的倍率以及攻击行为
      */
     public Monster(AssetManager assetManager, Node parentNode, Vector3f spawnFootPosition, MonsterVariant variant) {
-        this.size = BASE_SIZE * variant.sizeMultiplier;
-        this.moveSpeed = BASE_MOVE_SPEED * variant.speedMultiplier;
-        this.health = BASE_MAX_HEALTH * variant.healthMultiplier;
+        this(assetManager, parentNode, spawnFootPosition, variant.definition);
+    }
+
+    /**
+     * @param spawnFootPosition 出生点（脚底位置，世界坐标）。构造函数内部会按本怪物的
+     *                          实际体型（受definition影响）把它转换为几何中心坐标。
+     * @param definition 怪物数据定义，决定体型/血量/移速/攻击数值/攻击行为
+     */
+    public Monster(AssetManager assetManager, Node parentNode, Vector3f spawnFootPosition, MonsterDefinition definition) {
+        this.definition = definition;
+        this.size = BASE_SIZE * definition.sizeMultiplier;
+        this.moveSpeed = BASE_MOVE_SPEED * definition.speedMultiplier;
+        this.health = BASE_MAX_HEALTH * definition.healthMultiplier;
+        this.attackBehavior = definition.attackBehaviorFactory.create();
 
         this.position = spawnFootPosition.clone();
         this.position.y += size / 2f;
@@ -113,15 +134,11 @@ public class Monster {
         if (!alive) return;
 
         if (hitStopFramesRemaining > 0) {
-            // hit-stop期间跳过移动，但攻击冷却和闪白计时仍正常流逝——
+            // hit-stop期间跳过移动，但闪白计时仍正常流逝——
             // hit-stop只是"被打了一下愣住"，不是全局暂停
             hitStopFramesRemaining--;
         } else {
             moveTowardPlayer(tpf, playerPosition, collisionManager);
-        }
-
-        if (attackCooldownRemaining > 0f) {
-            attackCooldownRemaining -= tpf;
         }
 
         if (flashTimer > 0f) {
@@ -131,6 +148,21 @@ public class Monster {
                 material.setColor("Color", BASE_COLOR);
             }
         }
+    }
+
+    /**
+     * 固定步长更新（由 {@link com.Hecate.core.FixedTickScheduler} 驱动，默认20Hz）。
+     * <p>攻击冷却判定挪到固定刻，保证在任意渲染帧率下"多久能再打一次"的判定时序一致，
+     * 不受帧率波动影响。移动/视觉表现（闪白、hit-stop）仍走可变帧率的 {@link #update}。
+     */
+    public void fixedUpdate(float dt, com.Hecate.player.PlayerController player, com.Hecate.ink.SparseGridManager gridManager) {
+        if (!alive) return;
+
+        if (attackCooldownRemaining > 0f) {
+            attackCooldownRemaining -= dt;
+        }
+
+        attackBehavior.fixedUpdate(dt, this, player, gridManager);
     }
 
     /**
@@ -149,6 +181,8 @@ public class Monster {
         }
 
         toPlayer.normalizeLocal();
+        updateFacing(toPlayer, tpf);
+
         float moveDist = moveSpeed * tpf;
         Vector3f delta = toPlayer.mult(moveDist);
 
@@ -165,6 +199,69 @@ public class Monster {
         }
 
         geometry.setLocalTranslation(position);
+    }
+
+    /**
+     * 更新水平朝向角，朝targetDirection（已归一化的XZ方向）转动。
+     * <p>{@code definition.turnSpeedDegPerSec <= 0} 表示瞬间转向——这是所有现有怪物
+     * （SLOW/NORMAL/MINI_BOSS）的默认行为，保证本次改动不影响它们原有的手感。
+     * 需要"转身有延迟"的精英怪可以设置正的转向速度。
+     */
+    private void updateFacing(Vector3f targetDirection, float tpf) {
+        float targetYaw = FastMath.atan2(targetDirection.z, targetDirection.x);
+
+        if (definition.turnSpeedDegPerSec <= 0f) {
+            facingYaw = targetYaw;
+            return;
+        }
+
+        float maxDelta = definition.turnSpeedDegPerSec * FastMath.DEG_TO_RAD * tpf;
+        float diff = shortestAngleDiff(targetYaw, facingYaw);
+
+        if (Math.abs(diff) <= maxDelta) {
+            facingYaw = targetYaw;
+        } else {
+            facingYaw += Math.signum(diff) * maxDelta;
+        }
+    }
+
+    /**
+     * 计算从fromAngle转到toAngle的最短角度差，结果落在(-PI, PI]。
+     * 不依赖FastMath.normalizeAngle的具体值域约定，手写wrap避免版本差异。
+     */
+    private static float shortestAngleDiff(float toAngle, float fromAngle) {
+        float diff = (toAngle - fromAngle) % FastMath.TWO_PI;
+        if (diff > FastMath.PI) {
+            diff -= FastMath.TWO_PI;
+        } else if (diff < -FastMath.PI) {
+            diff += FastMath.TWO_PI;
+        }
+        return diff;
+    }
+
+    /**
+     * 是否正朝向目标位置（水平面），用于"需要正面命中/正面攻击"类怪物的判定。
+     * @param targetPosition 目标位置（世界坐标）
+     */
+    public boolean isFacingTarget(Vector3f targetPosition) {
+        Vector3f toTarget = targetPosition.subtract(position);
+        toTarget.y = 0;
+        if (toTarget.lengthSquared() < 0.0001f) {
+            return true; // 目标就在脚下，视为已朝向
+        }
+
+        float targetYaw = FastMath.atan2(toTarget.z, toTarget.x);
+        float diff = shortestAngleDiff(targetYaw, facingYaw);
+
+        return Math.abs(diff) <= definition.facingToleranceDeg * FastMath.DEG_TO_RAD;
+    }
+
+    public float getFacingYaw() {
+        return facingYaw;
+    }
+
+    public MonsterDefinition getDefinition() {
+        return definition;
     }
 
     /**

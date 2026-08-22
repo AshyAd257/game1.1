@@ -230,6 +230,18 @@ public class Projectile {
     }
 
     /**
+     * 地形碰撞终止（由外部碰撞系统调用）。与 {@link #hit(Vector3f)} 不同，
+     * 地形不参与穿透判定——任何弹道打到地形（墙/地面）都会立即结束，
+     * 不消耗/检查remainingPierces。涂墨等效果由调用方（ProjectileManager）
+     * 根据ExpireEffect.dropToGround自行决定，这里只负责终止飞行状态。
+     */
+    public void terrainHit(Vector3f hitPoint) {
+        if (!alive) return;
+        position.set(hitPoint);
+        alive = false;
+    }
+
+    /**
      * 超时消失
      */
     private void expire() {

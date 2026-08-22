@@ -186,6 +186,10 @@ public class PlayerControlModule extends AbstractGameModule implements ActionLis
         }
     }
 
+    public PlayerStateManager getPlayerStateManager() {
+        return playerStateManager;
+    }
+
     @Override
     public void onDisable() {
 

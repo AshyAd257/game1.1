@@ -1,38 +1,35 @@
 package com.Hecate.weapon;
 
-import com.Hecate.flame.SimpleFlameRenderer;
 import com.Hecate.ink.SparseGridManager;
 import com.jme3.math.FastMath;
-import com.jme3.math.Ray;
 import com.jme3.math.Vector3f;
 import com.jme3.scene.Node;
-import com.jme3.collision.CollisionResults;
 
 /**
- * 蒸汽朋克枪
- * 中距离散射武器，每次攻击消耗3点弹药
- * 在60度扇形范围内散布子弹
+ * 蒸汽朋克枪（Gun1）
+ * 中距离武器，每次开火产生一发方块抛体，沿抛物线飞行（重力+阻力独立于其他步枪配置），
+ * 命中判定/地形碰撞/沿途涂墨均由外部的 {@link ProjectileManager} 驱动。
+ * 方向带有小幅随机偏移，模拟原先散射手感。
  */
 public class SteampunkGun extends Weapon {
 
-    // 依赖项
-    private SimpleFlameRenderer flameRenderer;  // 火焰渲染器（用于发射子弹视觉效果）
+    // 子弹配置（弹道+命中效果+视觉）——每把步枪自己的抛物线参数
+    private final ProjectileProfile projectileProfile;
+
+    // 依赖项（子弹的实际飞行/碰撞/涂墨由外部的子弹更新循环驱动，这里只负责生成Projectile）
     private SparseGridManager gridManager;      // 墨水系统
-    private Node worldNode;                     // 世界节点（用于射线检测）
+    private Node worldNode;                     // 世界节点
     private int playerFactionId = com.Hecate.ink.FactionRegistry.DARK_DEFAULT;  // 玩家阵营ID
+
+    // 每次开火产生的子弹交给外部监听器处理（PlayerController里的子弹更新循环）
+    private ProjectileSpawnListener spawnListener;
 
     /**
      * 构造函数
      */
-    public SteampunkGun(WeaponStats stats) {
-        super(stats);
-    }
-
-    /**
-     * 设置火焰渲染器（用于子弹效果）
-     */
-    public void setFlameRenderer(SimpleFlameRenderer flameRenderer) {
-        this.flameRenderer = flameRenderer;
+    public SteampunkGun(WeaponStats stats, ProjectileProfile projectileProfile) {
+        super(stats, WeaponKind.RIFLE);
+        this.projectileProfile = projectileProfile;
     }
 
     /**
@@ -50,14 +47,10 @@ public class SteampunkGun extends Weapon {
     }
 
     /**
-     * 设置玩家阵营ID（同时更新火焰渲染器的阵营）
+     * 设置玩家阵营ID
      */
     public void setPlayerFactionId(int factionId) {
         this.playerFactionId = factionId;
-        // 同步更新火焰渲染器的阵营ID，确保墨水颜色一致
-        if (flameRenderer != null) {
-            flameRenderer.getParticleSystem().setFactionId(factionId);
-        }
     }
 
     @Deprecated
@@ -68,26 +61,43 @@ public class SteampunkGun extends Weapon {
             : com.Hecate.ink.FactionRegistry.DARK_DEFAULT;
     }
 
+    public void setSpawnListener(ProjectileSpawnListener listener) {
+        this.spawnListener = listener;
+    }
+
     /**
-     * 执行普通开火
+     * 执行普通开火：产生一发方块抛体，沿本武器自己的抛物线飞行。
      */
     @Override
     protected void fire(Vector3f origin, Vector3f direction) {
-        // 应用60度扇形散射
         Vector3f finalDirection = applySpread(direction.clone());
 
-        // 发射视觉效果（墨水子弹粒子）
-        if (flameRenderer != null) {
-            // 计算子弹速度
-            float bulletSpeed = stats.getProjectileVelocity();
-            Vector3f bulletVelocity = finalDirection.mult(bulletSpeed);
+        ProjectileProfile.HitEffect hitEffect = ProjectileProfile.HitEffect.simple(
+                stats.getBaseDamage(), stats.getInkRadius(), playerFactionId);
 
-            // 发射少量粒子作为子弹（类似火焰，但更少的粒子）
-            int particleCount = 5; // 少量粒子代表一发子弹
-            flameRenderer.emitFlame(origin, particleCount, bulletVelocity, stats.getBaseDamage());
+        // 注意：这里不读取stats.getMaxRange()。WeaponStats.maxRange在旧的火焰粒子系统里
+        // 只是纯展示数值（仅getInfo()用），从未参与运动学计算；子弹何时消失完全由
+        // 撞地形/撞怪物/存活时间耗尽决定。projectileProfile.getMaxRange()是子弹自己的
+        // 物理射程上限（在create()里配置得足够大，保证重力能先把子弹拉到地面），
+        // 与WeaponStats.maxRange是两个不同语义的字段，不能混用（混用会导致子弹在
+        // 触地前就被射程截断静默消失，不涂墨）。
+        ProjectileProfile shotProfile = new ProjectileProfile.Builder(projectileProfile.getId(), projectileProfile.getDisplayName())
+                .arcType(projectileProfile.getArcType())
+                .velocity(stats.getProjectileVelocity())
+                .gravity(projectileProfile.getGravity())
+                .drag(projectileProfile.getDrag())
+                .maxLifetime(projectileProfile.getMaxLifetime())
+                .maxRange(projectileProfile.getMaxRange())
+                .hitEffect(hitEffect)
+                .expireEffect(projectileProfile.getExpireEffect())
+                .visualConfig(projectileProfile.getVisualConfig())
+                .build();
+
+        Projectile projectile = new Projectile(shotProfile, origin, finalDirection, 1.0f, playerFactionId);
+
+        if (spawnListener != null) {
+            spawnListener.onProjectileSpawned(projectile);
         }
-
-        // 粒子落地后会自动触发涂墨（FlameParticle系统自带）；命中怪物则不再涂墨
     }
 
     /**
@@ -100,9 +110,10 @@ public class SteampunkGun extends Weapon {
     }
 
     /**
-     * 应用60度扇形散射
+     * 应用小幅随机方向偏移（保留原散射手感，但现在只影响单发子弹的方向，
+     * 而不是像之前的火焰粒子那样让一团粒子各自散开）
      * @param direction 原始方向
-     * @return 应用散射后的方向
+     * @return 应用偏移后的方向
      */
     private Vector3f applySpread(Vector3f direction) {
         float spreadAngle = stats.getSpreadAngle();
@@ -111,8 +122,7 @@ public class SteampunkGun extends Weapon {
             return direction.normalizeLocal();
         }
 
-        // 在60度扇形范围内随机散射
-        // 水平方向：-30度 到 +30度
+        // 水平方向：-half 到 +half
         float horizontalAngle = (FastMath.nextRandomFloat() - 0.5f) * spreadAngle * FastMath.DEG_TO_RAD;
 
         // 垂直方向：较小的散射（保持在合理范围）
@@ -146,14 +156,16 @@ public class SteampunkGun extends Weapon {
      * 属性配置：
      * - 子弹消耗：3点/发
      * - 发射速度：0.5秒/发（可连发）
-     * - 射程：1.5-2个格子（每个格子按1米计算）
-     * - 散布：60度扇形
+     * - 射程：2个格子（2米最远）
+     * - 散布：60度扇形（方向随机偏移）
+     * <p>抛物线参数（重力/阻力）沿用原火焰粒子的手感数值，保持接入方块抛体后
+     * 弹道弧度大致不变。
      */
     public static SteampunkGun create() {
         WeaponStats stats = new WeaponStats.Builder("steampunk_gun", "蒸汽朋克枪")
                 .fireRate(0.5f)              // 0.5秒攻击间隔（可连发）
                 .projectileVelocity(15.0f)   // 15米/秒子弹速度（中等速度）
-                .spreadAngle(60.0f)          // 60度散射角（扇形散布）
+                .spreadAngle(60.0f)          // 60度散射角（方向随机偏移）
                 .maxRange(2.0f)              // 2格子射程（2米最远）
                 .ammoCost(3.0f)              // 每发消耗3点弹药
                 .baseDamage(8.0f)            // 8点基础伤害
@@ -161,7 +173,22 @@ public class SteampunkGun extends Weapon {
                 .hasCharge(false)            // 不支持蓄力
                 .build();
 
-        return new SteampunkGun(stats);
+        ProjectileProfile profile = new ProjectileProfile.Builder("steampunk_bullet", "蒸汽枪弹")
+                .arcType(ProjectileProfile.ArcType.BALLISTIC)
+                .velocity(stats.getProjectileVelocity())
+                .gravity(-15.0f)              // 与原FlameParticle重力手感一致
+                .drag(0.98f)                  // 与原FlameParticle空气阻力手感一致
+                .maxLifetime(2.0f)
+                // 这里的maxRange是子弹自己的物理射程上限（够大，保证不会在触地前被截断），
+                // 与stats.getMaxRange()（面板展示用的"射程1.5-2格子"）是两个不同语义的
+                // 字段，故意不取同一个值——见fire()里的详细说明。
+                .maxRange(50.0f)
+                .hitEffect(ProjectileProfile.HitEffect.simple(stats.getBaseDamage(), stats.getInkRadius(), 0))
+                .expireEffect(ProjectileProfile.ExpireEffect.dropInk())
+                .visualConfig(ProjectileProfile.VisualConfig.texturedBox(null)) // 模型先空着，纯色方块占位
+                .build();
+
+        return new SteampunkGun(stats, profile);
     }
 
     /**
@@ -183,5 +210,13 @@ public class SteampunkGun extends Weapon {
             stats.getSpreadAngle(),
             stats.getBaseDamage()
         );
+    }
+
+    /**
+     * 子弹生成监听器：SteampunkGun 本身不管理子弹的飞行/碰撞/涂墨，
+     * 只负责在开火时创建 Projectile 并通知外部（PlayerController里的子弹更新循环）接管。
+     */
+    public interface ProjectileSpawnListener {
+        void onProjectileSpawned(Projectile projectile);
     }
 }

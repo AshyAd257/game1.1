@@ -8,8 +8,6 @@ import com.Hecate.ink.SparseGridManager;
 import com.Hecate.physics.AABB;
 import com.Hecate.physics.CollisionManager;
 import com.Hecate.player.PlayerController;
-import com.Hecate.weapon.MeleeWeapon;
-import com.Hecate.weapon.Weapon;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -196,7 +194,8 @@ public class MonsterManager {
     }
 
     /**
-     * 每帧更新所有怪物：移动AI、闪白/hit-stop计时、接触伤害判定、死亡清理
+     * 每帧更新所有怪物：移动AI、闪白/hit-stop计时、死亡清理。
+     * 攻击冷却判定/攻击结算挪到了固定逻辑刻，见 {@link #fixedUpdate}。
      */
     public void update(float tpf) {
         Vector3f playerPosition = playerController != null
@@ -218,8 +217,6 @@ public class MonsterManager {
                 monsters.remove(i);
                 continue;
             }
-
-            checkContactDamage(monster);
         }
 
         if (waveActive && !waitingForBuffSelection && aliveInCurrentWave <= 0) {
@@ -230,6 +227,21 @@ public class MonsterManager {
                 // 所有小波（1、2、3）都打完了：弹出buff选择，选完后开始新一轮
                 triggerBuffSelection();
             }
+        }
+    }
+
+    /**
+     * 固定步长更新（由 {@link com.Hecate.core.FixedTickScheduler} 驱动，默认20Hz）。
+     * <p>攻击冷却判定、攻击行为结算（近战接触伤害/远程开火等，具体由每只怪物的
+     * {@link MonsterAttackBehavior} 决定）属于"战斗判定"，挪到固定刻以保证在任意
+     * 渲染帧率下判定时序一致。怪物移动/死亡清理/涂墨等视觉相关的东西仍在 {@link #update} 里。
+     */
+    public void fixedUpdate(float dt) {
+        for (int i = monsters.size() - 1; i >= 0; i--) {
+            Monster monster = monsters.get(i);
+            if (!monster.isAlive()) continue;
+
+            monster.fixedUpdate(dt, playerController, gridManager);
         }
     }
 
@@ -256,46 +268,6 @@ public class MonsterManager {
             currentWaveNumber = 0;
             advanceWave();
         });
-    }
-
-    /**
-     * 检测怪物是否接触到玩家，接触且攻击冷却已结束则造成一次伤害
-     */
-    private void checkContactDamage(Monster monster) {
-        if (playerController == null || !monster.isAttackReady()) {
-            return;
-        }
-
-        AABB playerBox = playerController.getPlayerBox();
-        if (playerBox == null) {
-            return;
-        }
-
-        if (monster.getBoundingBox().intersects(playerBox)) {
-            float damage = Monster.ATTACK_DAMAGE * (1.0f - getMeleeBlockReduction());
-            if (damage > 0f) {
-                playerController.getPlayerHealth().takeDamage(damage);
-            }
-            monster.resetAttackCooldown();
-        }
-    }
-
-    /**
-     * 查询玩家当前武器（如果是近战武器）是否处于格挡/弹反窗口，返回对应的伤害
-     * 减免比例（0=无减免，1=完全格挡）。默认（非近战武器/未格挡）返回0，
-     * 与改动前"接触伤害直接结算"的行为完全一致。
-     * <p>预留给迅捷剑/大剑弹反数值填充时使用，目前 {@link MeleeWeapon#isBlockingActive()}
-     * 始终返回false，本方法恒返回0。
-     */
-    private float getMeleeBlockReduction() {
-        Weapon weapon = playerController.getCurrentWeapon();
-        if (weapon instanceof MeleeWeapon) {
-            MeleeWeapon meleeWeapon = (MeleeWeapon) weapon;
-            if (meleeWeapon.isBlockingActive()) {
-                return meleeWeapon.getBlockDamageReduction();
-            }
-        }
-        return 0f;
     }
 
     /**

@@ -6,6 +6,7 @@ import com.jme3.app.SimpleApplication;
 import com.jme3.asset.AssetManager;
 import com.jme3.material.Material;
 import com.jme3.math.ColorRGBA;
+import com.jme3.math.Quaternion;
 import com.jme3.math.Vector3f;
 import com.jme3.renderer.Camera;
 import com.jme3.scene.Geometry;
@@ -79,10 +80,17 @@ public class PlayerCombatController {
     }
 
     /**
-     * 设置子弹管理器（用于 Gun2）
+     * 设置子弹管理器（用于 Gun1/Gun2）。世界切换等场景会重建ProjectileManager实例，
+     * 此时如果Gun1正装备着，需要把它的spawnListener重新指向新实例，否则它会一直
+     * 往旧的（已clear且不再被update的）ProjectileManager里生成子弹，表现为子弹消失。
      */
     public void setProjectileManager(com.Hecate.weapon.ProjectileManager projectileManager) {
         this.projectileManager = projectileManager;
+
+        if (currentWeapon instanceof com.Hecate.weapon.SteampunkGun) {
+            ((com.Hecate.weapon.SteampunkGun) currentWeapon).setSpawnListener(
+                    projectileManager != null ? projectileManager::spawn : null);
+        }
     }
 
     /**
@@ -167,36 +175,21 @@ public class PlayerCombatController {
 
             // 加载 Gun1 模型
             gun1WeaponNode = (Node) app.getAssetManager().loadModel("weapons/steampunkgun.glb");
-            gun1WeaponNode.setLocalScale(0.15f);
-            // 本地-Z才是摄像机朝向的前方（camNode旋转=camera.getRotation()时），
-            // 正Z会把模型摆到摄像机背后（看不见）
-            gun1WeaponNode.setLocalTranslation(0.3f, -0.2f, -0.5f);
+            gun1WeaponNode.setLocalScale(0.3f);
 
-            // 附加到摄像机
-            Node camNode = new Node("CameraNode");
-            camNode.attachChild(gun1WeaponNode);
-            app.getRootNode().attachChild(camNode);
-            camNode.setLocalTranslation(camera.getLocation());
-            camNode.setLocalRotation(camera.getRotation());
+            // 附加到世界节点，每帧按玩家位置+朝向计算世界坐标（第三人称视角下手持物需要
+            // 跟随玩家本体而不是摄像机——挂在摄像机子节点上会因为离摄像机太近被近裁剪面
+            // 裁掉，且第三人称视角下摄像机本就离玩家很远，不应该用第一人称的挂法）
+            app.getRootNode().attachChild(gun1WeaponNode);
 
-            currentHeldItemNode = camNode;
+            currentHeldItemNode = gun1WeaponNode;
             isGun1Equipped = true;
             isHoldingGun = true;
 
-            // 切换到 Gun1 专用武器（SteampunkGun）
-            com.Hecate.weapon.WeaponStats steampunkStats = new com.Hecate.weapon.WeaponStats.Builder("steampunk_gun", "蒸汽朋克枪")
-                .ammoCost(3f)
-                .baseDamage(10f)
-                .fireRate(0.3f)  // 每秒约3发
-                .projectileVelocity(20f)
-                .hasCharge(false)
-                .build();
-            com.Hecate.weapon.SteampunkGun steampunkGun = new com.Hecate.weapon.SteampunkGun(steampunkStats);
+            // 切换到 Gun1 专用武器（SteampunkGun，方块抛体）
+            com.Hecate.weapon.SteampunkGun steampunkGun = com.Hecate.weapon.SteampunkGun.create();
 
             // 设置依赖项
-            if (flameRenderer != null) {
-                steampunkGun.setFlameRenderer(flameRenderer);
-            }
             if (gridManager != null) {
                 steampunkGun.setGridManager(gridManager);
             }
@@ -204,6 +197,10 @@ public class PlayerCombatController {
                 steampunkGun.setWorldNode(worldNode);
             }
             steampunkGun.setPlayerFactionId(playerFactionId);
+            // 子弹的实际飞行/命中/涂墨交给外部的子弹更新循环接管（与Gun2共用同一个ProjectileManager）
+            if (projectileManager != null) {
+                steampunkGun.setSpawnListener(projectileManager::spawn);
+            }
 
             setCurrentWeapon(steampunkGun);
 
@@ -223,7 +220,7 @@ public class PlayerCombatController {
         }
 
         if (gun1WeaponNode != null && gun1WeaponNode.getParent() != null) {
-            gun1WeaponNode.getParent().removeFromParent();
+            gun1WeaponNode.removeFromParent();
         }
 
         gun1WeaponNode = null;
@@ -260,18 +257,11 @@ public class PlayerCombatController {
 
             gun2WeaponNode = new Node("Gun2Node");
             gun2WeaponNode.attachChild(geo);
-            // 本地-Z才是摄像机朝向的前方（camNode旋转=camera.getRotation()时），
-            // 正Z会把模型摆到摄像机背后（看不见）
-            gun2WeaponNode.setLocalTranslation(0.2f, -0.15f, -0.3f);
 
-            // 附加到摄像机
-            Node camNode = new Node("CameraNode");
-            camNode.attachChild(gun2WeaponNode);
-            app.getRootNode().attachChild(camNode);
-            camNode.setLocalTranslation(camera.getLocation());
-            camNode.setLocalRotation(camera.getRotation());
+            // 附加到世界节点，每帧按玩家位置+朝向计算世界坐标（与Gun1同理，见equipGun1注释）
+            app.getRootNode().attachChild(gun2WeaponNode);
 
-            currentHeldItemNode = camNode;
+            currentHeldItemNode = gun2WeaponNode;
             isGun2Equipped = true;
             isHoldingGun = true;
 
@@ -331,7 +321,7 @@ public class PlayerCombatController {
         }
 
         if (gun2WeaponNode != null && gun2WeaponNode.getParent() != null) {
-            gun2WeaponNode.getParent().removeFromParent();
+            gun2WeaponNode.removeFromParent();
         }
 
         gun2WeaponNode = null;
@@ -436,13 +426,35 @@ public class PlayerCombatController {
     }
 
     /**
-     * 更新持有物品位置（跟随摄像机）
+     * 更新持有物品位置（跟随玩家本体，世界坐标）。
+     * <p>第三人称视角下手持物挂在玩家身上而不是摄像机上——摄像机离玩家本来就有
+     * DEFAULT_CAMERA_DISTANCE那么远，挂在摄像机子节点上会让物体离摄像机过近，
+     * 被近裁剪面裁掉（见equipGun1/equipGun2的注释）。
      */
     public void updateHeldItemPosition() {
-        if (currentHeldItemNode != null) {
-            currentHeldItemNode.setLocalTranslation(camera.getLocation());
-            currentHeldItemNode.setLocalRotation(camera.getRotation());
+        if (currentHeldItemNode == null || positionProvider == null) {
+            return;
         }
+
+        // 摄像机水平朝向（忽略俯仰角，与移动方向计算保持一致）
+        Vector3f forward = camera.getDirection().clone();
+        forward.y = 0;
+        if (forward.lengthSquared() < 0.0001f) {
+            return;
+        }
+        forward.normalizeLocal();
+        Vector3f right = forward.cross(Vector3f.UNIT_Y).normalizeLocal();
+
+        Vector3f weaponPos = positionProvider.getPosition().clone();
+        weaponPos.addLocal(forward.mult(0.8f));  // 玩家前方0.8个单位
+        weaponPos.addLocal(right.mult(0.3f));    // 玩家右侧0.3个单位（模拟右手持枪）
+        weaponPos.y += 0.6f;                     // 视线高度附近
+
+        currentHeldItemNode.setLocalTranslation(weaponPos);
+
+        Quaternion rotation = new Quaternion();
+        rotation.lookAt(forward, Vector3f.UNIT_Y);
+        currentHeldItemNode.setLocalRotation(rotation);
     }
 
     /**

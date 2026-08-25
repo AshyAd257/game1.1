@@ -56,7 +56,10 @@ public final class MonsterDefinition {
 
         private float attackDamage = Monster.ATTACK_DAMAGE;
         private float attackCooldown = Monster.ATTACK_COOLDOWN;
-        private float attackRange = 0f; // 0表示纯接触判定（AABB相交），不做额外距离检测
+        // <=0 表示使用默认攻击范围：套在怪物方块上的外接球（直径=方块空间对角线），
+        // 无死角判定。新增怪物默认不需要填这个值——只有需要特别大/特别小攻击范围
+        // 的怪物才需要显式覆盖。见 Monster#attackRange 的计算方式。
+        private float attackRange = 0f;
 
         private boolean requiresFacing = false;
         private float facingToleranceDeg = 60f;

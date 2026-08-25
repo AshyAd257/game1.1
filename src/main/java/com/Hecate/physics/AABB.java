@@ -187,6 +187,29 @@ public class AABB {
     }
 
     /**
+     * 包围盒上离给定点最近的点（若点在盒内，就是点本身）
+     */
+    public Vector3f closestPointTo(Vector3f point) {
+        return new Vector3f(
+                clamp(point.x, min.x, max.x),
+                clamp(point.y, min.y, max.y),
+                clamp(point.z, min.z, max.z)
+        );
+    }
+
+    /**
+     * 包围盒到给定点的最短距离的平方（点在盒内时为0）。
+     * 用于球形攻击范围判定：比较这个值与半径的平方，避免开平方根。
+     */
+    public float distanceSquaredToPoint(Vector3f point) {
+        return closestPointTo(point).distanceSquared(point);
+    }
+
+    private static float clamp(float v, float min, float max) {
+        return Math.max(min, Math.min(max, v));
+    }
+
+    /**
      * 扩展碰撞箱
      */
     public AABB expand(float x, float y, float z) {

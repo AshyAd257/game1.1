@@ -6,10 +6,14 @@ import com.jme3.font.BitmapText;
 import com.jme3.math.ColorRGBA;
 import com.jme3.scene.Node;
 import com.Hecate.puppet.editor.core.EditorBone;
+import com.Hecate.puppet.editor.core.EditorBoneGroup;
+import com.Hecate.puppet.editor.core.EditorGroupManager;
 import com.Hecate.puppet.editor.core.EditorSkeleton;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import javax.swing.JFrame;
 import javax.swing.JOptionPane;
 
@@ -26,9 +30,13 @@ public class PartListPanel {
     private BitmapText titleText;
     private List<PartListItem> partItems;
     private EditorSkeleton skeleton;
+    private EditorGroupManager groupManager;  // 从skeleton缓存，用于拖拽分组
     private EditorBone selectedBone;
     private com.jme3.scene.Geometry backgroundGeometry;
     private com.jme3.scene.Geometry titleBarGeometry;  // 标题栏背景（可拖动区域提示）
+
+    // 分组白色空心边框节点（每次刷新重建，需要单独清理）
+    private final List<Node> groupBorderNodes = new ArrayList<>();
 
     // 镜像管理器引用
     private MirrorManager mirrorManager;
@@ -36,11 +44,24 @@ public class PartListPanel {
     // Shift键状态（用于多选）
     private boolean shiftPressed = false;
 
+    // ==================== 拖拽分组相关状态 ====================
+    // 按住一个部件不放，悬停在另一个部件/组上0.5秒后自动成组（类似iOS图标拖拽建文件夹）
+    private PartListItem pressedItem = null;      // 鼠标左键按下时命中的行（拖拽源）
+    private int dragStartMouseX = 0, dragStartMouseY = 0;
+    private boolean isDraggingItem = false;       // 是否已经超过拖拽判定阈值
+    private PartListItem hoverTargetItem = null;  // 当前悬停的目标行
+    private long hoverStartTimeMs = 0;
+    private boolean hoverGroupCreated = false;    // 当前这次悬停是否已经触发过成组（避免重复触发）
+    private ColorRGBA hoverOriginalColor = null;  // 悬停高亮前的原始背景色，用于还原
+    private static final long GROUP_HOVER_MS = 500;   // 悬停成组所需时间
+    private static final int DRAG_MOVE_THRESHOLD = 6; // 超过这个像素距离才算开始拖拽（而不是普通点击）
+
     // 回调接口
     public interface PartListCallbacks {
         void onPartSelected(EditorBone bone);
         void onPartSelected(EditorBone bone, boolean shiftPressed);  // 带Shift状态的版本
         void onPartRenamed(EditorBone bone, String newName);
+        void onGroupSelected(String groupId);  // 点击组标题栏时触发，用于同步GroupControlPanel的当前组
     }
     private PartListCallbacks callbacks;
 
@@ -73,9 +94,12 @@ public class PartListPanel {
     private static final int ITEM_HEIGHT = 50;  // 每个列表项的高度
 
     // 部件列表项
+    // 普通行：bone != null, groupId == null
+    // 组标题行：bone == null, groupId != null（点击可折叠/展开，拖动可把其他部件拖入组）
     private static class PartListItem {
         BitmapText text;
         EditorBone bone;
+        String groupId;  // 非null表示这一行是组标题行
         int depth; // 层级深度
         com.jme3.scene.Geometry background; // 可点击的背景
         Node mirrorBorderNode; // 镜像彩色边框节点（可选）
@@ -86,6 +110,10 @@ public class PartListPanel {
             this.depth = depth;
             this.background = background;
             this.mirrorBorderNode = mirrorBorderNode;
+        }
+
+        boolean isGroupHeader() {
+            return groupId != null;
         }
     }
 
@@ -191,11 +219,14 @@ public class PartListPanel {
      */
     public void setSkeleton(EditorSkeleton skeleton) {
         this.skeleton = skeleton;
+        this.groupManager = (skeleton != null) ? skeleton.getGroupManager() : null;
         refreshPartList();
     }
 
     /**
      * 刷新部件列表
+     * 分组显示规则：属于同一个组的骨骼在列表里被折叠成一个白色空心矩形容器行（组标题行），
+     * 展开时容器行下方缩进显示所有成员；折叠时只占一行。不属于任何组的骨骼照常逐行显示。
      */
     public void refreshPartList() {
         // 清除旧的列表项
@@ -207,6 +238,10 @@ public class PartListPanel {
             }
         }
         partItems.clear();
+        for (Node border : groupBorderNodes) {
+            border.removeFromParent();
+        }
+        groupBorderNodes.clear();
 
         if (skeleton == null) {
             totalContentHeight = 0;
@@ -214,20 +249,29 @@ public class PartListPanel {
             return;
         }
 
-        // 先计算总内容高度（不创建UI）
-        int itemCount = countAllBones(skeleton);
-        totalContentHeight = itemCount * ITEM_HEIGHT;
-
         int screenHeight = app.getCamera().getHeight();
         // 内容区域顶部（标题栏下方）
         int contentTopY = screenHeight - y - titleBarHeight - 10;
         // 应用滚动偏移
         int currentY = contentTopY + scrollOffset;
 
+        // 已经作为某个组的成员渲染过的骨骼，遍历骨骼树时跳过（它们的行由组标题行统一渲染）
+        Set<EditorBone> renderedAsGroupMember = new HashSet<>();
+        // 已经渲染过组标题行的组ID，避免同一个组因为多个成员分散在树的不同位置而被重复渲染
+        Set<String> renderedGroupIds = new HashSet<>();
+        // 已经渲染过的骨骼（无论是普通行还是组成员行），防止重复渲染——
+        // 比如组内两个成员恰好是父子关系时，子成员会通过父成员的子树遍历被访问到
+        Set<EditorBone> renderedBones = new HashSet<>();
+        if (groupManager != null) {
+            for (EditorBoneGroup group : groupManager.getAllGroups()) {
+                renderedAsGroupMember.addAll(group.getMembers());
+            }
+        }
+
         // 从根骨骼开始递归构建列表（有层级关系的骨骼）
         EditorBone rootBone = skeleton.getRootBone();
         if (rootBone != null) {
-            currentY = buildPartListRecursive(rootBone, 0, currentY, contentTopY);
+            currentY = buildPartListRecursive(rootBone, 0, currentY, contentTopY, renderedAsGroupMember, renderedGroupIds, renderedBones);
         }
 
         // 添加独立骨骼（没有父骨骼，且不是根骨骼的）
@@ -238,19 +282,15 @@ public class PartListPanel {
 
         for (EditorBone bone : skeleton.getAllBones()) {
             if (!processedBones.contains(bone) && bone.getParent() == null) {
-                currentY = buildPartListRecursive(bone, 0, currentY, contentTopY);
+                currentY = buildPartListRecursive(bone, 0, currentY, contentTopY, renderedAsGroupMember, renderedGroupIds, renderedBones);
             }
         }
 
+        // 计算总内容高度（按实际渲染的行数，而不是骨骼总数，因为组折叠会减少行数）
+        totalContentHeight = (contentTopY + scrollOffset - currentY);
+
         // 更新滚动条
         updateScrollbar();
-    }
-
-    /**
-     * 计算所有骨骼数量
-     */
-    private int countAllBones(EditorSkeleton skel) {
-        return skel.getAllBones().size();
     }
 
     /**
@@ -264,9 +304,64 @@ public class PartListPanel {
     }
 
     /**
-     * 递归构建部件列表（带内容裁剪）
+     * 递归构建部件列表（带内容裁剪，支持分组显示）
+     *
+     * 关键点：渲染"当前骨骼这一行"和递归"当前骨骼的子骨骼"是两件独立的事，
+     * 不管当前骨骼是普通行、组标题行、还是因组已渲染过而被跳过，子骨骼的递归都必须继续执行——
+     * 否则一旦组里包含某个祖先节点（比如根骨骼、躯干），它下面的整棵子树都会从列表里消失。
+     *
+     * @param renderedAsGroupMember 属于某个组的所有骨骼集合（这些骨骼不再单独渲染一行，而是归入组标题行下方）
+     * @param renderedGroupIds 已经渲染过标题行的组ID集合（防止同一个组因成员分散而被渲染多次）
+     * @param renderedBones 已经渲染过的骨骼集合（防止组内成员互为父子关系时被重复渲染）
      */
-    private int buildPartListRecursive(EditorBone bone, int depth, int startY, int contentTopY) {
+    private int buildPartListRecursive(EditorBone bone, int depth, int startY, int contentTopY,
+                                        Set<EditorBone> renderedAsGroupMember, Set<String> renderedGroupIds,
+                                        Set<EditorBone> renderedBones) {
+        int currentY = startY;
+
+        if (!renderedBones.contains(bone)) {
+            renderedBones.add(bone);
+
+            if (bone.hasGroup() && renderedAsGroupMember.contains(bone)) {
+                // 属于一个组：渲染组标题行（如果这个组还没渲染过），成员行也一并标记为已渲染
+                String groupId = bone.getGroupId();
+                if (!renderedGroupIds.contains(groupId)) {
+                    renderedGroupIds.add(groupId);
+                    EditorBoneGroup group = (groupManager != null) ? groupManager.getGroup(groupId) : null;
+                    if (group == null) {
+                        // 组数据丢失（异常情况），退化为普通行渲染
+                        currentY = buildNormalItemRow(bone, depth, currentY, contentTopY);
+                    } else {
+                        currentY = buildGroupHeaderRow(group, groupId, depth, currentY, contentTopY);
+                        if (!group.isCollapsed()) {
+                            for (EditorBone member : group.getMembers()) {
+                                if (!renderedBones.contains(member)) {
+                                    renderedBones.add(member);
+                                    currentY = buildNormalItemRow(member, depth + 1, currentY, contentTopY);
+                                }
+                            }
+                        }
+                    }
+                }
+                // 组已经在别处渲染过标题行了：这一行不再输出，但仍然继续往下递归子骨骼（见下方）
+            } else {
+                currentY = buildNormalItemRow(bone, depth, currentY, contentTopY);
+            }
+        }
+
+        // 递归处理子骨骼（不管上面这一行渲染成什么样子，子树都必须继续遍历）
+        for (EditorBone child : bone.getChildren()) {
+            currentY = buildPartListRecursive(child, depth + 1, currentY, contentTopY,
+                renderedAsGroupMember, renderedGroupIds, renderedBones);
+        }
+
+        return currentY;
+    }
+
+    /**
+     * 渲染一个普通部件行（不属于任何组，或者是组内展开显示的成员）
+     */
+    private int buildNormalItemRow(EditorBone bone, int depth, int startY, int contentTopY) {
         int currentY = startY;
         int screenHeight = app.getCamera().getHeight();
         float panelBottomGuiY = Math.max(0, (screenHeight - y) - height);
@@ -319,7 +414,6 @@ public class PartListPanel {
             // 创建边框几何体（只包围文本区域，不要太大）
             float textWidth = text.getLineWidth();
             float textHeight = text.getLineHeight();
-            float borderThickness = 2f;  // 边框厚度
 
             // 创建一个简单的边框（使用半透明背景色）
             // 外框（彩色）
@@ -353,13 +447,90 @@ public class PartListPanel {
         partItems.add(item);
 
         currentY -= ITEM_HEIGHT;
+        return currentY;
+    }
 
-        // 递归处理子骨骼
-        for (EditorBone child : bone.getChildren()) {
-            currentY = buildPartListRecursive(child, depth + 1, currentY, contentTopY);
+    /**
+     * 渲染一个组标题行：白色空心矩形容器 + 组名 + 成员数 + 折叠/展开箭头
+     */
+    private int buildGroupHeaderRow(EditorBoneGroup group, String groupId, int depth, int startY, int contentTopY) {
+        int currentY = startY;
+        int screenHeight = app.getCamera().getHeight();
+        float panelBottomGuiY = Math.max(0, (screenHeight - y) - height);
+
+        float visibleTop = contentTopY;
+        float visibleBottom = panelBottomGuiY + 5;
+
+        float itemHeight = 40;
+        float itemTopY = currentY;
+        float itemBottomY = currentY - itemHeight + 5;
+        boolean isVisible = (itemTopY > visibleBottom && itemBottomY < visibleTop);
+
+        float rowWidth = width - SCROLLBAR_WIDTH - 10;
+
+        // 可点击背景（半透明深色，比普通行略深一点，用于区分）
+        com.jme3.scene.Geometry itemBackground = new com.jme3.scene.Geometry("GroupBg_" + groupId,
+            new com.jme3.scene.shape.Quad(rowWidth, itemHeight));
+        com.jme3.material.Material bgMat = new com.jme3.material.Material(
+            app.getAssetManager(), "Common/MatDefs/Misc/Unshaded.j3md");
+        bgMat.setColor("Color", new ColorRGBA(0.12f, 0.12f, 0.14f, isVisible ? 0.6f : 0f));
+        bgMat.getAdditionalRenderState().setBlendMode(com.jme3.material.RenderState.BlendMode.Alpha);
+        itemBackground.setMaterial(bgMat);
+        itemBackground.setLocalTranslation(x + 2, itemBottomY, -0.5f);
+        rootNode.attachChild(itemBackground);
+
+        // 白色空心矩形边框（"组"的视觉标识，类似iOS文件夹方框）
+        Node borderNode = new Node("GroupBorder_" + groupId);
+        float borderThickness = 2f;
+        float bx = x + 2 + depth * 14;
+        float by = itemBottomY;
+        float bw = rowWidth - depth * 14;
+        float bh = itemHeight - 6;
+        by += 3;
+
+        addBorderLine(borderNode, bx, by + bh - borderThickness, bw, borderThickness);           // 上
+        addBorderLine(borderNode, bx, by, bw, borderThickness);                                  // 下
+        addBorderLine(borderNode, bx, by, borderThickness, bh);                                  // 左
+        addBorderLine(borderNode, bx + bw - borderThickness, by, borderThickness, bh);           // 右
+        rootNode.attachChild(borderNode);
+        groupBorderNodes.add(borderNode);
+        if (!isVisible) {
+            borderNode.setCullHint(com.jme3.scene.Spatial.CullHint.Always);
         }
 
+        // 文本：折叠箭头 + 组名 + 成员数
+        String indent = "";
+        for (int i = 0; i < depth; i++) {
+            indent += "  ";
+        }
+        String arrow = group.isCollapsed() ? "▶" : "▼"; // ▶ / ▼
+        BitmapText text = new BitmapText(font);
+        text.setText(indent + arrow + " " + group.getName() + " (" + group.getMemberCount() + ")");
+        text.setSize(font.getCharSet().getRenderedSize() * 1.5f);
+        text.setColor(isVisible ? ColorRGBA.White : new ColorRGBA(1, 1, 1, 0));
+        text.setLocalTranslation(x + 10, currentY, 0);
+        rootNode.attachChild(text);
+
+        PartListItem item = new PartListItem(text, null, depth, itemBackground, null);
+        item.groupId = groupId;
+        partItems.add(item);
+
+        currentY -= ITEM_HEIGHT;
         return currentY;
+    }
+
+    /**
+     * 辅助方法：创建一条细线（用于绘制空心矩形边框）
+     */
+    private void addBorderLine(Node parent, float lx, float ly, float lw, float lh) {
+        com.jme3.scene.Geometry line = new com.jme3.scene.Geometry("BorderLine",
+            new com.jme3.scene.shape.Quad(lw, lh));
+        com.jme3.material.Material mat = new com.jme3.material.Material(
+            app.getAssetManager(), "Common/MatDefs/Misc/Unshaded.j3md");
+        mat.setColor("Color", ColorRGBA.White);
+        line.setMaterial(mat);
+        line.setLocalTranslation(lx, ly, 0.2f);
+        parent.attachChild(line);
     }
 
     /**
@@ -512,57 +683,282 @@ public class PartListPanel {
     }
 
     /**
-     * 处理鼠标点击
+     * 查找鼠标位置命中的列表项（背景区域），未命中返回null
      */
-    public boolean handleMouseClick(int mouseX, int mouseY) {
-        // RawInputListener已经提供GUI坐标（Y轴向上，原点在左下角），直接使用
+    private PartListItem findItemAt(int mouseX, int mouseY) {
         float mouseGuiX = mouseX;
         float mouseGuiY = mouseY;
 
-        // 检查是否点击了某个部件的背景区域（更大的点击范围）
         for (int i = 0; i < partItems.size(); i++) {
             PartListItem item = partItems.get(i);
 
-            // 获取背景的GUI位置和尺寸
             float bgX = item.background.getLocalTranslation().x;
             float bgY = item.background.getLocalTranslation().y;
             com.jme3.scene.shape.Quad bgQuad = (com.jme3.scene.shape.Quad) item.background.getMesh();
             float bgWidth = bgQuad.getWidth();
             float bgHeight = bgQuad.getHeight();
 
-            // 背景边界框（GUI坐标系）
             float bgLeft = bgX;
             float bgRight = bgX + bgWidth;
             float bgBottom = bgY;
             float bgTop = bgY + bgHeight;
 
-            // 检查鼠标是否在背景边界框内
             if (mouseGuiX >= bgLeft && mouseGuiX <= bgRight &&
                 mouseGuiY >= bgBottom && mouseGuiY <= bgTop) {
-
-                // 检测双击
-                long currentTime = System.currentTimeMillis();
-                if (lastClickedBone == item.bone &&
-                    currentTime - lastClickTime < DOUBLE_CLICK_INTERVAL) {
-                    // 双击 - 打开重命名对话框
-                    openRenameDialog(item.bone);
-                    lastClickTime = 0;
-                    lastClickedBone = null;
-                } else {
-                    // 单击 - 选择部件
-                    lastClickTime = currentTime;
-                    lastClickedBone = item.bone;
-
-                    if (callbacks != null) {
-                        // 使用带Shift状态的版本，以支持多选
-                        callbacks.onPartSelected(item.bone, shiftPressed);
-                    }
-                }
-                return true;
+                return item;
             }
         }
+        return null;
+    }
 
+    /**
+     * 激活一个列表项（相当于"点击"这一行）：
+     * 组标题行 -> 切换折叠/展开；普通行 -> 选中部件（支持双击重命名）
+     */
+    private void activateItem(PartListItem item) {
+        if (item.isGroupHeader()) {
+            if (groupManager != null) {
+                EditorBoneGroup group = groupManager.getGroup(item.groupId);
+                if (group != null) {
+                    group.setCollapsed(!group.isCollapsed());
+                    refreshPartList();
+                }
+            }
+            if (callbacks != null) {
+                callbacks.onGroupSelected(item.groupId);
+            }
+            return;
+        }
+
+        // 检测双击
+        long currentTime = System.currentTimeMillis();
+        if (lastClickedBone == item.bone &&
+            currentTime - lastClickTime < DOUBLE_CLICK_INTERVAL) {
+            // 双击 - 打开重命名对话框
+            openRenameDialog(item.bone);
+            lastClickTime = 0;
+            lastClickedBone = null;
+        } else {
+            // 单击 - 选择部件
+            lastClickTime = currentTime;
+            lastClickedBone = item.bone;
+
+            if (callbacks != null) {
+                // 使用带Shift状态的版本，以支持多选
+                callbacks.onPartSelected(item.bone, shiftPressed);
+            }
+        }
+    }
+
+    /**
+     * 处理鼠标点击（用于不需要拖拽跟踪的调用方，例如右键松开时的点击判定）
+     */
+    public boolean handleMouseClick(int mouseX, int mouseY) {
+        PartListItem item = findItemAt(mouseX, mouseY);
+        if (item != null) {
+            activateItem(item);
+            return true;
+        }
         return false;
+    }
+
+    /**
+     * 处理鼠标按下（左键）：命中列表项时开始跟踪，用于实现拖拽成组
+     * 与handleMouseClick不同，这里不立即触发选中/折叠，而是等到handleMouseRelease判断
+     * 是否发生了拖拽——只有"按下后没有明显移动"才算作一次点击。
+     * @return true如果命中了某一行（阻止相机拖动等背景操作）
+     */
+    public boolean handleMousePress(int mouseX, int mouseY) {
+        PartListItem item = findItemAt(mouseX, mouseY);
+        pressedItem = item;
+        dragStartMouseX = mouseX;
+        dragStartMouseY = mouseY;
+        isDraggingItem = false;
+        clearHoverHighlight();
+        hoverTargetItem = null;
+        hoverGroupCreated = false;
+        return item != null;
+    }
+
+    /**
+     * 处理鼠标移动时的拖拽跟踪（左键按下期间持续调用）
+     * 判断是否超过拖拽阈值、更新当前悬停目标（用于0.5秒后自动成组）
+     */
+    public void handleItemDragMotion(int mouseX, int mouseY) {
+        if (pressedItem == null) {
+            return;
+        }
+
+        int dx = mouseX - dragStartMouseX;
+        int dy = mouseY - dragStartMouseY;
+
+        if (!isDraggingItem && (Math.abs(dx) > DRAG_MOVE_THRESHOLD || Math.abs(dy) > DRAG_MOVE_THRESHOLD)) {
+            isDraggingItem = true;
+        }
+
+        if (!isDraggingItem) {
+            return;
+        }
+
+        PartListItem newHover = findItemAt(mouseX, mouseY);
+        if (newHover == pressedItem) {
+            newHover = null; // 不能拖到自己身上
+        }
+
+        if (newHover != hoverTargetItem) {
+            clearHoverHighlight();
+            hoverTargetItem = newHover;
+            hoverStartTimeMs = System.currentTimeMillis();
+            hoverGroupCreated = false;
+            applyHoverHighlight();
+        }
+    }
+
+    /**
+     * 每帧调用：检查悬停计时是否达到成组阈值
+     */
+    public void update(float tpf) {
+        if (isDraggingItem && hoverTargetItem != null && !hoverGroupCreated) {
+            if (System.currentTimeMillis() - hoverStartTimeMs >= GROUP_HOVER_MS) {
+                hoverGroupCreated = true;
+                performGroupDrop(pressedItem, hoverTargetItem);
+                clearDragState();
+            }
+        }
+    }
+
+    /**
+     * 高亮当前悬停目标（提示"松手将并入这一组"）
+     */
+    private void applyHoverHighlight() {
+        if (hoverTargetItem == null) {
+            return;
+        }
+        com.jme3.material.Material mat = hoverTargetItem.background.getMaterial();
+        hoverOriginalColor = (ColorRGBA) mat.getParam("Color").getValue();
+        mat.setColor("Color", new ColorRGBA(0.3f, 0.7f, 0.3f, 0.85f)); // 绿色高亮，提示即将成组
+    }
+
+    /**
+     * 还原悬停目标的原始背景色
+     */
+    private void clearHoverHighlight() {
+        if (hoverTargetItem != null && hoverOriginalColor != null) {
+            hoverTargetItem.background.getMaterial().setColor("Color", hoverOriginalColor);
+        }
+        hoverOriginalColor = null;
+    }
+
+    /**
+     * 清理拖拽状态（拖拽结束/取消/完成后调用）
+     */
+    private void clearDragState() {
+        clearHoverHighlight();
+        pressedItem = null;
+        hoverTargetItem = null;
+        isDraggingItem = false;
+        hoverGroupCreated = false;
+    }
+
+    /**
+     * 执行拖拽成组的实际逻辑：
+     * - 两个都未分组的普通部件 -> 创建新组，两者都加入
+     * - 源是普通部件，目标已经在组内（或目标是组标题）-> 源加入目标所在的组
+     * - 源是组标题（拖动整组）-> 把源组的所有成员合并进目标组（或与目标一起创建新组），源组被删除
+     */
+    private void performGroupDrop(PartListItem sourceItem, PartListItem targetItem) {
+        if (sourceItem == null || targetItem == null || groupManager == null) {
+            return;
+        }
+
+        if (sourceItem.isGroupHeader()) {
+            EditorBoneGroup sourceGroup = groupManager.getGroup(sourceItem.groupId);
+            if (sourceGroup == null) {
+                return;
+            }
+            String targetGroupId = resolveOrCreateGroupIdForTarget(targetItem, sourceGroup.getName());
+            if (targetGroupId == null || targetGroupId.equals(sourceItem.groupId)) {
+                return;
+            }
+            for (EditorBone member : sourceGroup.getMembers()) {
+                groupManager.addBoneToGroup(targetGroupId, member);
+            }
+            groupManager.deleteGroup(sourceItem.groupId);
+        } else {
+            EditorBone sourceBone = sourceItem.bone;
+            if (sourceBone == null) {
+                return;
+            }
+            String targetGroupId = resolveOrCreateGroupIdForTarget(targetItem, null);
+            if (targetGroupId == null) {
+                return;
+            }
+            // 如果目标本来就没有组（普通部件之间成组），需要把目标也加入新建的组
+            if (!targetItem.isGroupHeader() && targetItem.bone != null && !targetItem.bone.hasGroup()) {
+                groupManager.addBoneToGroup(targetGroupId, targetItem.bone);
+            }
+            groupManager.addBoneToGroup(targetGroupId, sourceBone);
+        }
+
+        refreshPartList();
+
+        if (callbacks != null) {
+            String finalGroupId = sourceItem.isGroupHeader()
+                ? resolveExistingGroupId(targetItem)
+                : resolveExistingGroupId(targetItem);
+            if (finalGroupId != null) {
+                callbacks.onGroupSelected(finalGroupId);
+            }
+        }
+    }
+
+    /**
+     * 获取目标行当前所属的组ID（目标本身是组标题，或目标部件已在某个组里）
+     */
+    private String resolveExistingGroupId(PartListItem targetItem) {
+        if (targetItem.isGroupHeader()) {
+            return targetItem.groupId;
+        }
+        if (targetItem.bone != null && targetItem.bone.hasGroup()) {
+            return targetItem.bone.getGroupId();
+        }
+        return null;
+    }
+
+    /**
+     * 获取目标行对应的组ID，如果目标还不属于任何组，则创建一个新组并返回其ID
+     * @param proposedName 新建组时使用的名称，为null则自动生成
+     */
+    private String resolveOrCreateGroupIdForTarget(PartListItem targetItem, String proposedName) {
+        String existing = resolveExistingGroupId(targetItem);
+        if (existing != null) {
+            return existing;
+        }
+
+        String name = (proposedName != null) ? proposedName : generateAutoGroupName();
+        EditorBoneGroup newGroup = groupManager.createGroup(name);
+        if (newGroup == null) {
+            // 名称冲突，换个自动名称重试
+            name = generateAutoGroupName();
+            newGroup = groupManager.createGroup(name);
+            if (newGroup == null) {
+                return null;
+            }
+        }
+        return groupManager.getGroupId(newGroup);
+    }
+
+    /**
+     * 生成一个不冲突的默认组名
+     */
+    private String generateAutoGroupName() {
+        int index = groupManager.getGroupCount() + 1;
+        String name = "组_" + index;
+        while (groupManager.getGroupByName(name) != null) {
+            index++;
+            name = "组_" + index;
+        }
+        return name;
     }
 
     /**
@@ -598,6 +994,8 @@ public class PartListPanel {
 
     /**
      * 处理鼠标拖动
+     * 面板拖动（isDragging，标题栏触发）和列表项拖拽成组（pressedItem，行内容触发）是两套独立状态，
+     * 互不冲突：面板整体拖动时不处理成组逻辑，否则同时更新拖拽悬停检测。
      */
     public void handleMouseDrag(int mouseX, int mouseY) {
         if (isDragging) {
@@ -616,16 +1014,28 @@ public class PartListPanel {
 
             // 更新所有UI元素的位置
             updatePanelPosition();
+            return;
         }
+
+        // 不是拖动整个面板，检查是否在拖拽某一行以实现拖拽成组
+        handleItemDragMotion(mouseX, mouseY);
     }
 
     /**
      * 处理鼠标释放
+     * 如果之前按下时命中了某一行，且释放时没有发生明显拖拽（isDraggingItem仍为false），
+     * 说明这是一次普通点击，此时才触发选中/折叠——避免拖拽路径中途误触发点击的选中逻辑。
      */
     public void handleMouseRelease() {
         if (isDragging) {
             isDragging = false;
         }
+
+        if (pressedItem != null && !isDraggingItem) {
+            activateItem(pressedItem);
+        }
+
+        clearDragState();
     }
 
     /**

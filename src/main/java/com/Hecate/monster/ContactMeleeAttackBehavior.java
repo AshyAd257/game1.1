@@ -7,9 +7,10 @@ import com.Hecate.weapon.MeleeWeapon;
 import com.Hecate.weapon.Weapon;
 
 /**
- * 接触近战攻击：怪物贴上玩家（AABB相交）且攻击冷却已结束时造成一次伤害。
+ * 接触近战攻击：玩家进入怪物攻击范围（{@link Monster#isPlayerInAttackRange}，默认是
+ * 套在方块上的外接球，无死角）且攻击冷却已结束时造成一次伤害。
  * <p>不要求朝向——原地转圈的怪物也能咬到玩家。这是所有现有怪物（SLOW/NORMAL/MINI_BOSS）
- * 的默认行为，逻辑与改造前 {@code MonsterManager.checkContactDamage} 完全一致。
+ * 的默认行为。
  */
 public class ContactMeleeAttackBehavior implements MonsterAttackBehavior {
 
@@ -24,7 +25,7 @@ public class ContactMeleeAttackBehavior implements MonsterAttackBehavior {
             return;
         }
 
-        if (self.getBoundingBox().intersects(playerBox)) {
+        if (self.isPlayerInAttackRange(playerBox)) {
             float damage = self.getDefinition().attackDamage * (1.0f - getMeleeBlockReduction(player));
             if (damage > 0f) {
                 player.getPlayerHealth().takeDamage(damage);

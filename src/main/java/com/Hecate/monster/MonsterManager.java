@@ -206,6 +206,7 @@ public class MonsterManager {
 
             if (playerPosition != null) {
                 monster.update(tpf, playerPosition, collisionManager);
+                resolvePlayerPush(monster);
             }
 
             if (!monster.isAlive()) {
@@ -218,6 +219,8 @@ public class MonsterManager {
                 continue;
             }
         }
+
+        resolveMonsterOverlaps();
 
         if (waveActive && !waitingForBuffSelection && aliveInCurrentWave <= 0) {
             if (currentWaveNumber < WAVE_COUNTS.length) {
@@ -312,6 +315,85 @@ public class MonsterManager {
         }
 
         return null;
+    }
+
+    /**
+     * 若怪物的碰撞箱与玩家碰撞箱重叠，将玩家沿重叠量较小的水平轴推出去，
+     * 使怪物的方块表现为一个实体碰撞体（不能互相穿过），而不仅仅是命中检测用的包围盒。
+     */
+    private void resolvePlayerPush(Monster monster) {
+        if (!monster.isAlive()) return;
+
+        AABB playerBox = playerController.getPlayerBox();
+        if (playerBox == null) return;
+
+        AABB monsterBox = monster.getBoundingBox();
+        if (!monsterBox.intersects(playerBox)) return;
+
+        float overlapX = Math.min(monsterBox.getMaxX(), playerBox.getMaxX())
+                - Math.max(monsterBox.getMinX(), playerBox.getMinX());
+        float overlapZ = Math.min(monsterBox.getMaxZ(), playerBox.getMaxZ())
+                - Math.max(monsterBox.getMinZ(), playerBox.getMinZ());
+
+        if (overlapX <= 0f || overlapZ <= 0f) return;
+
+        Vector3f monsterCenter = monster.getPosition();
+        Vector3f playerCenter = playerBox.getCenter();
+
+        // 沿重叠量较小的轴推出，这样贴着怪物侧面走过去时手感更平滑（不会被大幅弹开）
+        if (overlapX < overlapZ) {
+            float dir = playerCenter.x >= monsterCenter.x ? 1f : -1f;
+            playerController.pushHorizontal(new Vector3f(dir * overlapX, 0, 0));
+        } else {
+            float dir = playerCenter.z >= monsterCenter.z ? 1f : -1f;
+            playerController.pushHorizontal(new Vector3f(0, 0, dir * overlapZ));
+        }
+    }
+
+    /**
+     * 两两检测所有存活怪物的碰撞箱，重叠时沿重叠量较小的水平轴各推开一半，
+     * 避免多只怪物挤在一起时互相重叠穿模。
+     */
+    private void resolveMonsterOverlaps() {
+        for (int i = 0; i < monsters.size(); i++) {
+            Monster a = monsters.get(i);
+            if (!a.isAlive()) continue;
+
+            for (int j = i + 1; j < monsters.size(); j++) {
+                Monster b = monsters.get(j);
+                if (!b.isAlive()) continue;
+
+                resolveMonsterPair(a, b);
+            }
+        }
+    }
+
+    private void resolveMonsterPair(Monster a, Monster b) {
+        AABB boxA = a.getBoundingBox();
+        AABB boxB = b.getBoundingBox();
+        if (!boxA.intersects(boxB)) return;
+
+        float overlapX = Math.min(boxA.getMaxX(), boxB.getMaxX())
+                - Math.max(boxA.getMinX(), boxB.getMinX());
+        float overlapZ = Math.min(boxA.getMaxZ(), boxB.getMaxZ())
+                - Math.max(boxA.getMinZ(), boxB.getMinZ());
+
+        if (overlapX <= 0f || overlapZ <= 0f) return;
+
+        Vector3f centerA = a.getPosition();
+        Vector3f centerB = b.getPosition();
+
+        if (overlapX < overlapZ) {
+            float dir = centerA.x >= centerB.x ? 1f : -1f;
+            float half = overlapX / 2f;
+            a.pushHorizontal(new Vector3f(dir * half, 0, 0));
+            b.pushHorizontal(new Vector3f(-dir * half, 0, 0));
+        } else {
+            float dir = centerA.z >= centerB.z ? 1f : -1f;
+            float half = overlapZ / 2f;
+            a.pushHorizontal(new Vector3f(0, 0, dir * half));
+            b.pushHorizontal(new Vector3f(0, 0, -dir * half));
+        }
     }
 
     private Vector3f checkPointHit(Vector3f point, float damage, long shotId) {

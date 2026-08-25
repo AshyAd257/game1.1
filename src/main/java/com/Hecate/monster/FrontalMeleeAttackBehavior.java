@@ -5,7 +5,7 @@ import com.Hecate.physics.AABB;
 import com.Hecate.player.PlayerController;
 
 /**
- * 正面近战攻击：与 {@link ContactMeleeAttackBehavior} 一样要求AABB相交+冷却结束，
+ * 正面近战攻击：与 {@link ContactMeleeAttackBehavior} 一样要求玩家进入攻击范围+冷却结束，
  * 但额外要求怪物正朝向玩家（{@link Monster#isFacingTarget}）才会造成伤害——
  * 用于"背刺无伤、需要正面拍才受伤"的重装/精英怪。
  */
@@ -22,7 +22,7 @@ public class FrontalMeleeAttackBehavior implements MonsterAttackBehavior {
             return;
         }
 
-        if (!self.getBoundingBox().intersects(playerBox)) {
+        if (!self.isPlayerInAttackRange(playerBox)) {
             return;
         }
 

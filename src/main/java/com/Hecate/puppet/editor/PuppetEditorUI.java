@@ -128,22 +128,22 @@ public class PuppetEditorUI {
         int mainAreaY = topBarHeight;
 
         // 创建左侧按钮列（传递TTF字体加载器）
-        // 按钮列占左侧上半部分（60%）
-        int buttonColumnHeight = (int)(mainAreaHeight * 0.6);
+        // 按钮列占左侧上半部分（70%，按钮数量较多，给它更多空间避免溢出到下方面板）
+        int buttonColumnHeight = (int)(mainAreaHeight * 0.7);
         buttonColumnPanel = new ButtonColumnPanel(app, guiFont, ttfLoader, 0, mainAreaY + mainAreaHeight - buttonColumnHeight, buttonColumnWidth, buttonColumnHeight);
         editorRootNode.attachChild(buttonColumnPanel.getRootNode());
 
-        // 创建动画层管理面板（放在按钮列下方，占左侧下半部分20%）
-        int layerPanelHeight = (int)(mainAreaHeight * 0.2);
-        int layerPanelY = mainAreaY + (int)(mainAreaHeight * 0.2);  // 在分组面板上方
-        animationLayerPanel = new AnimationLayerPanel(app, guiFont, 0, layerPanelY, buttonColumnWidth, layerPanelHeight);
-        editorRootNode.attachChild(animationLayerPanel.getRootNode());
-
-        // 创建骨骼分组控制面板（放在动画层面板下方，占左侧下半部分20%）
-        int groupPanelHeight = (int)(mainAreaHeight * 0.2);
+        // 创建骨骼分组控制面板（放在最下方，占左侧下半部分15%）
+        int groupPanelHeight = (int)(mainAreaHeight * 0.15);
         int groupPanelY = mainAreaY;
         groupControlPanel = new GroupControlPanel(app, guiFont, ttfLoader, 0, groupPanelY, buttonColumnWidth, groupPanelHeight);
         editorRootNode.attachChild(groupControlPanel.getRootNode());
+
+        // 创建动画层管理面板（放在按钮列下方、分组面板上方，往下移动以给按钮列留出空间，占15%）
+        int layerPanelHeight = (int)(mainAreaHeight * 0.15);
+        int layerPanelY = mainAreaY + groupPanelHeight;
+        animationLayerPanel = new AnimationLayerPanel(app, guiFont, 0, layerPanelY, buttonColumnWidth, layerPanelHeight);
+        editorRootNode.attachChild(animationLayerPanel.getRootNode());
 
         // 右侧列分为两部分：上半部分是层级列表，下半部分是属性滑条
         int rightX = screenWidth - rightColumnWidth;
@@ -367,6 +367,7 @@ public class PuppetEditorUI {
         if (buttonColumnPanel != null && bone != null) {
             buttonColumnPanel.updateBillboardButton(bone.isBillboardEnabled());
             buttonColumnPanel.updateTextureModeButton(bone.isMultiDirectionTextureEnabled());
+            buttonColumnPanel.updateRotationStripButton(bone.isRotationStripEnabled());
             buttonColumnPanel.updateCameraFollowButtonText(
                 bone.getCameraFollowFreedomX(),
                 bone.getCameraFollowFreedomY()
@@ -519,6 +520,21 @@ public class PuppetEditorUI {
         if (timelinePanel != null) {
             timelinePanel.update(tpf);
         }
+
+        // 更新部件列表（拖拽分组悬停计时）
+        if (partListPanel != null) {
+            partListPanel.update(tpf);
+        }
+
+        // 更新骨骼分组控制面板
+        if (groupControlPanel != null) {
+            groupControlPanel.update(tpf);
+        }
+
+        // 更新旋转条状贴图选区面板（实时预览需要每帧刷新）
+        if (sliderColumnPanel != null && sliderColumnPanel.getRotationStripSelectorPanel() != null) {
+            sliderColumnPanel.getRotationStripSelectorPanel().update(tpf);
+        }
     }
 
     /**
@@ -600,13 +616,13 @@ public class PuppetEditorUI {
         int mainAreaY = topBarHeight;
 
         // 创建左侧按钮列（传递TTF字体加载器）
-        // 按钮列占左侧上半部分（60%）
-        int buttonColumnHeight = (int)(mainAreaHeight * 0.6);
+        // 按钮列占左侧上半部分（70%，按钮数量较多，给它更多空间避免溢出到下方面板）
+        int buttonColumnHeight = (int)(mainAreaHeight * 0.7);
         buttonColumnPanel = new ButtonColumnPanel(app, guiFont, ttfLoader, 0, mainAreaY + mainAreaHeight - buttonColumnHeight, buttonColumnWidth, buttonColumnHeight);
         editorRootNode.attachChild(buttonColumnPanel.getRootNode());
 
-        // 创建动画层管理面板（放在按钮列下方，占左侧下半部分40%）
-        int layerPanelHeight = (int)(mainAreaHeight * 0.4);
+        // 创建动画层管理面板（放在按钮列下方，占左侧下半部分30%）
+        int layerPanelHeight = (int)(mainAreaHeight * 0.3);
         int layerPanelY = mainAreaY;
         animationLayerPanel = new AnimationLayerPanel(app, guiFont, 0, layerPanelY, buttonColumnWidth, layerPanelHeight);
         editorRootNode.attachChild(animationLayerPanel.getRootNode());
@@ -713,6 +729,10 @@ public class PuppetEditorUI {
 
     public ButtonColumnPanel getButtonColumnPanel() {
         return buttonColumnPanel;
+    }
+
+    public GroupControlPanel getGroupControlPanel() {
+        return groupControlPanel;
     }
 
     public SliderColumnPanel getSliderColumnPanel() {

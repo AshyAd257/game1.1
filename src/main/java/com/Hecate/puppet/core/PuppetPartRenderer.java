@@ -4,6 +4,7 @@ import com.jme3.app.SimpleApplication;
 import com.jme3.material.Material;
 import com.jme3.material.RenderState;
 import com.jme3.math.ColorRGBA;
+import com.jme3.math.FastMath;
 import com.jme3.math.Quaternion;
 import com.jme3.math.Vector3f;
 import com.jme3.renderer.queue.RenderQueue;
@@ -138,8 +139,13 @@ public class PuppetPartRenderer {
         updateTextureFromBone();
 
         // 灏嗗垵濮嬪搴﹀拰楂樺害淇濆瓨鍒癇one鐨勫綋鍓嶆柟鍚戯紙瑕嗙洊浠讳綍鏃у€硷�?
-        bone.setDirectionWidth(bone.getCurrentDirection(), width);
-        bone.setDirectionHeight(bone.getCurrentDirection(), height);
+        if (bone.isRotationStripEnabled()) {
+            bone.setStripWidth(width);
+            bone.setStripHeight(height);
+        } else {
+            bone.setDirectionWidth(bone.getCurrentDirection(), width);
+            bone.setDirectionHeight(bone.getCurrentDirection(), height);
+        }
 
         initialized = true;
     }
@@ -218,6 +224,40 @@ public class PuppetPartRenderer {
      * 鍚屾椂鎭㈠璇ユ柟鍚戠殑鎵€鏈夊睘鎬э紙UV銆佸昂瀵搞€佸亸绉汇€佹棆杞€佷紭鍏堢骇�?
      */
     public void updateTextureFromBone() {
+        // 旋转条状贴图模式：完全跳过6方向系统，改由updateTransform()里的
+        // applyRotationStripUV()按相机角度动态取样。这里除了加载贴图，还要恢复
+        // 单一的宽高/偏移/旋转（不是按方向存储的，只有一份数据）
+        if (bone.isRotationStripEnabled()) {
+            String stripPath = bone.getStripTexturePath();
+            if (stripPath != null && !stripPath.isEmpty()) {
+                loadTexture(stripPath);
+            } else {
+                setDebugColor(debugColor);
+            }
+
+            this.width = bone.getStripWidth();
+            this.height = bone.getStripHeight();
+            if (partQuad != null) {
+                partQuad.setBuffer(com.jme3.scene.VertexBuffer.Type.Position, 3, new float[]{
+                    -width/2, -height/2, 0,
+                    width/2, -height/2, 0,
+                    width/2, height/2, 0,
+                    -width/2, height/2, 0
+                });
+                partQuad.updateBound();
+                updateHighlightBorderSize();
+            }
+
+            Vector3f stripOffset = bone.getStripOffset();
+            this.offset.set(stripOffset);
+
+            this.customRotationX = bone.getStripRotationX();
+            this.customRotationY = bone.getStripRotationY();
+            this.customRotationZ = bone.getStripRotationZ();
+
+            return;
+        }
+
         String textureToLoad = bone.getCurrentDirectionTexture();
 
         if (textureToLoad != null && !textureToLoad.isEmpty()) {
@@ -326,6 +366,11 @@ public class PuppetPartRenderer {
      * 鍖呮嫭UV坐标銆佸昂瀵搞€佷綅缃亸绉汇€佹棆杞€佷紭鍏堢�?
      */
     private void saveCurrentDirectionProperties() {
+        // 旋转条状贴图模式不使用6方向系统，不应该按方向存储任何属性
+        if (bone.isRotationStripEnabled()) {
+            return;
+        }
+
         String currentDirection = bone.getCurrentDirection();
 
         // 淇濆瓨UV坐标
@@ -406,16 +451,23 @@ public class PuppetPartRenderer {
             return;
         }
 
+
         // 浠庨楠艰幏鍙栦笘鐣屽彉�?
         Vector3f worldPos = new Vector3f();
         Quaternion worldRot = new Quaternion();
         Vector3f worldScale = new Vector3f();
         bone.getWorldTransform(worldPos, worldRot, worldScale);
 
+        // 旋转条状贴图模式：按相机水平角度动态取样UV（只影响UV，宽高/位置/billboard走原有逻辑）
+        if (bone.isRotationStripEnabled()) {
+            applyRotationStripUV(worldPos);
+        }
+
         // 浠嶣one璇诲彇褰撳墠方向鐨勫搴﹀拰楂樺害锛堝鏋滄湁璁剧疆（
         // 娉ㄦ剰锛氬彧鍦ㄥ€肩湡姝ｆ敼鍙樻椂鎵嶆洿鏂帮紙閬垮厤瑕嗙洊鐢ㄦ埛鎵嬪姩璁剧疆鐨勫€硷�?
-        Float dirWidth = bone.getCurrentDirectionWidth();
-        Float dirHeight = bone.getCurrentDirectionHeight();
+        // 旋转条状贴图模式：读单一的stripWidth/stripHeight，不走6方向的Map
+        Float dirWidth = bone.isRotationStripEnabled() ? bone.getStripWidth() : bone.getCurrentDirectionWidth();
+        Float dirHeight = bone.isRotationStripEnabled() ? bone.getStripHeight() : bone.getCurrentDirectionHeight();
 
         // 鍙湁褰揃one涓瓨鍌ㄧ殑鍊间笌褰撳墠鍊间笉鍚屾椂鎵嶆洿方
         // 杩欏厑璁哥敤鎴锋墜鍔ㄤ慨鏀瑰度楂樺害锛岃€屼笉浼氳姣忓抚閲嶇疆
@@ -449,7 +501,7 @@ public class PuppetPartRenderer {
         }
 
         // 浠嶣one璇诲彇褰撳墠方向鐨勬棆杞紙濡傛灉鏈夎缃�?
-        float[] dirRotation = bone.getCurrentDirectionRotation();
+        float[] dirRotation = bone.isRotationStripEnabled() ? new float[]{bone.getStripRotationX(), bone.getStripRotationY(), bone.getStripRotationZ()} : bone.getCurrentDirectionRotation();
         float currentRotX = customRotationX;
         float currentRotY = customRotationY;
         float currentRotZ = customRotationZ;
@@ -533,7 +585,7 @@ public class PuppetPartRenderer {
         }
 
         // 浠嶣one璇诲彇褰撳墠方向鐨勪綅缃亸绉伙紙濡傛灉鏈夎缃級
-        float[] dirOffset = bone.getCurrentDirectionOffset();
+        float[] dirOffset = bone.isRotationStripEnabled() ? new float[]{bone.getStripOffset().x, bone.getStripOffset().y, bone.getStripOffset().z} : bone.getCurrentDirectionOffset();
         Vector3f currentOffset = (dirOffset != null) ?
             new Vector3f(dirOffset[0], dirOffset[1], dirOffset[2]) : offset;
 
@@ -614,82 +666,45 @@ public class PuppetPartRenderer {
             // 使用骨骼鐨勪笘鐣屾棆杞紝涓嶅仛浠讳綍billboard璋冩�?
             partGeometry.setLocalRotation(worldRot);
         } else if (billboardMode == PuppetRenderer.BillboardMode.UNIFIED) {
-            // 统一billboard妯″紡锛氭墍鏈夐儴浠朵娇鐢ㄧ浉鍚岀殑旋转锛屽儚绾镐汉一鏍锋暣浣撴湞鍚戠浉鏈?
+            // 统一billboard模式：所有部件使用相同的旋转，像纸人一样整体朝向相机
+            // 俯仰角范围内平滑过渡：中间正常billboard，接近顶/底时逐渐过渡到自然竖直朝向，
+            // 不再依赖离散的"up"/"down"方向key判断（旋转条状贴图模式没有这些key，也要能正常工作）
             billboardControl.setEnabled(false);
 
-            // 鑾峰彇鍩虹鐨刡illboard旋转锛堥潰鍚戞憚鍍忔満�?
             Quaternion baseBillboardRot = parentRenderer.getUnifiedBillboardRotation();
+            Vector3f camPos = app.getCamera().getLocation();
+            Vector3f partPos = partGeometry.getWorldTranslation();
+            Vector3f toCam = camPos.subtract(partPos);
 
-            // 妫€鏌ュ綋鍓嶆柟�?
-            String currentDirection = bone.getCurrentDirection();
             Quaternion finalBillboardRot;
+            if (toCam.lengthSquared() < 0.0001f) {
+                finalBillboardRot = baseBillboardRot;
+            } else {
+                toCam.normalizeLocal();
 
-            if ("up".equals(currentDirection) || "down".equals(currentDirection)) {
-                // UP/DOWN方向锛氱洿鎺ヤ粠鎽勫儚鏈烘柟鍚戣绠楁棆杞紝涓嶄娇鐢ㄧ粺一billboard
-                // 杩欐牱鍙互閬垮厤坐标绯诲垏鎹㈠鑷寸殑涓嶈繛缁€ч棶棰?
+                float fullRangeDeg = bone.getBillboardPitchFullRangeDeg();
+                float lockDeg = bone.getBillboardPitchLockDeg();
+                // 俯仰角：toCam与水平面的夹角，0°=水平看，90°=从正上方/正下方看
+                float pitchDeg = FastMath.asin(FastMath.clamp(toCam.y, -1f, 1f)) * FastMath.RAD_TO_DEG;
+                float absPitch = Math.abs(pitchDeg);
 
-                // 鑾峰彇鎽勫儚鏈轰綅缃拰部件浣嶇�?
-                Vector3f camPos = app.getCamera().getLocation();
-                Vector3f partPos = partGeometry.getWorldTranslation();
-
-                // 璁＄畻浠庨儴浠舵寚鍚戞憚鍍忔満鐨勬柟向
-                Vector3f toCam = camPos.subtract(partPos);
-                if (toCam.lengthSquared() < 0.0001f) {
+                if (absPitch <= fullRangeDeg) {
+                    // 中间区域：完全billboard，面向摄像机
                     finalBillboardRot = baseBillboardRot;
                 } else {
-                    toCam.normalizeLocal();
+                    // 接近顶/底：计算"自然竖直"朝向（只绕世界Y轴对齐视线水平分量，不跟随俯仰）
+                    Quaternion uprightRot = calculateUprightRotation(toCam);
 
-                    // 閫夋嫨鍚堥€傜殑"不方�?
-                    Vector3f up;
-                    if ("up".equals(currentDirection)) {
-                        // UP方向锛氫娇鐢ㄤ笘鐣孻杞寸殑鍙嶆柟鍚戜綔不�?
-                        up = Vector3f.UNIT_Y.negate();
+                    if (absPitch >= lockDeg) {
+                        // 完全锁定竖直，不再billboard
+                        finalBillboardRot = uprightRot;
                     } else {
-                        // DOWN方向锛氫娇鐢ㄤ笘鐣孻杞翠綔不�?
-                        up = Vector3f.UNIT_Y;
+                        // 过渡区：在billboard和竖直朝向之间平滑插值
+                        float t = (absPitch - fullRangeDeg) / (lockDeg - fullRangeDeg);
+                        finalBillboardRot = new Quaternion();
+                        finalBillboardRot.slerp(baseBillboardRot, uprightRot, t);
                     }
-
-                    // 璁＄畻灞€閮ㄥ潗鏍囩�?
-                    // 计算局部坐标系 - 改进的稳定算法
-                    Vector3f left;
-                    float upDotToCam = Math.abs(up.dot(toCam));
-
-                    if (upDotToCam > 0.999f) {
-                        // 摄像机几乎垂直向下/向上看（up和toCam接近平行）
-                        // 此时使用固定的参考轴来计算稳定的left向量
-                        Vector3f referenceAxis = Vector3f.UNIT_Z;
-                        left = referenceAxis.cross(toCam);
-                        if (left.lengthSquared() < 0.0001f) {
-                            // 如果Z轴也平行，使用X轴作为备用
-                            referenceAxis = Vector3f.UNIT_X;
-                            left = referenceAxis.cross(toCam);
-                            if (left.lengthSquared() < 0.0001f) {
-                                left = Vector3f.UNIT_Z;
-                            } else {
-                                left.normalizeLocal();
-                            }
-                        } else {
-                            left.normalizeLocal();
-                        }
-                    } else {
-                        // 正常情况：使用up和toCam的叉积
-                        left = up.cross(toCam);
-                        if (left.lengthSquared() < 0.0001f) {
-                            // 理论上不应该到这里，但为了安全还是保留备用
-                            left = Vector3f.UNIT_X;
-                        } else {
-                            left.normalizeLocal();
-                        }
-                    }
-
-                    Vector3f realUp = toCam.cross(left).normalizeLocal();
-                    // 鏋勫缓旋转锛氳Z杞存寚鍚戞憚鍍忔満
-                    finalBillboardRot = new Quaternion();
-                    finalBillboardRot.fromAxes(left, realUp, toCam);
                 }
-            } else {
-                // 鍓嶅悗左右方向锛氫娇鐢ㄧ粺一billboard旋转
-                finalBillboardRot = baseBillboardRot;
             }
 
             partGeometry.setLocalRotation(finalBillboardRot);
@@ -709,7 +724,7 @@ public class PuppetPartRenderer {
         // 【25段分层多边形偏移】
         // 根据priority设置多边形偏移，实现绝对分层
         // priority 1-100分为4层，每层25个值
-        int currentPriority = bone.getCurrentDirectionPriority();
+        int currentPriority = bone.isRotationStripEnabled() ? bone.getStripPriority() : bone.getCurrentDirectionPriority();
         int layer = currentPriority / 25;           // 层号：0-3（对应1-25, 26-50, 51-75, 76-100）
         int layerOffset = currentPriority % 25;     // 层内偏移：0-24
 
@@ -732,6 +747,48 @@ public class PuppetPartRenderer {
     /**
      * 鏇存柊高光鐨勪綅缃拰旋�?
      */
+    /**
+     * 计算"自然竖直"朝向：只绕世界Y轴对齐视线的水平分量，忽略俯仰角。
+     * 效果类似jME内置的BillboardControl.Alignment.AxialY——贴图始终保持竖直站立，
+     * 转头看着摄像机的水平方向，但不会因为俯仰角而歪倒。
+     * 用于Billboard俯仰角范围过渡：接近顶/底视角时，部件不再面向摄像机翻转，而是自然竖立。
+     */
+    private Quaternion calculateUprightRotation(Vector3f toCam) {
+        Vector3f up = Vector3f.UNIT_Y;
+        Vector3f horizontalDir = new Vector3f(toCam.x, 0f, toCam.z);
+
+        Vector3f left;
+        if (horizontalDir.lengthSquared() < 0.0001f) {
+            // 摄像机几乎正上方/正下方，水平方向不可判定，使用固定参考轴保持稳定
+            Vector3f referenceAxis = Vector3f.UNIT_Z;
+            left = referenceAxis.cross(toCam);
+            if (left.lengthSquared() < 0.0001f) {
+                referenceAxis = Vector3f.UNIT_X;
+                left = referenceAxis.cross(toCam);
+                if (left.lengthSquared() < 0.0001f) {
+                    left = Vector3f.UNIT_Z;
+                } else {
+                    left.normalizeLocal();
+                }
+            } else {
+                left.normalizeLocal();
+            }
+        } else {
+            horizontalDir.normalizeLocal();
+            left = up.cross(horizontalDir);
+            if (left.lengthSquared() < 0.0001f) {
+                left = Vector3f.UNIT_X;
+            } else {
+                left.normalizeLocal();
+            }
+        }
+
+        Vector3f forward = left.cross(up).normalizeLocal();
+        Quaternion uprightRot = new Quaternion();
+        uprightRot.fromAxes(left, up, forward);
+        return uprightRot;
+    }
+
     private void updateHighlightTransform(Vector3f position, Quaternion rotation, Vector3f scale, boolean hasCustomRotation) {
         if (!initialized || highlightNode == null) {
             return;
@@ -779,9 +836,11 @@ public class PuppetPartRenderer {
      */
     public void setVisible(boolean visible) {
         if (initialized) {
-            partGeometry.setCullHint(visible ?
-                    Geometry.CullHint.Never :
-                    Geometry.CullHint.Always);
+            if (partGeometry != null) {
+                partGeometry.setCullHint(visible ?
+                        Geometry.CullHint.Never :
+                        Geometry.CullHint.Always);
+            }
 
             // 高光鍙湪选中涓斿彲瑙佹椂鏄剧�?
             if (highlightNode != null) {
@@ -842,6 +901,7 @@ public class PuppetPartRenderer {
         this.width = newWidth;
         this.height = newHeight;
 
+
         // 閲嶆柊璁剧疆椤剁偣浣嶇疆锛堝眳涓級
         partQuad.setBuffer(com.jme3.scene.VertexBuffer.Type.Position, 3, new float[]{
             -width/2, -height/2, 0,
@@ -891,6 +951,7 @@ public class PuppetPartRenderer {
 
     public void setWidth(float width) {
         this.width = width;
+
         // 鏇存柊鍑犱綍�?
         if (partQuad != null) {
             partQuad.setBuffer(com.jme3.scene.VertexBuffer.Type.Position, 3, new float[]{
@@ -903,7 +964,11 @@ public class PuppetPartRenderer {
             updateHighlightBorderSize();
         }
         // 淇濆瓨鍒板綋鍓嶆柟向
-        bone.setDirectionWidth(bone.getCurrentDirection(), width);
+        if (bone.isRotationStripEnabled()) {
+            bone.setStripWidth(width);
+        } else {
+            bone.setDirectionWidth(bone.getCurrentDirection(), width);
+        }
     }
 
     public float getHeight() {
@@ -912,6 +977,7 @@ public class PuppetPartRenderer {
 
     public void setHeight(float height) {
         this.height = height;
+
         // 鏇存柊鍑犱綍�?
         if (partQuad != null) {
             partQuad.setBuffer(com.jme3.scene.VertexBuffer.Type.Position, 3, new float[]{
@@ -924,31 +990,51 @@ public class PuppetPartRenderer {
             updateHighlightBorderSize();
         }
         // 淇濆瓨鍒板綋鍓嶆柟向
-        bone.setDirectionHeight(bone.getCurrentDirection(), height);
+        if (bone.isRotationStripEnabled()) {
+            bone.setStripHeight(height);
+        } else {
+            bone.setDirectionHeight(bone.getCurrentDirection(), height);
+        }
     }
 
     public void setOffset(float offsetX, float offsetY) {
         this.offset.set(offsetX, offsetY, 0f);
         // 淇濆瓨鍒板綋鍓嶆柟向
-        bone.setDirectionOffset(bone.getCurrentDirection(), offset.x, offset.y, offset.z);
+        if (bone.isRotationStripEnabled()) {
+            bone.setStripOffset(offset.x, offset.y, offset.z);
+        } else {
+            bone.setDirectionOffset(bone.getCurrentDirection(), offset.x, offset.y, offset.z);
+        }
     }
 
     public void setOffsetX(float offsetX) {
         this.offset.x = offsetX;
         // 淇濆瓨鍒板綋鍓嶆柟向
-        bone.setDirectionOffset(bone.getCurrentDirection(), offset.x, offset.y, offset.z);
+        if (bone.isRotationStripEnabled()) {
+            bone.setStripOffset(offset.x, offset.y, offset.z);
+        } else {
+            bone.setDirectionOffset(bone.getCurrentDirection(), offset.x, offset.y, offset.z);
+        }
     }
 
     public void setOffsetY(float offsetY) {
         this.offset.y = offsetY;
         // 淇濆瓨鍒板綋鍓嶆柟向
-        bone.setDirectionOffset(bone.getCurrentDirection(), offset.x, offset.y, offset.z);
+        if (bone.isRotationStripEnabled()) {
+            bone.setStripOffset(offset.x, offset.y, offset.z);
+        } else {
+            bone.setDirectionOffset(bone.getCurrentDirection(), offset.x, offset.y, offset.z);
+        }
     }
 
     public void setOffsetZ(float offsetZ) {
         this.offset.z = offsetZ;
         // 淇濆瓨鍒板綋鍓嶆柟向
-        bone.setDirectionOffset(bone.getCurrentDirection(), offset.x, offset.y, offset.z);
+        if (bone.isRotationStripEnabled()) {
+            bone.setStripOffset(offset.x, offset.y, offset.z);
+        } else {
+            bone.setDirectionOffset(bone.getCurrentDirection(), offset.x, offset.y, offset.z);
+        }
     }
 
     public Vector3f getOffset() {
@@ -1171,7 +1257,11 @@ public class PuppetPartRenderer {
     public void setCustomRotationX(float degrees) {
         this.customRotationX = degrees;
         // 淇濆瓨鍒板綋鍓嶆柟向
-        bone.setDirectionRotation(bone.getCurrentDirection(), customRotationX, customRotationY, customRotationZ);
+        if (bone.isRotationStripEnabled()) {
+            bone.setStripRotation(customRotationX, customRotationY, customRotationZ);
+        } else {
+            bone.setDirectionRotation(bone.getCurrentDirection(), customRotationX, customRotationY, customRotationZ);
+        }
     }
 
     /**
@@ -1187,7 +1277,11 @@ public class PuppetPartRenderer {
     public void setCustomRotationY(float degrees) {
         this.customRotationY = degrees;
         // 淇濆瓨鍒板綋鍓嶆柟向
-        bone.setDirectionRotation(bone.getCurrentDirection(), customRotationX, customRotationY, customRotationZ);
+        if (bone.isRotationStripEnabled()) {
+            bone.setStripRotation(customRotationX, customRotationY, customRotationZ);
+        } else {
+            bone.setDirectionRotation(bone.getCurrentDirection(), customRotationX, customRotationY, customRotationZ);
+        }
     }
 
     /**
@@ -1203,7 +1297,11 @@ public class PuppetPartRenderer {
     public void setCustomRotationZ(float degrees) {
         this.customRotationZ = degrees;
         // 淇濆瓨鍒板綋鍓嶆柟向
-        bone.setDirectionRotation(bone.getCurrentDirection(), customRotationX, customRotationY, customRotationZ);
+        if (bone.isRotationStripEnabled()) {
+            bone.setStripRotation(customRotationX, customRotationY, customRotationZ);
+        } else {
+            bone.setDirectionRotation(bone.getCurrentDirection(), customRotationX, customRotationY, customRotationZ);
+        }
     }
 
     /**
@@ -1297,6 +1395,78 @@ public class PuppetPartRenderer {
      *   锛堣繖鏄敤鎴风殑閫夋嫨锛屼粬浠彲浠ラ€氳繃璋冩暣部件瀹介珮鎴朥V閫夋嫨鏉ユ帶鍒讹�?
      * - 鏀寔贴图旋转锛堟瘡涓柟鍚戝彲浠ユ湁鐙珛鐨勬棆杞搴︼級
      */
+    /**
+     * 旋转条状贴图：按相机相对该部件的水平夹角(yaw)，从环绕360°的条状贴图上
+     * 取样出当前应该显示的那一格，实现"伪3D棱柱"的转身错觉。
+     *
+     * 三条规矩：
+     * 1. 取景框只能停在整数像素格线上（不做半像素插值）
+     * 2. 取样是纯拷贝，不做混合/缩放（配合Nearest过滤）
+     * 3. 档数不足时贴图右侧用透明像素在内存中补齐（不修改原文件）
+     */
+    // 固定规则：摄像机每转DEGREES_PER_STEP度，取景框挪1个像素。360°正好整除成15个固定位置，
+    // 不可配置，不考虑档数/连续模式——先把最基本的效果做对
+    private static final float DEGREES_PER_STEP = 10f;
+    private static final int STEPS_PER_REVOLUTION = 360 / (int) DEGREES_PER_STEP; // 15
+
+    private void applyRotationStripUV(Vector3f worldPos) {
+        String stripPath = bone.getStripTexturePath();
+        if (stripPath == null || stripPath.isEmpty()) {
+            return;
+        }
+
+        int frameWidthPx = bone.getStripFrameWidthPx();
+        // 所需总宽度：15个固定位置里最后一个位置的起点(STEPS_PER_REVOLUTION-1)再加上取景框宽度
+        int requiredWidthPx = (STEPS_PER_REVOLUTION - 1) + frameWidthPx;
+
+        RotationStripTextureUtil.PaddedStrip strip =
+                RotationStripTextureUtil.getOrCreatePaddedStrip(app.getAssetManager(), stripPath, requiredWidthPx);
+        if (strip == null) {
+            return;
+        }
+
+        // 确保材质上贴的是这张（可能是补齐后的）贴图，而不是loadTexture()原样加载的那份
+        if (texture != strip.texture) {
+            texture = strip.texture;
+            partMaterial.setTexture("DiffuseMap", texture);
+            partMaterial.setColor("Diffuse", ColorRGBA.White);
+            partMaterial.setColor("Ambient", ColorRGBA.White);
+        }
+
+        // 计算相机相对该部件的水平夹角（yaw），复用PuppetRenderer里同款的水平投影+atan2算法
+        Vector3f camPos = app.getCamera().getLocation();
+        Vector3f toCam = camPos.subtract(worldPos);
+        Vector3f horizontalDir = new Vector3f(toCam.x, 0, toCam.z);
+        if (horizontalDir.lengthSquared() < 0.0001f) {
+            return; // 相机在部件正上/正下方，水平角度不可判定，保持上一帧的取样
+        }
+        horizontalDir.normalizeLocal();
+        float yawRad = FastMath.atan2(horizontalDir.x, horizontalDir.z);
+        float yawDeg = yawRad * FastMath.RAD_TO_DEG;
+
+        int paddedWidthPx = strip.paddedWidthPx;
+
+        // 每转DEGREES_PER_STEP度挪1个像素，一步只走一个像素
+        int stepIndex = Math.round(yawDeg / DEGREES_PER_STEP);
+        stepIndex = ((stepIndex % STEPS_PER_REVOLUTION) + STEPS_PER_REVOLUTION) % STEPS_PER_REVOLUTION; // 归一化负数取模
+        int pixelStart = stepIndex; // 步长恒为1像素
+
+        float u0 = pixelStart / (float) paddedWidthPx;
+        float u1 = (pixelStart + frameWidthPx) / (float) paddedWidthPx;
+        float v0 = 0f;
+        float v1 = 1f;
+
+        if (partQuad != null) {
+            float[] texCoords = new float[]{
+                u0, v0,  // 左下
+                u1, v0,  // 右下
+                u1, v1,  // 右上
+                u0, v1   // 左上
+            };
+            partQuad.setBuffer(com.jme3.scene.VertexBuffer.Type.TexCoord, 2, texCoords);
+        }
+    }
+
     private void updateTexCoords() {
         if (partQuad == null) {
             return;

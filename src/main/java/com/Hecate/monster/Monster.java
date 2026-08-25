@@ -41,7 +41,7 @@ public class Monster {
     private static final int HITSTOP_FRAMES = 3; // 命中瞬间暂停的帧数（2~3帧取上限）
 
     // 保留作为向后兼容的默认值（MonsterDefinition.Builder 的默认攻击数值取自这里）
-    public static final float ATTACK_COOLDOWN = 1.0f;
+    public static final float ATTACK_COOLDOWN = 2.0f;
     public static final float ATTACK_DAMAGE = 10.0f;
 
     private static final ColorRGBA BASE_COLOR = new ColorRGBA(0.8f, 0.1f, 0.1f, 1.0f);
@@ -56,6 +56,11 @@ public class Monster {
     // 本实例的实际数值（基础值 x 对应MonsterDefinition的倍率）
     private final float size;
     private final float moveSpeed;
+
+    // 攻击范围（半径，世界单位）。definition.attackRange<=0时使用默认值：
+    // 套在方块上的外接球半径 = 方块空间对角线的一半 = size * sqrt(3) / 2，
+    // 保证方块的任意一个角都在范围内（无死角判定）。
+    private final float attackRange;
 
     private Vector3f position;
     private float health;
@@ -104,6 +109,9 @@ public class Monster {
         this.moveSpeed = BASE_MOVE_SPEED * definition.speedMultiplier;
         this.health = BASE_MAX_HEALTH * definition.healthMultiplier;
         this.attackBehavior = definition.attackBehaviorFactory.create();
+        this.attackRange = definition.attackRange > 0f
+                ? definition.attackRange
+                : size * FastMath.sqrt(3f) / 2f;
 
         this.position = spawnFootPosition.clone();
         this.position.y += size / 2f;
@@ -295,17 +303,28 @@ public class Monster {
     }
 
     /**
-     * 是否可以发起新一次接触攻击（冷却已结束）
+     * 是否可以发起新一次攻击（冷却已结束）
      */
     public boolean isAttackReady() {
         return attackCooldownRemaining <= 0f;
     }
 
     /**
-     * 重置攻击冷却（成功命中玩家后调用）
+     * 重置攻击冷却（成功命中玩家后调用）。冷却时长取自definition.attackCooldown，
+     * 而不是所有怪物共用同一个硬编码常量——不同怪物类型可以有不同的攻击频率。
      */
     public void resetAttackCooldown() {
-        attackCooldownRemaining = ATTACK_COOLDOWN;
+        attackCooldownRemaining = definition.attackCooldown;
+    }
+
+    /**
+     * 玩家是否处于本怪物的攻击范围内：以怪物中心为球心、{@link #attackRange}为半径的
+     * 球形判定（无死角），而不是要求方块AABB与玩家AABB相交。
+     * @param playerBox 玩家碰撞盒（世界坐标）
+     */
+    public boolean isPlayerInAttackRange(AABB playerBox) {
+        float rangeSquared = attackRange * attackRange;
+        return playerBox.distanceSquaredToPoint(position) <= rangeSquared;
     }
 
     /**
@@ -353,6 +372,16 @@ public class Monster {
 
     public Vector3f getPosition() {
         return position.clone();
+    }
+
+    /**
+     * 水平方向瞬间位移（不影响Y轴），用于怪物之间互相把对方推开，避免重叠。
+     * @param offset 位移量，只使用x/z分量
+     */
+    public void pushHorizontal(Vector3f offset) {
+        position.x += offset.x;
+        position.z += offset.z;
+        geometry.setLocalTranslation(position);
     }
 
     public boolean isAlive() {

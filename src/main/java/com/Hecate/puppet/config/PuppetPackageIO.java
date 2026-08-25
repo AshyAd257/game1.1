@@ -251,6 +251,11 @@ public class PuppetPackageIO {
                         }
                     }
                 }
+
+                // 旋转条状贴图路径
+                if (partConfig.getStripTexturePath() != null && !partConfig.getStripTexturePath().isEmpty()) {
+                    paths.add(partConfig.getStripTexturePath());
+                }
             }
         }
 
@@ -288,6 +293,15 @@ public class PuppetPackageIO {
                         newDirectionTextures.put(direction, newPath);
                     }
                     partConfig.setDirectionTextures(newDirectionTextures);
+                }
+
+                // 旋转条状贴图路径
+                if (partConfig.getStripTexturePath() != null && !partConfig.getStripTexturePath().isEmpty()) {
+                    String originalPath = partConfig.getStripTexturePath();
+                    String newPath = pathMapping.get(originalPath);
+                    if (newPath != null) {
+                        partConfig.setStripTexturePath(newPath);
+                    }
                 }
             }
         }

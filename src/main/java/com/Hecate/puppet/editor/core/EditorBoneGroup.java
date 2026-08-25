@@ -15,6 +15,7 @@ public class EditorBoneGroup {
     private String name;  // 组名
     private List<EditorBone> members;  // 组成员
     private int currentRotation;  // 当前旋转角度（0, 90, 180, 270）
+    private boolean collapsed = false;  // UI折叠状态（PartListPanel拖拽分组用，不参与序列化）
 
     /**
      * 创建一个骨骼组
@@ -163,6 +164,32 @@ public class EditorBoneGroup {
     public void resetRotation() {
         while (currentRotation != 0) {
             rotateRight90();
+        }
+    }
+
+    /**
+     * 是否折叠（PartListPanel里的UI状态，不参与序列化）
+     */
+    public boolean isCollapsed() {
+        return collapsed;
+    }
+
+    public void setCollapsed(boolean collapsed) {
+        this.collapsed = collapsed;
+    }
+
+    /**
+     * 整体平移组内所有成员（相对偏移，直接叠加到每个成员当前的localPosition/restPosition）
+     * @param dx X偏移
+     * @param dy Y偏移
+     * @param dz Z偏移
+     */
+    public void translateAll(float dx, float dy, float dz) {
+        com.jme3.math.Vector3f delta = new com.jme3.math.Vector3f(dx, dy, dz);
+        for (EditorBone bone : members) {
+            com.jme3.math.Vector3f pos = bone.getLocalPosition().add(delta);
+            bone.setLocalPosition(pos);
+            bone.setRestPosition(pos.clone());
         }
     }
 

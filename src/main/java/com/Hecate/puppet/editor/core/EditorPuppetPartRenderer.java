@@ -4,6 +4,7 @@ import com.jme3.app.SimpleApplication;
 import com.jme3.material.Material;
 import com.jme3.material.RenderState;
 import com.jme3.math.ColorRGBA;
+import com.jme3.math.FastMath;
 import com.jme3.math.Quaternion;
 import com.jme3.math.Vector3f;
 import com.jme3.renderer.queue.RenderQueue;
@@ -113,15 +114,20 @@ public class EditorPuppetPartRenderer {
 
         updateTextureFromBone();
 
-        // 只有当bone的当前方向没有宽度/高度时，才保存默认值
-        // 这样可以确保：
-        // 1. 新建部件时，front方向有一个初始值作为其他方向的继承源
-        // 2. 加载已有模型时，不会覆盖文件中的值
-        if (bone.getDirectionWidth(bone.getCurrentDirection()) == null) {
-            bone.setDirectionWidth(bone.getCurrentDirection(), width);
-        }
-        if (bone.getDirectionHeight(bone.getCurrentDirection()) == null) {
-            bone.setDirectionHeight(bone.getCurrentDirection(), height);
+        if (bone.isRotationStripEnabled()) {
+            bone.setStripWidth(width);
+            bone.setStripHeight(height);
+        } else {
+            // 只有当bone的当前方向没有宽度/高度时，才保存默认值
+            // 这样可以确保：
+            // 1. 新建部件时，front方向有一个初始值作为其他方向的继承源
+            // 2. 加载已有模型时，不会覆盖文件中的值
+            if (bone.getDirectionWidth(bone.getCurrentDirection()) == null) {
+                bone.setDirectionWidth(bone.getCurrentDirection(), width);
+            }
+            if (bone.getDirectionHeight(bone.getCurrentDirection()) == null) {
+                bone.setDirectionHeight(bone.getCurrentDirection(), height);
+            }
         }
 
         initialized = true;
@@ -243,6 +249,37 @@ public void loadTexture(String texturePath) {
 
     
     public void updateTextureFromBone() {
+        // 旋转条状贴图模式：完全跳过6方向系统，改由updateTransform()里的
+        // applyRotationStripUV()按相机角度动态取样。这里除了加载贴图，还要恢复
+        // 单一的宽高/偏移/旋转（不是按方向存储的，只有一份数据）
+        if (bone.isRotationStripEnabled()) {
+            String stripPath = bone.getStripTexturePath();
+            if (stripPath != null && !stripPath.isEmpty()) {
+                loadTexture(stripPath);
+            } else {
+                setDebugColor(debugColor);
+            }
+
+            this.width = bone.getStripWidth();
+            this.height = bone.getStripHeight();
+            if (partQuad != null) {
+                updateReusablePositionArray();
+                partQuad.setBuffer(com.jme3.scene.VertexBuffer.Type.Position, 3, reusablePositionArray);
+                partQuad.updateBound();
+                partQuad.getBuffer(com.jme3.scene.VertexBuffer.Type.Position).setUpdateNeeded();
+                updateHighlightBorderSize();
+            }
+
+            com.jme3.math.Vector3f stripOffset = bone.getStripOffset();
+            this.offset.set(stripOffset);
+
+            this.customRotationX = bone.getStripRotationX();
+            this.customRotationY = bone.getStripRotationY();
+            this.customRotationZ = bone.getStripRotationZ();
+
+            return;
+        }
+
         String textureToLoad = bone.getCurrentDirectionTexture();
 
         if (textureToLoad != null && !textureToLoad.isEmpty()) {
@@ -387,6 +424,9 @@ public void loadTexture(String texturePath) {
 
     
     public void setDebugColor(ColorRGBA color) {
+        if (partMaterial == null) {
+            return;
+        }
         partMaterial.clearParam("ColorMap");
         partMaterial.setColor("Color", color);
     }
@@ -421,8 +461,14 @@ public void loadTexture(String texturePath) {
         Vector3f worldScale = new Vector3f();
         bone.getWorldTransform(worldPos, worldRot, worldScale);
 
-        Float dirWidth = bone.getCurrentDirectionWidth();
-        Float dirHeight = bone.getCurrentDirectionHeight();
+        // 旋转条状贴图模式：按相机水平角度动态取样UV（只影响UV，宽高/位置/billboard走原有逻辑）
+        if (bone.isRotationStripEnabled()) {
+            applyRotationStripUV(worldPos);
+        }
+
+        // 旋转条状贴图模式：读单一的stripWidth/stripHeight，不走6方向的Map
+        Float dirWidth = bone.isRotationStripEnabled() ? bone.getStripWidth() : bone.getCurrentDirectionWidth();
+        Float dirHeight = bone.isRotationStripEnabled() ? bone.getStripHeight() : bone.getCurrentDirectionHeight();
 
         if (dirWidth != null && Math.abs(dirWidth - width) > 0.001f) {
             this.width = dirWidth;
@@ -447,7 +493,9 @@ public void loadTexture(String texturePath) {
             }
         }
 
-        float[] dirRotation = bone.getCurrentDirectionRotation();
+        float[] dirRotation = bone.isRotationStripEnabled()
+            ? new float[]{bone.getStripRotationX(), bone.getStripRotationY(), bone.getStripRotationZ()}
+            : bone.getCurrentDirectionRotation();
         float currentRotX = customRotationX;
         float currentRotY = customRotationY;
         float currentRotZ = customRotationZ;
@@ -516,7 +564,9 @@ public void loadTexture(String texturePath) {
             }
         }
 
-        float[] dirOffset = bone.getCurrentDirectionOffset();
+        float[] dirOffset = bone.isRotationStripEnabled()
+            ? new float[]{bone.getStripOffset().x, bone.getStripOffset().y, bone.getStripOffset().z}
+            : bone.getCurrentDirectionOffset();
         Vector3f currentOffset = (dirOffset != null) ?
             new Vector3f(dirOffset[0], dirOffset[1], dirOffset[2]) : offset;
 
@@ -538,7 +588,7 @@ public void loadTexture(String texturePath) {
             finalPos.addLocal(rotatedContentOffset);
         }
 
-        int currentPriority = bone.getCurrentDirectionPriority();
+        int currentPriority = bone.isRotationStripEnabled() ? bone.getStripPriority() : bone.getCurrentDirectionPriority();
 
         Vector3f offsetDirection;
 
@@ -740,9 +790,11 @@ public void loadTexture(String texturePath) {
     
     public void setVisible(boolean visible) {
         if (initialized) {
-            partGeometry.setCullHint(visible ?
-                    Geometry.CullHint.Never :
-                    Geometry.CullHint.Always);
+            if (partGeometry != null) {
+                partGeometry.setCullHint(visible ?
+                        Geometry.CullHint.Never :
+                        Geometry.CullHint.Always);
+            }
 
             if (highlightNode != null) {
                 highlightNode.setCullHint((visible && isSelected) ?
@@ -758,7 +810,7 @@ public void loadTexture(String texturePath) {
         }
     }
 
-    
+
     public void cleanup() {
 
         if (partGeometry != null) {
@@ -850,6 +902,10 @@ public void loadTexture(String texturePath) {
     }
 
     public float getWidth() {
+        // 旋转条状贴图模式：读单一的stripWidth，不走6方向的继承逻辑
+        if (bone.isRotationStripEnabled()) {
+            return bone.getStripWidth();
+        }
         // 优先返回EditorBone的当前方向宽度（包含继承逻辑）
         Float dirWidth = bone.getCurrentDirectionWidth();
         if (dirWidth != null) {
@@ -872,10 +928,18 @@ public void loadTexture(String texturePath) {
             updateHighlightBorderSize();
         }
 
-        bone.setDirectionWidth(bone.getCurrentDirection(), width);
+        if (bone.isRotationStripEnabled()) {
+            bone.setStripWidth(width);
+        } else {
+            bone.setDirectionWidth(bone.getCurrentDirection(), width);
+        }
     }
 
     public float getHeight() {
+        // 旋转条状贴图模式：读单一的stripHeight，不走6方向的继承逻辑
+        if (bone.isRotationStripEnabled()) {
+            return bone.getStripHeight();
+        }
         // 优先返回EditorBone的当前方向高度（包含继承逻辑）
         Float dirHeight = bone.getCurrentDirectionHeight();
         if (dirHeight != null) {
@@ -898,31 +962,51 @@ public void loadTexture(String texturePath) {
             updateHighlightBorderSize();
         }
 
-        bone.setDirectionHeight(bone.getCurrentDirection(), height);
+        if (bone.isRotationStripEnabled()) {
+            bone.setStripHeight(height);
+        } else {
+            bone.setDirectionHeight(bone.getCurrentDirection(), height);
+        }
     }
 
     public void setOffset(float offsetX, float offsetY) {
         this.offset.set(offsetX, offsetY, 0f);
 
-        bone.setDirectionOffset(bone.getCurrentDirection(), offset.x, offset.y, offset.z);
+        if (bone.isRotationStripEnabled()) {
+            bone.setStripOffset(offset.x, offset.y, offset.z);
+        } else {
+            bone.setDirectionOffset(bone.getCurrentDirection(), offset.x, offset.y, offset.z);
+        }
     }
 
     public void setOffsetX(float offsetX) {
         this.offset.x = offsetX;
 
-        bone.setDirectionOffset(bone.getCurrentDirection(), offset.x, offset.y, offset.z);
+        if (bone.isRotationStripEnabled()) {
+            bone.setStripOffset(offset.x, offset.y, offset.z);
+        } else {
+            bone.setDirectionOffset(bone.getCurrentDirection(), offset.x, offset.y, offset.z);
+        }
     }
 
     public void setOffsetY(float offsetY) {
         this.offset.y = offsetY;
 
-        bone.setDirectionOffset(bone.getCurrentDirection(), offset.x, offset.y, offset.z);
+        if (bone.isRotationStripEnabled()) {
+            bone.setStripOffset(offset.x, offset.y, offset.z);
+        } else {
+            bone.setDirectionOffset(bone.getCurrentDirection(), offset.x, offset.y, offset.z);
+        }
     }
 
     public void setOffsetZ(float offsetZ) {
         this.offset.z = offsetZ;
 
-        bone.setDirectionOffset(bone.getCurrentDirection(), offset.x, offset.y, offset.z);
+        if (bone.isRotationStripEnabled()) {
+            bone.setStripOffset(offset.x, offset.y, offset.z);
+        } else {
+            bone.setDirectionOffset(bone.getCurrentDirection(), offset.x, offset.y, offset.z);
+        }
     }
 
     public Vector3f getOffset() {
@@ -1107,7 +1191,11 @@ public void loadTexture(String texturePath) {
     public void setCustomRotationX(float degrees) {
         this.customRotationX = degrees;
 
-        bone.setDirectionRotation(bone.getCurrentDirection(), customRotationX, customRotationY, customRotationZ);
+        if (bone.isRotationStripEnabled()) {
+            bone.setStripRotation(customRotationX, customRotationY, customRotationZ);
+        } else {
+            bone.setDirectionRotation(bone.getCurrentDirection(), customRotationX, customRotationY, customRotationZ);
+        }
     }
 
     
@@ -1119,7 +1207,11 @@ public void loadTexture(String texturePath) {
     public void setCustomRotationY(float degrees) {
         this.customRotationY = degrees;
 
-        bone.setDirectionRotation(bone.getCurrentDirection(), customRotationX, customRotationY, customRotationZ);
+        if (bone.isRotationStripEnabled()) {
+            bone.setStripRotation(customRotationX, customRotationY, customRotationZ);
+        } else {
+            bone.setDirectionRotation(bone.getCurrentDirection(), customRotationX, customRotationY, customRotationZ);
+        }
     }
 
     
@@ -1131,7 +1223,11 @@ public void loadTexture(String texturePath) {
     public void setCustomRotationZ(float degrees) {
         this.customRotationZ = degrees;
 
-        bone.setDirectionRotation(bone.getCurrentDirection(), customRotationX, customRotationY, customRotationZ);
+        if (bone.isRotationStripEnabled()) {
+            bone.setStripRotation(customRotationX, customRotationY, customRotationZ);
+        } else {
+            bone.setDirectionRotation(bone.getCurrentDirection(), customRotationX, customRotationY, customRotationZ);
+        }
     }
 
     
@@ -1194,6 +1290,72 @@ public void loadTexture(String texturePath) {
     }
 
     
+    /**
+     * 旋转条状贴图：按相机相对该部件的水平夹角(yaw)，从环绕360°的条状贴图上
+     * 取样出当前应该显示的那一格，实现"伪3D棱柱"的转身错觉。
+     * 与核心运行时版本(PuppetPartRenderer)逻辑保持一致。
+     */
+    // 固定规则：摄像机每转DEGREES_PER_STEP度，取景框挪1个像素。360°正好整除成15个固定位置，
+    // 不可配置，不考虑档数/连续模式——与核心运行时版本(PuppetPartRenderer)保持一致
+    private static final float DEGREES_PER_STEP = 10f;
+    private static final int STEPS_PER_REVOLUTION = 360 / (int) DEGREES_PER_STEP; // 15
+
+    private void applyRotationStripUV(Vector3f worldPos) {
+        String stripPath = bone.getStripTexturePath();
+        if (stripPath == null || stripPath.isEmpty()) {
+            return;
+        }
+
+        int frameWidthPx = bone.getStripFrameWidthPx();
+        // 所需总宽度：15个固定位置里最后一个位置的起点(STEPS_PER_REVOLUTION-1)再加上取景框宽度
+        int requiredWidthPx = (STEPS_PER_REVOLUTION - 1) + frameWidthPx;
+
+        com.Hecate.puppet.core.RotationStripTextureUtil.PaddedStrip strip =
+                com.Hecate.puppet.core.RotationStripTextureUtil.getOrCreatePaddedStrip(
+                        app.getAssetManager(), stripPath, requiredWidthPx);
+        if (strip == null) {
+            return;
+        }
+
+        if (texture != strip.texture) {
+            texture = strip.texture;
+            partMaterial.setTexture("ColorMap", texture);
+            partMaterial.setColor("Color", ColorRGBA.White);
+        }
+
+        Vector3f camPos = app.getCamera().getLocation();
+        Vector3f toCam = camPos.subtract(worldPos);
+        Vector3f horizontalDir = new Vector3f(toCam.x, 0, toCam.z);
+        if (horizontalDir.lengthSquared() < 0.0001f) {
+            return;
+        }
+        horizontalDir.normalizeLocal();
+        float yawRad = FastMath.atan2(horizontalDir.x, horizontalDir.z);
+        float yawDeg = yawRad * FastMath.RAD_TO_DEG;
+
+        int paddedWidthPx = strip.paddedWidthPx;
+
+        // 每转DEGREES_PER_STEP度挪1个像素，一步只走一个像素
+        int stepIndex = Math.round(yawDeg / DEGREES_PER_STEP);
+        stepIndex = ((stepIndex % STEPS_PER_REVOLUTION) + STEPS_PER_REVOLUTION) % STEPS_PER_REVOLUTION;
+        int pixelStart = stepIndex; // 步长恒为1像素
+
+        float u0 = pixelStart / (float) paddedWidthPx;
+        float u1 = (pixelStart + frameWidthPx) / (float) paddedWidthPx;
+        float v0 = 0f;
+        float v1 = 1f;
+
+        if (partQuad != null) {
+            float[] texCoords = new float[]{
+                u0, v0,
+                u1, v0,
+                u1, v1,
+                u0, v1
+            };
+            partQuad.setBuffer(com.jme3.scene.VertexBuffer.Type.TexCoord, 2, texCoords);
+        }
+    }
+
     private void updateTexCoords() {
         if (partQuad == null) {
             return;

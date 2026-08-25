@@ -151,6 +151,45 @@ public class Bone {
     // true = 每个方向独立贴图（2D精灵模式），false = 所有方向共用一个贴图（3D模型模式）
     private boolean multiDirectionTextureEnabled = true;  // 默认启用多方向贴图
 
+    // ==================== 旋转条状贴图系统（伪3D棱柱效果） ====================
+    // 与上面的6方向系统（front/back/left/right/up/down）互斥，按骨骼独立开关
+    // 启用后该骨骼忽略方向key，改用"一张环绕360°的条状贴图 + 相机yaw取样"
+
+    // 是否启用旋转条状贴图模式
+    private boolean rotationStripEnabled = false;
+
+    // 条状贴图路径
+    private String stripTexturePath;
+
+    // 转一圈对应的档数（离散取样点数）。0 = 逐像素连续取样（最细腻，无级）
+    private int stripSteps = 16;
+
+    // 取景框宽度（像素），即每一档显示的贴图宽度
+    private int stripFrameWidthPx = 32;
+
+    // 取景框高度（像素）
+    private int stripFrameHeightPx = 32;
+
+    // Billboard俯仰角范围（度）：|pitch| <= 此值时完全billboard（面向摄像机）
+    private float billboardPitchFullRangeDeg = 60f;
+
+    // Billboard俯仰角锁定阈值（度）：|pitch| >= 此值时完全锁定竖直朝向，不再billboard
+    // fullRangeDeg与此值之间做平滑插值过渡
+    private float billboardPitchLockDeg = 80f;
+
+    // ==================== 旋转条状贴图专用变换数据（单一值，不按方向分槎） ====================
+    // 旋转条状贴图部件转身时不切换方向key，所以宽高/偏移/旋转/优先级只需要一份数据，
+    // 不能像6方向系统那样按currentDirection存成Map——否则会出现"同一个部件在不同视角
+    // 显示不同宽高"的错乱。这些字段只在rotationStripEnabled=true时被读写。
+
+    private float stripWidth = 1.0f;
+    private float stripHeight = 1.0f;
+    private final Vector3f stripOffset = new Vector3f(0f, 0f, 0f);
+    private float stripRotationX = 0f;
+    private float stripRotationY = 0f;
+    private float stripRotationZ = 0f;
+    private int stripPriority = 0;
+
     // ==================== 自由骨骼系统 ====================
 
     // 骨骼类型（连接骨骼 or 自由骨骼）
@@ -496,6 +535,116 @@ public class Bone {
      */
     public void setMultiDirectionTextureEnabled(boolean enabled) {
         this.multiDirectionTextureEnabled = enabled;
+    }
+
+    // ==================== 旋转条状贴图系统 Getter & Setter ====================
+
+    public boolean isRotationStripEnabled() {
+        return rotationStripEnabled;
+    }
+
+    public void setRotationStripEnabled(boolean enabled) {
+        this.rotationStripEnabled = enabled;
+    }
+
+    public String getStripTexturePath() {
+        return stripTexturePath;
+    }
+
+    public void setStripTexturePath(String stripTexturePath) {
+        this.stripTexturePath = stripTexturePath;
+    }
+
+    public int getStripSteps() {
+        return stripSteps;
+    }
+
+    public void setStripSteps(int stripSteps) {
+        this.stripSteps = Math.max(0, stripSteps);
+    }
+
+    public int getStripFrameWidthPx() {
+        return stripFrameWidthPx;
+    }
+
+    public void setStripFrameWidthPx(int stripFrameWidthPx) {
+        this.stripFrameWidthPx = Math.max(1, stripFrameWidthPx);
+    }
+
+    public int getStripFrameHeightPx() {
+        return stripFrameHeightPx;
+    }
+
+    public void setStripFrameHeightPx(int stripFrameHeightPx) {
+        this.stripFrameHeightPx = Math.max(1, stripFrameHeightPx);
+    }
+
+    public float getBillboardPitchFullRangeDeg() {
+        return billboardPitchFullRangeDeg;
+    }
+
+    public void setBillboardPitchFullRangeDeg(float degrees) {
+        this.billboardPitchFullRangeDeg = degrees;
+    }
+
+    public float getBillboardPitchLockDeg() {
+        return billboardPitchLockDeg;
+    }
+
+    public void setBillboardPitchLockDeg(float degrees) {
+        this.billboardPitchLockDeg = degrees;
+    }
+
+    // ==================== 旋转条状贴图专用变换数据 Getter & Setter ====================
+
+    public float getStripWidth() {
+        return stripWidth;
+    }
+
+    public void setStripWidth(float stripWidth) {
+        this.stripWidth = stripWidth;
+    }
+
+    public float getStripHeight() {
+        return stripHeight;
+    }
+
+    public void setStripHeight(float stripHeight) {
+        this.stripHeight = stripHeight;
+    }
+
+    public Vector3f getStripOffset() {
+        return stripOffset.clone();
+    }
+
+    public void setStripOffset(float offsetX, float offsetY, float offsetZ) {
+        this.stripOffset.set(offsetX, offsetY, offsetZ);
+    }
+
+    public float getStripRotationX() {
+        return stripRotationX;
+    }
+
+    public float getStripRotationY() {
+        return stripRotationY;
+    }
+
+    public float getStripRotationZ() {
+        return stripRotationZ;
+    }
+
+    public void setStripRotation(float rotationX, float rotationY, float rotationZ) {
+        this.stripRotationX = rotationX;
+        this.stripRotationY = rotationY;
+        this.stripRotationZ = rotationZ;
+    }
+
+    public int getStripPriority() {
+        return stripPriority;
+    }
+
+    public void setStripPriority(int stripPriority) {
+        this.stripPriority = stripPriority;
     }
 
     /**

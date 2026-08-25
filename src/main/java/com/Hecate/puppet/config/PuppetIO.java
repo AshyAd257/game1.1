@@ -11,6 +11,7 @@ import com.Hecate.puppet.core.PuppetRenderer;
 import com.Hecate.puppet.core.PuppetPartRenderer;
 import com.Hecate.puppet.animation.Keyframe;
 import com.jme3.math.ColorRGBA;
+import com.jme3.math.Vector3f;
 
 import java.io.*;
 import java.util.HashMap;
@@ -149,6 +150,26 @@ public class PuppetIO {
 
                 // 保存Billboard启用状态（新增 - 每个部件独立控制2D/3D模式）
                 partConfig.setBillboardEnabled(bone.isBillboardEnabled());
+
+                // 保存旋转条状贴图配置（新增）
+                partConfig.setRotationStripEnabled(bone.isRotationStripEnabled());
+                partConfig.setStripTexturePath(bone.getStripTexturePath());
+                partConfig.setStripSteps(bone.getStripSteps());
+                partConfig.setStripFrameWidthPx(bone.getStripFrameWidthPx());
+                partConfig.setStripFrameHeightPx(bone.getStripFrameHeightPx());
+
+                // 保存Billboard俯仰角平滑过渡阈值（新增）
+                partConfig.setBillboardPitchFullRangeDeg(bone.getBillboardPitchFullRangeDeg());
+                partConfig.setBillboardPitchLockDeg(bone.getBillboardPitchLockDeg());
+
+                // 保存旋转条状贴图专用变换数据（新增 - 单一值，不按方向分槎）
+                partConfig.setStripWidth(bone.getStripWidth());
+                partConfig.setStripHeight(bone.getStripHeight());
+                partConfig.setStripOffset(new Vec3Config(bone.getStripOffset()));
+                partConfig.setStripRotationX(bone.getStripRotationX());
+                partConfig.setStripRotationY(bone.getStripRotationY());
+                partConfig.setStripRotationZ(bone.getStripRotationZ());
+                partConfig.setStripPriority(bone.getStripPriority());
 
                 // TODO: 添加调试颜色支持
 
@@ -429,6 +450,33 @@ public class PuppetIO {
 
                 // 设置Billboard启用状态（新增 - 每个部件独立控制2D/3D模式）
                 bone.setBillboardEnabled(partConfig.isBillboardEnabled());
+
+                // 设置旋转条状贴图配置（新增）
+                bone.setRotationStripEnabled(partConfig.isRotationStripEnabled());
+                if (partConfig.getStripTexturePath() != null && !partConfig.getStripTexturePath().isEmpty()) {
+                    bone.setStripTexturePath(convertTexturePath(partConfig.getStripTexturePath()));
+                }
+                bone.setStripSteps(partConfig.getStripSteps());
+                bone.setStripFrameWidthPx(partConfig.getStripFrameWidthPx());
+                bone.setStripFrameHeightPx(partConfig.getStripFrameHeightPx());
+
+                // 设置Billboard俯仰角平滑过渡阈值（新增）
+                bone.setBillboardPitchFullRangeDeg(partConfig.getBillboardPitchFullRangeDeg());
+                bone.setBillboardPitchLockDeg(partConfig.getBillboardPitchLockDeg());
+
+                // 设置旋转条状贴图专用变换数据（新增 - 单一值，不按方向分槎）
+                bone.setStripWidth(partConfig.getStripWidth());
+                bone.setStripHeight(partConfig.getStripHeight());
+                if (partConfig.getStripOffset() != null) {
+                    Vector3f so = partConfig.getStripOffset().toVector3f();
+                    bone.setStripOffset(so.x, so.y, so.z);
+                }
+                bone.setStripRotation(
+                    partConfig.getStripRotationX(),
+                    partConfig.getStripRotationY(),
+                    partConfig.getStripRotationZ()
+                );
+                bone.setStripPriority(partConfig.getStripPriority());
             }
 
             // 加载骨骼分组ID（新增）
@@ -705,6 +753,33 @@ public class PuppetIO {
 
                 // 设置Billboard启用状态（新增 - 每个部件独立控制2D/3D模式）
                 bone.setBillboardEnabled(partConfig.isBillboardEnabled());
+
+                // 设置旋转条状贴图配置（新增）
+                bone.setRotationStripEnabled(partConfig.isRotationStripEnabled());
+                if (partConfig.getStripTexturePath() != null && !partConfig.getStripTexturePath().isEmpty()) {
+                    bone.setStripTexturePath(convertTexturePath(partConfig.getStripTexturePath()));
+                }
+                bone.setStripSteps(partConfig.getStripSteps());
+                bone.setStripFrameWidthPx(partConfig.getStripFrameWidthPx());
+                bone.setStripFrameHeightPx(partConfig.getStripFrameHeightPx());
+
+                // 设置Billboard俯仰角平滑过渡阈值（新增）
+                bone.setBillboardPitchFullRangeDeg(partConfig.getBillboardPitchFullRangeDeg());
+                bone.setBillboardPitchLockDeg(partConfig.getBillboardPitchLockDeg());
+
+                // 设置旋转条状贴图专用变换数据（新增 - 单一值，不按方向分槎）
+                bone.setStripWidth(partConfig.getStripWidth());
+                bone.setStripHeight(partConfig.getStripHeight());
+                if (partConfig.getStripOffset() != null) {
+                    Vector3f so = partConfig.getStripOffset().toVector3f();
+                    bone.setStripOffset(so.x, so.y, so.z);
+                }
+                bone.setStripRotation(
+                    partConfig.getStripRotationX(),
+                    partConfig.getStripRotationY(),
+                    partConfig.getStripRotationZ()
+                );
+                bone.setStripPriority(partConfig.getStripPriority());
             }
 
             boneMap.put(bone.getName(), bone);
@@ -897,6 +972,33 @@ public class PuppetIO {
 
                 // 设置Billboard启用状态
                 bone.setBillboardEnabled(partConfig.isBillboardEnabled());
+
+                // 设置旋转条状贴图配置（新增）
+                bone.setRotationStripEnabled(partConfig.isRotationStripEnabled());
+                if (partConfig.getStripTexturePath() != null && !partConfig.getStripTexturePath().isEmpty()) {
+                    bone.setStripTexturePath(convertTexturePath(partConfig.getStripTexturePath()));
+                }
+                bone.setStripSteps(partConfig.getStripSteps());
+                bone.setStripFrameWidthPx(partConfig.getStripFrameWidthPx());
+                bone.setStripFrameHeightPx(partConfig.getStripFrameHeightPx());
+
+                // 设置Billboard俯仰角平滑过渡阈值（新增）
+                bone.setBillboardPitchFullRangeDeg(partConfig.getBillboardPitchFullRangeDeg());
+                bone.setBillboardPitchLockDeg(partConfig.getBillboardPitchLockDeg());
+
+                // 设置旋转条状贴图专用变换数据（新增 - 单一值，不按方向分槎）
+                bone.setStripWidth(partConfig.getStripWidth());
+                bone.setStripHeight(partConfig.getStripHeight());
+                if (partConfig.getStripOffset() != null) {
+                    Vector3f so = partConfig.getStripOffset().toVector3f();
+                    bone.setStripOffset(so.x, so.y, so.z);
+                }
+                bone.setStripRotation(
+                    partConfig.getStripRotationX(),
+                    partConfig.getStripRotationY(),
+                    partConfig.getStripRotationZ()
+                );
+                bone.setStripPriority(partConfig.getStripPriority());
             }
 
             boneMap.put(bone.getName(), bone);
@@ -1136,6 +1238,33 @@ public class PuppetIO {
 
                 // 设置Billboard启用状态
                 bone.setBillboardEnabled(partConfig.isBillboardEnabled());
+
+                // 设置旋转条状贴图配置（新增）
+                bone.setRotationStripEnabled(partConfig.isRotationStripEnabled());
+                if (partConfig.getStripTexturePath() != null && !partConfig.getStripTexturePath().isEmpty()) {
+                    bone.setStripTexturePath(convertTexturePath(partConfig.getStripTexturePath()));
+                }
+                bone.setStripSteps(partConfig.getStripSteps());
+                bone.setStripFrameWidthPx(partConfig.getStripFrameWidthPx());
+                bone.setStripFrameHeightPx(partConfig.getStripFrameHeightPx());
+
+                // 设置Billboard俯仰角平滑过渡阈值（新增）
+                bone.setBillboardPitchFullRangeDeg(partConfig.getBillboardPitchFullRangeDeg());
+                bone.setBillboardPitchLockDeg(partConfig.getBillboardPitchLockDeg());
+
+                // 设置旋转条状贴图专用变换数据（新增 - 单一值，不按方向分槎）
+                bone.setStripWidth(partConfig.getStripWidth());
+                bone.setStripHeight(partConfig.getStripHeight());
+                if (partConfig.getStripOffset() != null) {
+                    Vector3f so = partConfig.getStripOffset().toVector3f();
+                    bone.setStripOffset(so.x, so.y, so.z);
+                }
+                bone.setStripRotation(
+                    partConfig.getStripRotationX(),
+                    partConfig.getStripRotationY(),
+                    partConfig.getStripRotationZ()
+                );
+                bone.setStripPriority(partConfig.getStripPriority());
             }
 
             boneMap.put(bone.getName(), bone);

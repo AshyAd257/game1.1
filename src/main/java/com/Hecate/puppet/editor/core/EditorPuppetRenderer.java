@@ -395,6 +395,13 @@ public class EditorPuppetRenderer {
 
         // 更新所有骨骼的当前方向
         for (EditorBone bone : skeleton.getAllBones()) {
+            // 旋转条状贴图骨骼不使用6方向系统，跳过方向切换
+            // 否则width/height/offset/rotation/priority等按方向存储的属性会在相机转动时
+            // 在不同方向槎之间跳变，表现为"没有统一的一份数据，散成6份"
+            if (bone.isRotationStripEnabled()) {
+                continue;
+            }
+
             // 设置骨骼的当前方向
             bone.setCurrentDirection(newDirection.getKey());
 

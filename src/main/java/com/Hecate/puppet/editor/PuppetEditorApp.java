@@ -24,6 +24,8 @@ import com.jme3.material.RenderState;
 // import com.Hecate.puppet.PuppetTestScene; // 使用编辑器专用版本
 import com.Hecate.puppet.editor.core.EditorPuppetPartRenderer;
 import com.Hecate.puppet.editor.core.EditorBone;
+import com.Hecate.puppet.editor.core.EditorBoneGroup;
+import com.Hecate.puppet.editor.core.EditorGroupManager;
 import com.Hecate.puppet.editor.core.EditorPuppetRenderer;
 import com.Hecate.puppet.editor.core.EditorSkeleton;
 import com.Hecate.puppet.editor.animation.EditorAnimationPlayer;
@@ -145,6 +147,14 @@ public class PuppetEditorApp extends SimpleApplication {
 
     @Override
     public void simpleInitApp() {
+        // 注册每个磁盘根目录（C:\、D:\...）为FileLocator，支持加载resources目录之外
+        // 任意位置的贴图文件。convertToResourcePath()会把绝对路径转成"去掉盘符"的
+        // 相对片段（如"Users/xxx/Downloads/foo.png"），配合这里注册的盘符根定位器即可解析。
+        for (File root : File.listRoots()) {
+            String rootPath = root.getAbsolutePath().replace('\\', '/');
+            assetManager.registerLocator(rootPath, com.jme3.asset.plugins.FileLocator.class);
+        }
+
         // 设置背景颜色
         viewPort.setBackgroundColor(new ColorRGBA(0.3f, 0.3f, 0.35f, 1.0f));
 
@@ -198,6 +208,7 @@ public class PuppetEditorApp extends SimpleApplication {
                 setupButtonCallbacks();
                 setupSliderCallbacks();
                 setupPartListCallbacks();
+                setupGroupControlCallbacks();
                 setupTimelineCallbacks();
             }
 
@@ -223,6 +234,7 @@ public class PuppetEditorApp extends SimpleApplication {
         setupButtonCallbacks();
         setupSliderCallbacks();
         setupPartListCallbacks();
+        setupGroupControlCallbacks();
         setupTimelineCallbacks();
 
         editorUI.setVisible(true);
@@ -947,10 +959,15 @@ public class PuppetEditorApp extends SimpleApplication {
                         if (!clickedOnUI && editorUI != null && editorUI.getPartListPanel() != null) {
                             // 先检查标题栏点击（用于拖动）
                             clickedOnUI = editorUI.getPartListPanel().handleTitleBarClick(mouseX, mouseY);
-                            // 如果不是标题栏，再检查是否点击在部件列表项上
+                            // 如果不是标题栏，再检查是否点击在部件列表项上（含拖拽分组按下检测）
                             if (!clickedOnUI) {
-                                clickedOnUI = editorUI.getPartListPanel().handleMouseClick(mouseX, mouseY);
+                                clickedOnUI = editorUI.getPartListPanel().handleMousePress(mouseX, mouseY);
                             }
+                        }
+
+                        // 检查是否点击在骨骼分组控制面板上
+                        if (!clickedOnUI && editorUI != null && editorUI.getGroupControlPanel() != null) {
+                            clickedOnUI = editorUI.getGroupControlPanel().handleMouseClick(mouseX, mouseY);
                         }
 
                         // 如果没有点击UI，检查是否点击在部件上
@@ -1076,6 +1093,17 @@ public class PuppetEditorApp extends SimpleApplication {
                 if (editorUI != null && editorUI.getTimelinePanel() != null) {
                     if (editorUI.getTimelinePanel().handleMouseScroll(mouseX, mouseY, scrollAmount)) {
                         return; // Timeline处理了滚动，不处理其他缩放
+                    }
+                }
+
+                // 检查旋转条选区面板是否可见并处理滚轮缩放（整数倍缩放）
+                if (editorUI != null && editorUI.getSliderColumnPanel() != null &&
+                    editorUI.getSliderColumnPanel().getRotationStripSelectorPanel() != null &&
+                    editorUI.getSliderColumnPanel().getRotationStripSelectorPanel().isVisible()) {
+
+                    float stripScrollAmount = name.equals("CameraZoomUp") ? -1.0f : 1.0f;
+                    if (editorUI.getSliderColumnPanel().getRotationStripSelectorPanel().handleMouseScroll(mouseX, mouseY, stripScrollAmount)) {
+                        return; // 旋转条选区面板处理了滚动，不处理相机缩放
                     }
                 }
 
@@ -1793,6 +1821,28 @@ public class PuppetEditorApp extends SimpleApplication {
                 }
 
                 @Override
+                public void onRotationStripToggle(boolean enabled) {
+                    // 切换当前选中部件的旋转条状贴图模式（与6方向系统互斥）
+                    if (selectedBone != null) {
+                        selectedBone.setRotationStripEnabled(enabled);
+
+                        // 刷新贴图显示
+                        if (puppetTestScene != null && puppetTestScene.getPuppetRenderer() != null) {
+                            EditorPuppetPartRenderer partRenderer = puppetTestScene.getPuppetRenderer()
+                                .getPartRenderer(selectedBone.getName());
+                            if (partRenderer != null) {
+                                partRenderer.updateTextureFromBone();
+                            }
+                        }
+                    }
+                }
+
+                @Override
+                public void onLoadStripTexture() {
+                    loadStripTexture();
+                }
+
+                @Override
                 public void onPlayPauseToggle(boolean playing) {
                     // 播放/暂停动画
                     if (playing) {
@@ -1898,6 +1948,11 @@ public class PuppetEditorApp extends SimpleApplication {
                 @Override
                 public void onAddPart() {
                     addPart();
+                }
+
+                @Override
+                public void onAddPrismPart() {
+                    addPrismPart();
                 }
             });
         }
@@ -2060,6 +2115,14 @@ public class PuppetEditorApp extends SimpleApplication {
                         //                  ") Scale: (" + uvScaleX + ", " + uvScaleY + ")");
                     }
                 }
+
+                @Override
+                public void onRotationStripSelectionChanged(int pixelX, int pixelY, int pixelWidth, int pixelHeight) {
+                    if (selectedBone != null) {
+                        selectedBone.setStripFrameWidthPx(pixelWidth);
+                        selectedBone.setStripFrameHeightPx(pixelHeight);
+                    }
+                }
             });
         }
     }
@@ -2108,7 +2171,74 @@ public class PuppetEditorApp extends SimpleApplication {
                     // 调用renamePart方法来正确处理重命名（包括清理旧渲染器）
                     renamePart(bone, newName);
                 }
+
+                @Override
+                public void onGroupSelected(String groupId) {
+                    // 拖拽成组/点击组标题行时，同步选中状态到GroupControlPanel，
+                    // 这样用户可以立即在GroupControlPanel里用XYZ按钮整体移动这个组
+                    if (editorUI != null && editorUI.getGroupControlPanel() != null) {
+                        editorUI.getGroupControlPanel().setSelectedGroup(groupId);
+                    }
+                }
             });
+        }
+    }
+
+    /**
+     * 设置骨骼分组控制面板回调
+     * 分组功能之前完全没有接入编辑器（GroupControlPanel存在但从未被初始化/接收事件），
+     * 这里补上：设置GroupManager引用，并在分组操作后刷新PartListPanel显示
+     */
+    private void setupGroupControlCallbacks() {
+        if (editorUI == null || editorUI.getGroupControlPanel() == null) {
+            return;
+        }
+
+        editorUI.getGroupControlPanel().setActionListener(new GroupControlPanel.GroupActionListener() {
+            @Override
+            public void onGroupCreated(com.Hecate.puppet.editor.core.EditorBoneGroup group) {
+                refreshPartListPanel();
+            }
+
+            @Override
+            public void onGroupDeleted(String groupId) {
+                refreshPartListPanel();
+            }
+
+            @Override
+            public void onBoneAddedToGroup(EditorBone bone, com.Hecate.puppet.editor.core.EditorBoneGroup group) {
+                refreshPartListPanel();
+            }
+
+            @Override
+            public void onBoneRemovedFromGroup(EditorBone bone, com.Hecate.puppet.editor.core.EditorBoneGroup group) {
+                refreshPartListPanel();
+            }
+
+            @Override
+            public void onGroupRotated(com.Hecate.puppet.editor.core.EditorBoneGroup group, int degrees) {
+                // 旋转会改变部件贴图/朝向，重新收集骨骼数据供UI同步
+                if (editorUI != null) {
+                    editorUI.updateInspector();
+                }
+            }
+
+            @Override
+            public void onGroupMoved(com.Hecate.puppet.editor.core.EditorBoneGroup group, float dx, float dy, float dz) {
+                // 移动组内所有成员的位置后，同步更新Inspector里显示的XYZ滑条（如果当前选中的骨骼恰好是组成员）
+                if (editorUI != null) {
+                    editorUI.updateInspector();
+                }
+            }
+        });
+    }
+
+    /**
+     * 刷新部件列表面板（分组结构发生变化后调用，保证白色分组边框和折叠状态及时更新）
+     */
+    private void refreshPartListPanel() {
+        if (editorUI != null && editorUI.getPartListPanel() != null) {
+            editorUI.getPartListPanel().refreshPartList();
         }
     }
 
@@ -2999,10 +3129,84 @@ public class PuppetEditorApp extends SimpleApplication {
     }
 
     /**
+     * 加载旋转条状贴图到当前选中的部件（伪3D棱柱效果）
+     * 与loadTexture()不同：贴图路径存到bone.stripTexturePath，而不是方向贴图map
+     */
+    private void loadStripTexture() {
+        if (selectedBoneIndex < 0 || selectedBoneIndex >= allBones.length) {
+            return;
+        }
+
+        EditorBone selectedBone = allBones[selectedBoneIndex];
+        final EditorPuppetPartRenderer partRenderer = puppetTestScene.getPuppetRenderer()
+            .getPartRenderer(selectedBone.getName());
+
+        if (partRenderer == null) {
+            return;
+        }
+
+        new Thread(() -> {
+            JFrame parentFrame = createTopMostFrame();
+
+            JFileChooser fileChooser = new JFileChooser();
+            fileChooser.setDialogTitle("选择旋转条状贴图文件");
+            fileChooser.setFileFilter(new FileNameExtensionFilter(
+                "Image Files (*.png, *.jpg, *.jpeg)", "png", "jpg", "jpeg"));
+
+            File defaultDir = new File("Textures");
+            if (!defaultDir.exists()) {
+                defaultDir = new File("src/main/resources/Textures");
+            }
+            if (defaultDir.exists()) {
+                fileChooser.setCurrentDirectory(defaultDir);
+            }
+
+            int result = fileChooser.showOpenDialog(parentFrame);
+            parentFrame.dispose();
+
+            if (result == JFileChooser.APPROVE_OPTION) {
+                File file = fileChooser.getSelectedFile();
+                String absolutePath = file.getAbsolutePath();
+                String texturePath = convertToResourcePath(absolutePath);
+
+                final String finalPath = texturePath;
+                enqueue(() -> {
+                    selectedBone.setStripTexturePath(finalPath);
+                    // 加载条状贴图后自动开启旋转条状贴图模式，否则贴图会被6方向系统忽略而不显示
+                    selectedBone.setRotationStripEnabled(true);
+                    partRenderer.updateTextureFromBone();
+
+                    // 同步左侧"旋转条:开/关"按钮的显示状态
+                    if (editorUI != null && editorUI.getButtonColumnPanel() != null) {
+                        editorUI.getButtonColumnPanel().updateRotationStripButton(true);
+                    }
+
+                    // 打开选区框面板并自动加载新贴图，方便直接框选
+                    if (editorUI != null && editorUI.getSliderColumnPanel() != null &&
+                        editorUI.getSliderColumnPanel().getRotationStripSelectorPanel() != null) {
+                        RotationStripSelectorPanel panel = editorUI.getSliderColumnPanel().getRotationStripSelectorPanel();
+                        panel.setTexture(partRenderer.getTexture());
+                        panel.setSelection(
+                            0, 0,
+                            selectedBone.getStripFrameWidthPx(),
+                            selectedBone.getStripFrameHeightPx()
+                        );
+                        panel.setLivePreviewTarget(partRenderer);
+                        panel.show();
+                    }
+
+                    return null;
+                });
+            }
+        }).start();
+    }
+
+    /**
      * 尝试将绝对路径转换为 jME3 资源路径
      * 支持两种路径格式：
      * 1. resources目录下的相对路径（如 "Textures/blocks/grass.png"）
-     * 2. 任意位置的绝对路径（使用 file:/// 协议）
+     * 2. 任意位置的绝对路径（去掉盘符/根目录前缀，配合simpleInitApp()里为每个磁盘根注册的
+     *    FileLocator解析，例如"C:/Users/xxx/foo.png" -> "Users/xxx/foo.png"）
      */
     private String convertToResourcePath(String absolutePath) {
         // 将路径标准化（统一使用正斜杠）
@@ -3016,23 +3220,25 @@ public class PuppetEditorApp extends SimpleApplication {
             return resourcePath;
         }
 
-        // 如果找不到 resources 目录，使用 file:/// 协议支持任意路径
-        // 确保路径以盘符开头（Windows）或根目录开头（Unix）
-        String fileProtocolPath;
-        if (normalized.matches("^[A-Za-z]:.*")) {
-            // Windows路径，已经包含盘符
-            fileProtocolPath = "file:///" + normalized;
+        // 找不到 resources 目录：去掉盘符/根目录前缀，得到相对于磁盘根的路径
+        // 配合simpleInitApp()中为每个盘符（Windows）或"/"（Unix）注册的FileLocator解析
+        if (normalized.matches("^[A-Za-z]:/.*")) {
+            // Windows路径："C:/Users/xxx/foo.png" -> "Users/xxx/foo.png"
+            return normalized.substring(3);
         } else if (normalized.startsWith("/")) {
-            // Unix绝对路径
-            fileProtocolPath = "file://" + normalized;
+            // Unix绝对路径："/home/xxx/foo.png" -> "home/xxx/foo.png"
+            return normalized.substring(1);
         } else {
-            // 相对路径，转换为绝对路径
+            // 相对路径（没有盘符前缀），转换为绝对路径后再去掉盘符
             java.io.File file = new java.io.File(absolutePath);
             String absPath = file.getAbsolutePath().replace('\\', '/');
-            fileProtocolPath = "file:///" + absPath;
+            if (absPath.matches("^[A-Za-z]:/.*")) {
+                return absPath.substring(3);
+            } else if (absPath.startsWith("/")) {
+                return absPath.substring(1);
+            }
+            return absPath;
         }
-
-        return fileProtocolPath;
     }
 
     /**
@@ -3247,6 +3453,161 @@ public class PuppetEditorApp extends SimpleApplication {
                 break;
             }
         }
+    }
+
+    /**
+     * 添加新的棱柱（由多个独立普通部件组成，打包成一个组/包）
+     * 弹窗让用户选择棱柱边数（10/14）和长宽高，生成N个侧面+1个顶+1个底，
+     * 共N+2个独立的普通QUAD部件（billboard关闭，固定朝向，不跟随镜头旋转），
+     * 每个面都可以单独选中、贴图、调UV，然后把它们打包进一个组（复用拖拽分组功能）。
+     * 整体移动只能通过GroupControlPanel的批量XYZ按钮。
+     */
+    private void addPrismPart() {
+        if (puppetTestScene == null || puppetTestScene.getTestSkeleton() == null) {
+            return;
+        }
+
+        AddPrismDialog dialog = new AddPrismDialog(null);
+        dialog.setVisible(true);
+
+        if (!dialog.isConfirmed()) {
+            return;
+        }
+
+        int sideCount = dialog.getSideCount();
+        float prismW = dialog.getPrismWidth();
+        float prismD = dialog.getPrismDepth();
+        float prismH = dialog.getPrismHeight();
+
+        EditorSkeleton skeleton = puppetTestScene.getTestSkeleton();
+        EditorPuppetRenderer renderer = puppetTestScene.getPuppetRenderer();
+        String namePrefix = "Prism" + sideCount + "_" + (skeleton.getBoneCount() + 1) + "_";
+
+        // parentBone为null时表示骨架为空，第一个生成的面会被设为根骨骼，
+        // 之后所有面都挂在这第一个面下面（避免每个面都想当根骨骼互相覆盖）
+        EditorBone parentBone = skeleton.getRootBone();
+
+        java.util.List<EditorBone> faceBones = new java.util.ArrayList<>();
+
+        // 生成N个侧面：每个面是一个标准QUAD部件，围绕中心摆成正N边形棱柱的侧壁
+        // 侧面宽度按弦长近似（正N边形边长），高度=用户输入的高
+        float halfW = prismW / 2f;
+        float halfD = prismD / 2f;
+        double angleStep = Math.PI * 2.0 / sideCount;
+        for (int i = 0; i < sideCount; i++) {
+            double angle0 = i * angleStep;
+            double angle1 = (i + 1) * angleStep;
+            float x0 = (float) (halfW * Math.sin(angle0));
+            float z0 = (float) (halfD * Math.cos(angle0));
+            float x1 = (float) (halfW * Math.sin(angle1));
+            float z1 = (float) (halfD * Math.cos(angle1));
+
+            float centerX = (x0 + x1) / 2f;
+            float centerZ = (z0 + z1) / 2f;
+            float sideWidth = (float) Math.sqrt((x1 - x0) * (x1 - x0) + (z1 - z0) * (z1 - z0));
+
+            // 面朝外的水平旋转角度（Y轴），使贴图正对法线方向
+            double midAngle = (angle0 + angle1) / 2.0;
+            float faceYawDegrees = (float) Math.toDegrees(midAngle);
+
+            EditorBone faceBone = createPrismFaceBone(namePrefix + "side" + i, skeleton, parentBone,
+                centerX, 0f, centerZ, faceYawDegrees, sideWidth, prismH);
+            faceBones.add(faceBone);
+
+            // 骨架原本为空时，第一个面成为根骨骼，后续面挂在它下面
+            if (parentBone == null) {
+                parentBone = faceBone;
+            }
+        }
+
+        // 顶面和底面：也是标准QUAD部件，水平放置（绕X轴转90度），billboard关闭，不受镜头影响
+        float capSize = Math.max(prismW, prismD);
+        EditorBone topBone = createPrismFaceBone(namePrefix + "top", skeleton, parentBone,
+            0f, prismH / 2f, 0f, 0f, capSize, capSize);
+        topBone.setLocalRotation(new com.jme3.math.Quaternion().fromAngles(
+            (float) Math.toRadians(90), 0f, 0f));
+        topBone.setRestRotation(topBone.getLocalRotation().clone());
+        faceBones.add(topBone);
+
+        EditorBone bottomBone = createPrismFaceBone(namePrefix + "bottom", skeleton, parentBone,
+            0f, -prismH / 2f, 0f, 0f, capSize, capSize);
+        bottomBone.setLocalRotation(new com.jme3.math.Quaternion().fromAngles(
+            (float) Math.toRadians(-90), 0f, 0f));
+        bottomBone.setRestRotation(bottomBone.getLocalRotation().clone());
+        faceBones.add(bottomBone);
+
+        // 为每个面创建部件渲染器
+        for (EditorBone faceBone : faceBones) {
+            renderer.addPartRenderer(faceBone, faceBone == topBone || faceBone == bottomBone ? capSize : 1.0f,
+                faceBone == topBone || faceBone == bottomBone ? capSize : prismH);
+        }
+
+        // 打包成一个组（复用拖拽分组/包功能）：折叠后只占一行，展开能看到所有面
+        EditorGroupManager groupManager = skeleton.getGroupManager();
+        String groupName = "Prism" + sideCount + "_" + (skeleton.getBoneCount());
+        EditorBoneGroup group = groupManager.createGroup(groupName);
+        if (group != null) {
+            String groupId = groupManager.getGroupId(group);
+            groupManager.addBonesToGroup(groupId, faceBones);
+        }
+
+        // 重新收集所有骨骼
+        collectAllBones();
+
+        // 刷新骨骼连线显示
+        if (renderer != null) {
+            renderer.refreshBoneConnections();
+        }
+
+        // 刷新部件列表面板（让新组的白色边框和折叠状态显示出来）
+        if (editorUI != null && editorUI.getPartListPanel() != null) {
+            editorUI.getPartListPanel().refreshPartList();
+        }
+    }
+
+    /**
+     * 创建棱柱的一个面（侧面/顶/底），作为一个标准QUAD部件
+     * billboard关闭，使其固定朝向骨骼自身旋转，不跟随镜头转动
+     */
+    private EditorBone createPrismFaceBone(String name, EditorSkeleton skeleton, EditorBone parentBone,
+                                            float posX, float posY, float posZ, float yawDegrees,
+                                            float width, float height) {
+        // 确保名称不冲突
+        String finalName = name;
+        int suffix = 1;
+        while (skeleton.findBone(finalName) != null) {
+            suffix++;
+            finalName = name + "_" + suffix;
+        }
+
+        EditorBone bone = new EditorBone(finalName);
+
+        // 关闭billboard：固定朝向，不跟随镜头旋转（棱柱面要保持立体结构）
+        bone.setBillboardEnabled(false);
+
+        String frontKey = EditorBone.Direction.FRONT.getKey();
+        bone.setDirectionUV(frontKey, 0f, 0f, 1f, 1f);
+        bone.setDirectionWidth(frontKey, width);
+        bone.setDirectionHeight(frontKey, height);
+        bone.setDirectionPriority(frontKey, 0);
+        bone.setDirectionOffset(frontKey, 0f, 0f, 0f);
+        bone.setDirectionRotation(frontKey, 0f, 0f, 0f);
+
+        Quaternion yawRotation = new Quaternion().fromAngles(0f, (float) Math.toRadians(yawDegrees), 0f);
+
+        bone.setRestPosition(new Vector3f(posX, posY, posZ));
+        bone.setRestRotation(yawRotation);
+        bone.setRestScale(new Vector3f(1, 1, 1));
+        bone.resetToRestPose();
+
+        if (parentBone == null) {
+            skeleton.setRootBone(bone);
+        } else {
+            parentBone.addChild(bone);
+        }
+        skeleton.addBone(bone);
+
+        return bone;
     }
 
     /**

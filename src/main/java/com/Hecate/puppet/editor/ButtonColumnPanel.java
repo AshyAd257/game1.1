@@ -24,6 +24,7 @@ public class ButtonColumnPanel {
 
     // 所有按钮
     private Button addPartButton;
+    private Button addPrismButton;  // 新增：添加棱柱（10/14个独立面组成，打包成一个组）
     private Button hideModeButton;
     private Button showAllButton;
     private Button loadPuppetButton;
@@ -52,6 +53,8 @@ public class ButtonColumnPanel {
     private Button togglePreviewButton;
     private Button toggleBillboardButton;  // 新增：Billboard开关按钮
     private Button textureModeButton;  // 新增：纹理模式按钮（单贴图/多贴图）
+    private Button rotationStripToggleButton;  // 新增：旋转条状贴图模式开关按钮
+    private Button loadStripTextureButton;  // 新增：加载旋转条状贴图按钮
 
     // 播放控制按钮
     private Button playPauseButton;
@@ -71,11 +74,13 @@ public class ButtonColumnPanel {
     private boolean isPlaying = false;
     private boolean billboardEnabled = true;  // 新增：当前选中部件的billboard状态
     private boolean multiTextureEnabled = false;  // 新增：多向纹理模式状态
+    private boolean rotationStripEnabled = false;  // 新增：旋转条状贴图模式状态
     private boolean swingEnabled = false;  // 新增：摇摆开关状态
 
     // 回调接口
     public interface ButtonCallbacks {
         void onAddPart();
+        void onAddPrismPart();  // 新增：添加棱柱部件（弹窗选择类型和尺寸）
         void onHideModeToggle(boolean enabled);
         void onShowAllParts();
         void onLoadPuppet();
@@ -103,6 +108,8 @@ public class ButtonColumnPanel {
         void onPreviewToggle(boolean enabled);
         void onBillboardToggle(boolean enabled);  // 新增：Billboard开关回调
         void onTextureModeToggle(boolean multiTextureEnabled);  // 新增：纹理模式切换回调
+        void onRotationStripToggle(boolean enabled);  // 新增：旋转条状贴图模式切换回调
+        void onLoadStripTexture();  // 新增：加载旋转条状贴图回调
         void onPlayPauseToggle(boolean playing);
         void onReset();
         void onDirectionChanged(String direction);
@@ -220,6 +227,11 @@ public class ButtonColumnPanel {
         // Import Animation
         importAnimButton = createButtonWithChinese("导入动画", "Import Anim", leftColumnX, leftY - buttonHeight, buttonWidth, buttonHeight,
             () -> { if (callbacks != null) callbacks.onImportAnimation(); });
+        leftY -= (buttonHeight + buttonSpacing);
+
+        // Add Prism (新增：添加棱柱部件，点击后弹窗选择类型和尺寸)
+        addPrismButton = createButtonWithChinese("添加棱柱", "Add Prism", leftColumnX, leftY - buttonHeight, buttonWidth, buttonHeight,
+            () -> { if (callbacks != null) callbacks.onAddPrismPart(); });
         leftY -= (buttonHeight + buttonSpacing);
 
         // Load Texture
@@ -392,6 +404,24 @@ public class ButtonColumnPanel {
             });
         rightY -= (buttonHeight + buttonSpacing);
 
+        // Rotation Strip Mode（新增：旋转条状贴图模式开关，与多方向系统互斥）
+        rotationStripToggleButton = createButtonWithChinese("旋转条:关", "Strip: OFF", rightColumnX, rightY - buttonHeight, buttonWidth, buttonHeight,
+            () -> {
+                rotationStripEnabled = !rotationStripEnabled;
+                if (ttfLoader != null) {
+                    rotationStripToggleButton.setText(rotationStripEnabled ? "旋转条:开" : "旋转条:关");
+                } else {
+                    rotationStripToggleButton.setText(rotationStripEnabled ? "Strip: ON" : "Strip: OFF");
+                }
+                if (callbacks != null) callbacks.onRotationStripToggle(rotationStripEnabled);
+            });
+        rightY -= (buttonHeight + buttonSpacing);
+
+        // Load Strip Texture（新增：加载旋转条状贴图文件）
+        loadStripTextureButton = createButtonWithChinese("加载条状贴图", "Load Strip Tex", rightColumnX, rightY - buttonHeight, buttonWidth, buttonHeight,
+            () -> { if (callbacks != null) callbacks.onLoadStripTexture(); });
+        rightY -= (buttonHeight + buttonSpacing);
+
         // Gravity Direction（新增：重力方向切换按钮）
         gravityDirectionButton = createButtonWithChinese("重力:下", "Gravity: Down", rightColumnX, rightY - buttonHeight, buttonWidth, buttonHeight,
             () -> {
@@ -464,6 +494,7 @@ public class ButtonColumnPanel {
 
     public void update(float tpf) {
         addPartButton.update(tpf);
+        addPrismButton.update(tpf);
         hideModeButton.update(tpf);
         showAllButton.update(tpf);
         loadPuppetButton.update(tpf);
@@ -495,6 +526,8 @@ public class ButtonColumnPanel {
         exportAnimButton.update(tpf);
         importAnimButton.update(tpf);
         textureModeButton.update(tpf);  // 新增
+        rotationStripToggleButton.update(tpf);  // 新增
+        loadStripTextureButton.update(tpf);  // 新增
         cameraFollowButton.update(tpf);  // 新增
         swingEnableButton.update(tpf);  // 新增
         swingAxisButton.update(tpf);  // 新增
@@ -502,6 +535,7 @@ public class ButtonColumnPanel {
 
     public boolean handleMouseClick(int mouseX, int mouseY) {
         if (addPartButton.handleMouseClick(mouseX, mouseY)) return true;
+        if (addPrismButton.handleMouseClick(mouseX, mouseY)) return true;
         if (hideModeButton.handleMouseClick(mouseX, mouseY)) return true;
         if (showAllButton.handleMouseClick(mouseX, mouseY)) return true;
         if (loadPuppetButton.handleMouseClick(mouseX, mouseY)) return true;
@@ -533,6 +567,8 @@ public class ButtonColumnPanel {
         if (gravityDirectionButton.handleMouseClick(mouseX, mouseY)) return true;  // 新增
         if (toggleBillboardButton.handleMouseClick(mouseX, mouseY)) return true;
         if (textureModeButton.handleMouseClick(mouseX, mouseY)) return true;  // 新增：纹理模式按钮
+        if (rotationStripToggleButton.handleMouseClick(mouseX, mouseY)) return true;  // 新增：旋转条状贴图模式按钮
+        if (loadStripTextureButton.handleMouseClick(mouseX, mouseY)) return true;  // 新增：加载条状贴图按钮
         if (cameraFollowButton.handleMouseClick(mouseX, mouseY)) return true;  // 新增：相机跟随按钮
         if (swingEnableButton.handleMouseClick(mouseX, mouseY)) return true;  // 新增：摇摆开关按钮
         if (swingAxisButton.handleMouseClick(mouseX, mouseY)) return true;  // 新增：摇摆轴按钮
@@ -602,6 +638,20 @@ public class ButtonColumnPanel {
     }
 
     /**
+     * 更新旋转条状贴图开关按钮显示状态（当切换选中部件时调用）
+     */
+    public void updateRotationStripButton(boolean enabled) {
+        this.rotationStripEnabled = enabled;
+        if (rotationStripToggleButton != null) {
+            if (ttfLoader != null) {
+                rotationStripToggleButton.setText(enabled ? "旋转条:开" : "旋转条:关");
+            } else {
+                rotationStripToggleButton.setText(enabled ? "Strip: ON" : "Strip: OFF");
+            }
+        }
+    }
+
+    /**
      * 更新重力按钮文本（当切换选中自由骨骼时调用）
      */
     public void updateGravityButtonText(String text) {
@@ -645,6 +695,9 @@ public class ButtonColumnPanel {
         // 左列按钮
         if (addPartButton != null) {
             addPartButton.setText(langMgr.getText("add_part"));
+        }
+        if (addPrismButton != null) {
+            addPrismButton.setText(ttfLoader != null ? "添加棱柱" : "Add Prism");
         }
         if (hideModeButton != null) {
             hideModeButton.setText(hideModeEnabled ? langMgr.getText("hide_on") : langMgr.getText("hide_off"));

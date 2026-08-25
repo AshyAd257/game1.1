@@ -6,8 +6,8 @@ import com.Hecate.player.PlayerController;
 import com.Hecate.player.effect.PoisonEffect;
 
 /**
- * 接触攻击 + 中毒：命中判定与 {@link ContactMeleeAttackBehavior} 完全相同，
- * 但命中时额外对玩家施加一层 {@link PoisonEffect}（DOT），而不是直接扣血。
+ * 接触攻击 + 中毒：命中判定与 {@link ContactMeleeAttackBehavior} 完全相同（玩家进入攻击
+ * 范围+冷却结束），但命中时额外对玩家施加一层 {@link PoisonEffect}（DOT），而不是直接扣血。
  *
  * <p>用于验证"怪物攻击 → 施加DOT → 固定逻辑刻驱动扣血"这条链路——本类命中时不再
  * 直接调用 {@code takeDamage}，改为把伤害转换成持续时间内的中毒效果。
@@ -32,7 +32,7 @@ public class ContactPoisonAttackBehavior implements MonsterAttackBehavior {
             return;
         }
 
-        if (!self.getBoundingBox().intersects(playerBox)) {
+        if (!self.isPlayerInAttackRange(playerBox)) {
             return;
         }
 

@@ -7,7 +7,7 @@ package com.Hecate.weapon;
 public class WeaponInputTest {
 
     public static void main(String[] args) {
-        System.out.println("========== 输入系统测试 ==========\n");
+
 
         // 测试1：AUTO模式（按住持续开火）
         testAutoMode();
@@ -21,7 +21,7 @@ public class WeaponInputTest {
         // 测试4：BURST模式（点击触发三连发）
         testBurstMode();
 
-        System.out.println("\n========== 测试完成 ==========");
+
     }
 
     /**
@@ -29,7 +29,7 @@ public class WeaponInputTest {
      * 预期：按住持续开火，受射速限制（600RPM = 每0.1秒一发）
      */
     private static void testAutoMode() {
-        System.out.println("========== 测试 AUTO 模式 ==========");
+
 
         WeaponRegistry registry = WeaponRegistry.getInstance();
         WeaponInstance smg = registry.createWeaponInstance("smg_01");

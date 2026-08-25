@@ -1709,6 +1709,16 @@ public class PlayerController implements ActionListener, AnalogListener {
         return playerBox;
     }
 
+    /**
+     * 水平方向瞬间位移玩家（不影响Y轴/速度），用于怪物碰撞箱把玩家推开。
+     * @param offset 位移量，只使用x/z分量
+     */
+    public void pushHorizontal(Vector3f offset) {
+        playerPosition.x += offset.x;
+        playerPosition.z += offset.z;
+        updatePlayerBox();
+    }
+
     public boolean isJumping() {
         return isJumping;
     }

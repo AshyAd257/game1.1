@@ -75,6 +75,10 @@ public class SliderColumnPanel {
     private EnlargedTexturePreviewPanel enlargedPreviewPanel;
     private Button openEnlargedPreviewButton;
 
+    // 旋转条状贴图选区框
+    private RotationStripSelectorPanel rotationStripSelectorPanel;
+    private Button openRotationStripButton;
+
     // 存储当前部件的尺寸（用于放大预览的宽高比）
     private float currentPartWidth = 1.0f;
     private float currentPartHeight = 1.0f;
@@ -100,6 +104,8 @@ public class SliderColumnPanel {
         void onSwingFrequencyChanged(float value);  // 新增：摇摆频率回调
         void onSwingPhaseChanged(float value);  // 新增：摇摆相位回调
         void onUVChanged(float uvOffsetX, float uvOffsetY, float uvScaleX, float uvScaleY);
+        // 旋转条状贴图：选区框（像素单位）变化回调
+        void onRotationStripSelectionChanged(int pixelX, int pixelY, int pixelWidth, int pixelHeight);
     }
     private SliderCallbacks callbacks;
 
@@ -304,6 +310,13 @@ public class SliderColumnPanel {
         int buttonYPos = currentY - 160;  // texturePreview下方10像素
         openEnlargedPreviewButton = new Button(app, font, "Open UV Editor", x + 10, buttonYPos - 30, width - 20, 30);
         openEnlargedPreviewButton.setClickListener(() -> {
+            // 旋转条状贴图模式下，"UV编辑"入口指向旋转条专用选区面板（像素单位），
+            // 而不是旧的归一化UV面板——两者数据不通，不能各开各的
+            if (currentPartRenderer != null && currentPartRenderer.getBone().isRotationStripEnabled()) {
+                openRotationStripSelector();
+                return;
+            }
+
             if (enlargedPreviewPanel != null && texturePreviewPanel.getCurrentTexture() != null) {
                 // 将当前部件渲染器传递给放大预览（用于网格配置）
                 enlargedPreviewPanel.setCurrentPart(currentPartRenderer);
@@ -324,8 +337,14 @@ public class SliderColumnPanel {
         });
         rootNode.attachChild(openEnlargedPreviewButton.getRootNode());
 
+        // 旋转条状贴图选区框按钮（在"Open UV Editor"下方，与该按钮在旋转条模式下等价）
+        int stripButtonYPos = buttonYPos - 40;
+        openRotationStripButton = new Button(app, font, "旋转条设置", x + 10, stripButtonYPos - 30, width - 20, 30);
+        openRotationStripButton.setClickListener(this::openRotationStripSelector);
+        rootNode.attachChild(openRotationStripButton.getRootNode());
+
         // 调整背景高度以覆盖所有内容（包括UV预览和按钮）
-        int contentBottomY = buttonYPos - 30;  // 按钮的底部位置
+        int contentBottomY = stripButtonYPos - 30;  // 按钮的底部位置（含旋转条按钮）
         int actualContentHeight = (y + height) - contentBottomY;  // 从顶部到按钮底部的实际高度
         if (actualContentHeight > height) {
             // 需要扩展背景 - 直接更新网格而不是重新创建
@@ -379,9 +398,27 @@ public class SliderColumnPanel {
                 //      texturePreviewPanel.getCurrentTexture().getName() : "null"));
             }
         });
+
+        // 旋转条状贴图选区框面板（初始不可见）
+        rotationStripSelectorPanel = new RotationStripSelectorPanel(app, font);
+        rootNode.attachChild(rotationStripSelectorPanel.getRootNode());
+        rotationStripSelectorPanel.hide();
+
+        rotationStripSelectorPanel.setSelectionChangeListener((pixelX, pixelY, pixelWidth, pixelHeight) -> {
+            if (callbacks != null) {
+                callbacks.onRotationStripSelectionChanged(pixelX, pixelY, pixelWidth, pixelHeight);
+            }
+        });
     }
 
     public boolean handleMouseClick(int mouseX, int mouseY) {
+        // 检查旋转条选区面板（优先级最高，因为它是全屏的）
+        if (rotationStripSelectorPanel != null && rotationStripSelectorPanel.isVisible()) {
+            if (rotationStripSelectorPanel.handleMousePress(mouseX, mouseY)) {
+                return true;
+            }
+        }
+
         // 检查放大预览面板（优先级最高，因为它是全屏的）
         if (enlargedPreviewPanel != null && enlargedPreviewPanel.isVisible()) {
             if (enlargedPreviewPanel.handleMousePress(mouseX, mouseY)) {
@@ -391,6 +428,11 @@ public class SliderColumnPanel {
 
         // 检查"Open UV Editor"按钮
         if (openEnlargedPreviewButton != null && openEnlargedPreviewButton.handleMouseClick(mouseX, mouseY)) {
+            return true;
+        }
+
+        // 检查"旋转条设置"按钮
+        if (openRotationStripButton != null && openRotationStripButton.handleMouseClick(mouseX, mouseY)) {
             return true;
         }
 
@@ -487,6 +529,12 @@ public class SliderColumnPanel {
             // 更新所有UI元素的位置
             updatePanelPosition();
         } else {
+            // 优先处理旋转条选区面板的拖动
+            if (rotationStripSelectorPanel != null && rotationStripSelectorPanel.isVisible()) {
+                rotationStripSelectorPanel.handleMouseDrag(mouseX, mouseY);
+                return;
+            }
+
             // 优先处理放大预览的拖动
             if (enlargedPreviewPanel != null && enlargedPreviewPanel.isVisible()) {
                 enlargedPreviewPanel.handleMouseDrag(mouseX, mouseY);
@@ -528,6 +576,11 @@ public class SliderColumnPanel {
         if (isResizing) {
             isResizing = false;
             resizeDirection = ResizeDirection.NONE;
+        }
+
+        // 处理旋转条选区面板释放（需要传入鼠标坐标，但这里我们不追踪，传0,0）
+        if (rotationStripSelectorPanel != null && rotationStripSelectorPanel.isVisible()) {
+            rotationStripSelectorPanel.handleMouseRelease(0, 0);
         }
 
         // 处理放大预览释放（需要传入鼠标坐标，但这里我们不追踪，传0,0）
@@ -668,6 +721,10 @@ public class SliderColumnPanel {
 
     public EnlargedTexturePreviewPanel getEnlargedPreviewPanel() {
         return enlargedPreviewPanel;
+    }
+
+    public RotationStripSelectorPanel getRotationStripSelectorPanel() {
+        return rotationStripSelectorPanel;
     }
 
     /**
@@ -952,6 +1009,25 @@ public class SliderColumnPanel {
         if (callbacks != null) {
             callbacks.onUVChanged(newUvOffsetX, newUvOffsetY, newUvScaleX, newUvScaleY);
         }
+    }
+
+    /**
+     * 打开旋转条状贴图选区面板，从当前选中部件的Bone拉取现有设置
+     */
+    private void openRotationStripSelector() {
+        if (rotationStripSelectorPanel == null || currentPartRenderer == null) {
+            return;
+        }
+        com.Hecate.puppet.editor.core.EditorBone bone = currentPartRenderer.getBone();
+        rotationStripSelectorPanel.setTexture(currentPartRenderer.getTexture());
+        rotationStripSelectorPanel.setSelection(
+            0, 0,
+            bone.getStripFrameWidthPx(),
+            bone.getStripFrameHeightPx()
+        );
+        // 实时预览要跟踪的部件（用于每帧读取骨骼世界位置计算相机夹角）
+        rotationStripSelectorPanel.setLivePreviewTarget(currentPartRenderer);
+        rotationStripSelectorPanel.show();
     }
 
     /**

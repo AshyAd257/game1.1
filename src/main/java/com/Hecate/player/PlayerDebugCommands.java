@@ -2,6 +2,7 @@ package com.Hecate.player;
 
 import com.Hecate.ui.GameConsole;
 import com.jme3.app.SimpleApplication;
+import com.jme3.math.FastMath;
 import com.jme3.math.Vector3f;
 import com.jme3.scene.Node;
 
@@ -65,6 +66,7 @@ public class PlayerDebugCommands {
         registerGun2Command();
         registerMob1Command();
         registerWave1Command();
+        registerDataCommand();
     }
 
     /**
@@ -242,6 +244,47 @@ public class PlayerDebugCommands {
             @Override
             public String getDescription() {
                 return "开始三波递进的刷怪遭遇战";
+            }
+        });
+    }
+
+    /**
+     * 注册Data命令 - 显示玩家当前所在方位（世界坐标+朝向），用于排查场景中
+     * 特定物体（如某个突兀的地形/结构）相对出生点的位置
+     */
+    private void registerDataCommand() {
+        gameConsole.registerCommand("data", new GameConsole.CommandHandler() {
+            @Override
+            public void execute(String[] args) {
+                app.enqueue(() -> {
+                    try {
+                        if (playerInfoProvider == null) {
+                            gameConsole.addHistory("错误: 玩家信息提供者未设置");
+                            return null;
+                        }
+
+                        Vector3f pos = playerInfoProvider.getPosition();
+                        float facingRad = playerInfoProvider.getFacing();
+                        float facingDeg = facingRad * FastMath.RAD_TO_DEG;
+                        while (facingDeg < 0) facingDeg += 360f;
+                        while (facingDeg >= 360f) facingDeg -= 360f;
+
+                        gameConsole.addHistory(String.format(
+                                "坐标: X=%.1f Y=%.1f Z=%.1f", pos.x, pos.y, pos.z));
+                        gameConsole.addHistory(String.format(
+                                "朝向: %.1f°", facingDeg));
+
+                    } catch (Exception e) {
+                        gameConsole.addHistory("Data命令执行失败: " + e.getMessage());
+                        e.printStackTrace();
+                    }
+                    return null;
+                });
+            }
+
+            @Override
+            public String getDescription() {
+                return "显示玩家当前坐标和朝向";
             }
         });
     }

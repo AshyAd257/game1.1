@@ -38,6 +38,12 @@ public class GroupControlPanel {
     private Button rotateRight90Button;
     private Button rotate180Button;
 
+    // 组整体XYZ位移微调按钮（用于PartListPanel拖拽分组功能）
+    private Button moveXMinusButton, moveXPlusButton;
+    private Button moveYMinusButton, moveYPlusButton;
+    private Button moveZMinusButton, moveZPlusButton;
+    private static final float MOVE_STEP = 0.5f;
+
     private TextField groupNameField;
     private BitmapText groupListText;
     private BitmapText currentGroupText;
@@ -182,12 +188,73 @@ public class GroupControlPanel {
         rotateRight90Button.setClickListener(() -> rotateGroupRight90());
         rootNode.attachChild(rotateRight90Button.getRootNode());
 
+        // 整体移动控制 - 分隔线
+        BitmapText moveLabel = new BitmapText(guiFont);
+        moveLabel.setText("整体移动 (Move All)");
+        moveLabel.setColor(ColorRGBA.White);
+        moveLabel.setLocalTranslation(x + 10, y + height - 220, 0);
+        rootNode.attachChild(moveLabel);
+
+        // X/Y/Z 三组 -/+ 按钮，一行放两个（负/正）
+        int moveButtonWidth = (width - 40) / 3;
+        int moveButtonY = y + height - 255;
+
+        if (ttfLoader != null) {
+            moveXMinusButton = new Button(app, ttfLoader, "X-", x + 10, moveButtonY, moveButtonWidth / 2 - 2, 30);
+            moveXPlusButton = new Button(app, ttfLoader, "X+", x + 10 + moveButtonWidth / 2, moveButtonY, moveButtonWidth / 2 - 2, 30);
+            moveYMinusButton = new Button(app, ttfLoader, "Y-", x + 15 + moveButtonWidth, moveButtonY, moveButtonWidth / 2 - 2, 30);
+            moveYPlusButton = new Button(app, ttfLoader, "Y+", x + 15 + moveButtonWidth + moveButtonWidth / 2, moveButtonY, moveButtonWidth / 2 - 2, 30);
+            moveZMinusButton = new Button(app, ttfLoader, "Z-", x + 20 + moveButtonWidth * 2, moveButtonY, moveButtonWidth / 2 - 2, 30);
+            moveZPlusButton = new Button(app, ttfLoader, "Z+", x + 20 + moveButtonWidth * 2 + moveButtonWidth / 2, moveButtonY, moveButtonWidth / 2 - 2, 30);
+        } else {
+            moveXMinusButton = new Button(app, guiFont, "X-", x + 10, moveButtonY, moveButtonWidth / 2 - 2, 30);
+            moveXPlusButton = new Button(app, guiFont, "X+", x + 10 + moveButtonWidth / 2, moveButtonY, moveButtonWidth / 2 - 2, 30);
+            moveYMinusButton = new Button(app, guiFont, "Y-", x + 15 + moveButtonWidth, moveButtonY, moveButtonWidth / 2 - 2, 30);
+            moveYPlusButton = new Button(app, guiFont, "Y+", x + 15 + moveButtonWidth + moveButtonWidth / 2, moveButtonY, moveButtonWidth / 2 - 2, 30);
+            moveZMinusButton = new Button(app, guiFont, "Z-", x + 20 + moveButtonWidth * 2, moveButtonY, moveButtonWidth / 2 - 2, 30);
+            moveZPlusButton = new Button(app, guiFont, "Z+", x + 20 + moveButtonWidth * 2 + moveButtonWidth / 2, moveButtonY, moveButtonWidth / 2 - 2, 30);
+        }
+        moveXMinusButton.setClickListener(() -> moveSelectedGroup(-MOVE_STEP, 0, 0));
+        moveXPlusButton.setClickListener(() -> moveSelectedGroup(MOVE_STEP, 0, 0));
+        moveYMinusButton.setClickListener(() -> moveSelectedGroup(0, -MOVE_STEP, 0));
+        moveYPlusButton.setClickListener(() -> moveSelectedGroup(0, MOVE_STEP, 0));
+        moveZMinusButton.setClickListener(() -> moveSelectedGroup(0, 0, -MOVE_STEP));
+        moveZPlusButton.setClickListener(() -> moveSelectedGroup(0, 0, MOVE_STEP));
+        rootNode.attachChild(moveXMinusButton.getRootNode());
+        rootNode.attachChild(moveXPlusButton.getRootNode());
+        rootNode.attachChild(moveYMinusButton.getRootNode());
+        rootNode.attachChild(moveYPlusButton.getRootNode());
+        rootNode.attachChild(moveZMinusButton.getRootNode());
+        rootNode.attachChild(moveZPlusButton.getRootNode());
+
         // 组列表显示
         groupListText = new BitmapText(guiFont);
         groupListText.setText("组列表:\n(暂无)");
         groupListText.setColor(ColorRGBA.LightGray);
-        groupListText.setLocalTranslation(x + 10, y + height - 200, 0);
+        groupListText.setLocalTranslation(x + 10, y + height - 285, 0);
         rootNode.attachChild(groupListText);
+    }
+
+    /**
+     * 整体移动当前选中的组（每次点击移动MOVE_STEP个单位）
+     */
+    private void moveSelectedGroup(float dx, float dy, float dz) {
+        if (groupManager == null || selectedGroupId == null) {
+            showMessage("请先选择一个组");
+            return;
+        }
+
+        EditorBoneGroup group = groupManager.getGroup(selectedGroupId);
+        if (group == null) {
+            showMessage("组不存在");
+            return;
+        }
+
+        group.translateAll(dx, dy, dz);
+
+        if (actionListener != null) {
+            actionListener.onGroupMoved(group, dx, dy, dz);
+        }
     }
 
     /**
@@ -606,6 +673,35 @@ public class GroupControlPanel {
         if (groupNameField != null) {
             groupNameField.update(tpf);
         }
+        if (moveXMinusButton != null) {
+            moveXMinusButton.update(tpf);
+            moveXPlusButton.update(tpf);
+            moveYMinusButton.update(tpf);
+            moveYPlusButton.update(tpf);
+            moveZMinusButton.update(tpf);
+            moveZPlusButton.update(tpf);
+        }
+    }
+
+    /**
+     * 处理鼠标点击（所有按钮）
+     * @return true如果点击命中了本面板的某个按钮
+     */
+    public boolean handleMouseClick(int mouseX, int mouseY) {
+        if (createGroupButton.handleMouseClick(mouseX, mouseY)) return true;
+        if (deleteGroupButton.handleMouseClick(mouseX, mouseY)) return true;
+        if (addToGroupButton.handleMouseClick(mouseX, mouseY)) return true;
+        if (removeFromGroupButton.handleMouseClick(mouseX, mouseY)) return true;
+        if (rotateLeft90Button.handleMouseClick(mouseX, mouseY)) return true;
+        if (rotateRight90Button.handleMouseClick(mouseX, mouseY)) return true;
+        if (rotate180Button.handleMouseClick(mouseX, mouseY)) return true;
+        if (moveXMinusButton.handleMouseClick(mouseX, mouseY)) return true;
+        if (moveXPlusButton.handleMouseClick(mouseX, mouseY)) return true;
+        if (moveYMinusButton.handleMouseClick(mouseX, mouseY)) return true;
+        if (moveYPlusButton.handleMouseClick(mouseX, mouseY)) return true;
+        if (moveZMinusButton.handleMouseClick(mouseX, mouseY)) return true;
+        if (moveZPlusButton.handleMouseClick(mouseX, mouseY)) return true;
+        return false;
     }
 
     /**
@@ -617,5 +713,6 @@ public class GroupControlPanel {
         void onBoneAddedToGroup(EditorBone bone, EditorBoneGroup group);
         void onBoneRemovedFromGroup(EditorBone bone, EditorBoneGroup group);
         void onGroupRotated(EditorBoneGroup group, int degrees);
+        void onGroupMoved(EditorBoneGroup group, float dx, float dy, float dz);
     }
 }

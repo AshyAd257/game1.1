@@ -64,6 +64,26 @@ public class PartConfig {
     // true = 2D纸片模式，false = 3D固定朝向模式
     private boolean billboardEnabled = true;  // 默认启用，向后兼容
 
+    // 旋转条状贴图系统（伪3D棱柱效果，与6方向系统互斥）
+    private boolean rotationStripEnabled = false;
+    private String stripTexturePath;
+    private int stripSteps = 16;
+    private int stripFrameWidthPx = 32;
+    private int stripFrameHeightPx = 32;
+
+    // Billboard俯仰角平滑过渡阈值（度）
+    private float billboardPitchFullRangeDeg = 60f;
+    private float billboardPitchLockDeg = 80f;
+
+    // 旋转条状贴图专用变换数据（单一值，不按方向分槎）
+    private float stripWidth = 1.0f;
+    private float stripHeight = 1.0f;
+    private Vec3Config stripOffset;
+    private float stripRotationX;
+    private float stripRotationY;
+    private float stripRotationZ;
+    private int stripPriority;
+
     public PartConfig() {
     }
 
@@ -251,5 +271,117 @@ public class PartConfig {
 
     public void setBillboardEnabled(boolean billboardEnabled) {
         this.billboardEnabled = billboardEnabled;
+    }
+
+    public boolean isRotationStripEnabled() {
+        return rotationStripEnabled;
+    }
+
+    public void setRotationStripEnabled(boolean rotationStripEnabled) {
+        this.rotationStripEnabled = rotationStripEnabled;
+    }
+
+    public String getStripTexturePath() {
+        return stripTexturePath;
+    }
+
+    public void setStripTexturePath(String stripTexturePath) {
+        this.stripTexturePath = stripTexturePath;
+    }
+
+    public int getStripSteps() {
+        return stripSteps;
+    }
+
+    public void setStripSteps(int stripSteps) {
+        this.stripSteps = stripSteps;
+    }
+
+    public int getStripFrameWidthPx() {
+        return stripFrameWidthPx;
+    }
+
+    public void setStripFrameWidthPx(int stripFrameWidthPx) {
+        this.stripFrameWidthPx = stripFrameWidthPx;
+    }
+
+    public int getStripFrameHeightPx() {
+        return stripFrameHeightPx;
+    }
+
+    public void setStripFrameHeightPx(int stripFrameHeightPx) {
+        this.stripFrameHeightPx = stripFrameHeightPx;
+    }
+
+    public float getBillboardPitchFullRangeDeg() {
+        return billboardPitchFullRangeDeg;
+    }
+
+    public void setBillboardPitchFullRangeDeg(float billboardPitchFullRangeDeg) {
+        this.billboardPitchFullRangeDeg = billboardPitchFullRangeDeg;
+    }
+
+    public float getBillboardPitchLockDeg() {
+        return billboardPitchLockDeg;
+    }
+
+    public void setBillboardPitchLockDeg(float billboardPitchLockDeg) {
+        this.billboardPitchLockDeg = billboardPitchLockDeg;
+    }
+
+    public float getStripWidth() {
+        return stripWidth;
+    }
+
+    public void setStripWidth(float stripWidth) {
+        this.stripWidth = stripWidth;
+    }
+
+    public float getStripHeight() {
+        return stripHeight;
+    }
+
+    public void setStripHeight(float stripHeight) {
+        this.stripHeight = stripHeight;
+    }
+
+    public Vec3Config getStripOffset() {
+        return stripOffset;
+    }
+
+    public void setStripOffset(Vec3Config stripOffset) {
+        this.stripOffset = stripOffset;
+    }
+
+    public float getStripRotationX() {
+        return stripRotationX;
+    }
+
+    public void setStripRotationX(float stripRotationX) {
+        this.stripRotationX = stripRotationX;
+    }
+
+    public float getStripRotationY() {
+        return stripRotationY;
+    }
+
+    public void setStripRotationY(float stripRotationY) {
+        this.stripRotationY = stripRotationY;
+    }
+
+    public float getStripRotationZ() {
+        return stripRotationZ;
+    }
+
+    public void setStripRotationZ(float stripRotationZ) {
+        this.stripRotationZ = stripRotationZ;
+    }
+
+    public int getStripPriority() {
+        return stripPriority;
+    }
+
+    public void setStripPriority(int stripPriority) {
+        this.stripPriority = stripPriority;
     }
 }

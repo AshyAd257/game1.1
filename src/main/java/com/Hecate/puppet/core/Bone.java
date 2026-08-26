@@ -190,6 +190,44 @@ public class Bone {
     private float stripRotationZ = 0f;
     private int stripPriority = 0;
 
+    // 取景框校准偏移（像素）：把"摄像机水平朝向 -> 取景框采样起点"的固定循环规则
+    // （每转DEGREES_PER_STEP度挪1个像素）整体平移这么多像素。默认0，即摄像机朝向0°时
+    // 从贴图第0个像素开始采样（旧行为）。用户在选区面板里对准某个摄像机朝向手动拖好
+    // 取景框后点击"校准"按钮，就会把当前取景框位置和当前摄像机朝向的对应关系写入这里，
+    // 之后不管换成哪张新贴图，只要新贴图遵循同样的像素排布约定，这个对应关系依然生效。
+    private int stripCalibrationOffsetPx = 0;
+
+    // ==================== 3D模型骨骼系统 ====================
+    // 与6方向系统/旋转条状贴图系统互斥，按骨骼独立开关。启用后该骨骼不渲染任何Quad，
+    // 而是加载一个外部3D模型文件（目前仅支持OBJ静态网格）作为可视内容，始终固定朝向
+    // （不受billboard/统一朝向系统影响——模型本身有正反面，不能像纸片一样翻转朝向摄像机）。
+    //
+    // 【扩展点，供以后接入逐帧模型动画用】目前modelFilePath只存一个文件路径，渲染器
+    // 用PuppetPartRenderer/EditorPuppetPartRenderer里新增的loadModelFromBone()方法统一
+    // 加载显示。以后如果要做"一组按序号命名的OBJ文件按帧切换"的动画，思路是：
+    //   1. 新增字段如modelFrameFolderPath/modelFrameCount（一个文件夹+帧数，或帧路径列表），
+    //      与modelFilePath二选一（modelFilePath非空=静态单帧，新字段非空=帧序列）。
+    //   2. loadModelFromBone()内部按当前帧号选择要加载的路径，其余"加载Spatial→挂到
+    //      parentNode→应用变换"的逻辑不需要改，因为都是通过同一个方法出口. Bone/EditorBone
+    //      不需要额外改动来支持子骨骼跟随——子骨骼的世界变换始终由getWorldTransform()
+    //      递归计算，不关心父骨骼是模型骨骼还是普通骨骼。
+    //   3. 换帧本身参考Keyframe/AnimationClip现有的关键帧驱动模式（按time查找/插值），
+    //      而不是新写一套独立的定时器。
+
+    // 是否启用3D模型骨骼模式
+    private boolean modelEnabled = false;
+
+    // 模型文件路径（当前仅支持.obj，静态单帧）
+    private String modelFilePath;
+
+    // 模型自身的额外旋转（度），在世界旋转基础上叠加，用于修正模型朝向
+    private float modelRotationX = 0f;
+    private float modelRotationY = 0f;
+    private float modelRotationZ = 0f;
+
+    // 模型整体缩放倍数（模型导出时单位可能与木偶系统不一致，用这个统一缩放校正）
+    private float modelScale = 1.0f;
+
     // ==================== 自由骨骼系统 ====================
 
     // 骨骼类型（连接骨骼 or 自由骨骼）
@@ -563,12 +601,18 @@ public class Bone {
         this.stripSteps = Math.max(0, stripSteps);
     }
 
+    // 取景框像素 -> 世界单位的固定换算比例（32px = 1单位，与旧的默认值32px/1.0单位保持一致）。
+    // 取景框宽高一变，部件世界尺寸必须跟着重算，否则四边形形状和取景框像素比例不一致时，
+    // 采样出来的像素会被拉伸/压缩去填满四边形——这正是"贴图忽宽忽窄"错乱的根源。
+    public static final float STRIP_PIXELS_PER_UNIT = 32f;
+
     public int getStripFrameWidthPx() {
         return stripFrameWidthPx;
     }
 
     public void setStripFrameWidthPx(int stripFrameWidthPx) {
         this.stripFrameWidthPx = Math.max(1, stripFrameWidthPx);
+        syncStripSizeFromFramePixels();
     }
 
     public int getStripFrameHeightPx() {
@@ -577,6 +621,15 @@ public class Bone {
 
     public void setStripFrameHeightPx(int stripFrameHeightPx) {
         this.stripFrameHeightPx = Math.max(1, stripFrameHeightPx);
+        syncStripSizeFromFramePixels();
+    }
+
+    /**
+     * 根据取景框像素宽高，按固定比例重算部件世界尺寸，保证显示形状与取景框像素比例始终一致。
+     */
+    private void syncStripSizeFromFramePixels() {
+        this.stripWidth = stripFrameWidthPx / STRIP_PIXELS_PER_UNIT;
+        this.stripHeight = stripFrameHeightPx / STRIP_PIXELS_PER_UNIT;
     }
 
     public float getBillboardPitchFullRangeDeg() {
@@ -639,12 +692,64 @@ public class Bone {
         this.stripRotationZ = rotationZ;
     }
 
+    public int getStripCalibrationOffsetPx() {
+        return stripCalibrationOffsetPx;
+    }
+
+    public void setStripCalibrationOffsetPx(int stripCalibrationOffsetPx) {
+        this.stripCalibrationOffsetPx = stripCalibrationOffsetPx;
+    }
+
     public int getStripPriority() {
         return stripPriority;
     }
 
     public void setStripPriority(int stripPriority) {
         this.stripPriority = stripPriority;
+    }
+
+    // ==================== 3D模型骨骼系统 Getter & Setter ====================
+
+    public boolean isModelEnabled() {
+        return modelEnabled;
+    }
+
+    public void setModelEnabled(boolean modelEnabled) {
+        this.modelEnabled = modelEnabled;
+    }
+
+    public String getModelFilePath() {
+        return modelFilePath;
+    }
+
+    public void setModelFilePath(String modelFilePath) {
+        this.modelFilePath = modelFilePath;
+    }
+
+    public float getModelRotationX() {
+        return modelRotationX;
+    }
+
+    public float getModelRotationY() {
+        return modelRotationY;
+    }
+
+    public float getModelRotationZ() {
+        return modelRotationZ;
+    }
+
+    public void setModelRotation(float rotationX, float rotationY, float rotationZ) {
+        this.modelRotationX = rotationX;
+        this.modelRotationY = rotationY;
+        this.modelRotationZ = rotationZ;
+    }
+
+    public float getModelScale() {
+        return modelScale;
+    }
+
+    public void setModelScale(float modelScale) {
+        this.modelScale = modelScale;
     }
 
     /**

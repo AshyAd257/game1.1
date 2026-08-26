@@ -67,6 +67,10 @@ public class EditorPuppetPartRenderer {
 
     private final ColorRGBA debugColor;
 
+    // ==================== 3D模型骨骼系统（与core.PuppetPartRenderer保持一致） ====================
+    private com.jme3.scene.Spatial modelSpatial;
+    private String loadedModelPath;
+
     private String lastDirection = null;
 
     // 方向切换冷却时间（秒）- 防止频繁切换
@@ -90,6 +94,13 @@ public class EditorPuppetPartRenderer {
     
     public void initialize() {
         if (initialized) {
+            return;
+        }
+
+        // 3D模型骨骼：完全跳过Quad/Material/billboard/高光/中心点标记，只加载模型
+        if (bone.isModelEnabled()) {
+            updateModelFromBone();
+            initialized = true;
             return;
         }
 
@@ -131,6 +142,69 @@ public class EditorPuppetPartRenderer {
         }
 
         initialized = true;
+    }
+
+    /**
+     * 从Bone加载3D模型（仅modelEnabled=true时使用），与core.PuppetPartRenderer同款逻辑
+     */
+    private void updateModelFromBone() {
+        String modelPath = bone.getModelFilePath();
+        if (modelPath == null || modelPath.isEmpty()) {
+            return;
+        }
+
+        if (modelSpatial != null && modelPath.equals(loadedModelPath)) {
+            return;
+        }
+
+        if (modelSpatial != null) {
+            modelSpatial.removeFromParent();
+            modelSpatial = null;
+        }
+
+        try {
+            modelSpatial = app.getAssetManager().loadModel(modelPath);
+            modelSpatial.setName(bone.getName() + "_Model");
+            parentNode.attachChild(modelSpatial);
+            loadedModelPath = modelPath;
+        } catch (Exception e) {
+            System.err.println("[EditorPuppetPartRenderer] 加载3D模型失败: " + modelPath);
+            System.err.println("[EditorPuppetPartRenderer] 错误信息: " + e.getMessage());
+            modelSpatial = null;
+            loadedModelPath = null;
+        }
+    }
+
+    /**
+     * 把bone的世界变换套到模型Spatial上（仅modelEnabled=true时使用），
+     * 与core.PuppetPartRenderer同款逻辑
+     */
+    private void updateModelTransform() {
+        if (modelSpatial == null) {
+            return;
+        }
+
+        Vector3f worldPos = new Vector3f();
+        Quaternion worldRot = new Quaternion();
+        Vector3f worldScale = new Vector3f();
+        bone.getWorldTransform(worldPos, worldRot, worldScale);
+
+        float rotX = bone.getModelRotationX();
+        float rotY = bone.getModelRotationY();
+        float rotZ = bone.getModelRotationZ();
+        Quaternion finalRot = worldRot;
+        if (rotX != 0f || rotY != 0f || rotZ != 0f) {
+            Quaternion modelRot = new Quaternion().fromAngles(
+                rotX * FastMath.DEG_TO_RAD,
+                rotY * FastMath.DEG_TO_RAD,
+                rotZ * FastMath.DEG_TO_RAD
+            );
+            finalRot = worldRot.mult(modelRot);
+        }
+
+        modelSpatial.setLocalTranslation(worldPos);
+        modelSpatial.setLocalRotation(finalRot);
+        modelSpatial.setLocalScale(worldScale.mult(bone.getModelScale()));
     }
 
     private void createMaterial() {
@@ -249,6 +323,12 @@ public void loadTexture(String texturePath) {
 
     
     public void updateTextureFromBone() {
+        // 3D模型骨骼没有partMaterial/partQuad，纹理系统对它完全不适用
+        if (bone.isModelEnabled()) {
+            updateModelFromBone();
+            return;
+        }
+
         // 旋转条状贴图模式：完全跳过6方向系统，改由updateTransform()里的
         // applyRotationStripUV()按相机角度动态取样。这里除了加载贴图，还要恢复
         // 单一的宽高/偏移/旋转（不是按方向存储的，只有一份数据）
@@ -433,6 +513,13 @@ public void loadTexture(String texturePath) {
 
     public void updateTransform(float tpf) {
         if (!initialized) {
+            return;
+        }
+
+        // 3D模型骨骼：固定朝向，不走billboard/高光/优先级分层这套2D纸片逻辑，
+        // 也不受parentRenderer是否就绪影响（不需要统一billboard参数）
+        if (bone.isModelEnabled()) {
+            updateModelTransform();
             return;
         }
 
@@ -796,6 +883,13 @@ public void loadTexture(String texturePath) {
                         Geometry.CullHint.Always);
             }
 
+            // 3D模型骨骼：直接控制模型Spatial的显隐
+            if (modelSpatial != null) {
+                modelSpatial.setCullHint(visible ?
+                        Geometry.CullHint.Never :
+                        Geometry.CullHint.Always);
+            }
+
             if (highlightNode != null) {
                 highlightNode.setCullHint((visible && isSelected) ?
                     Geometry.CullHint.Never :
@@ -817,6 +911,9 @@ public void loadTexture(String texturePath) {
             partGeometry.removeFromParent();
 
         }
+        if (modelSpatial != null) {
+            modelSpatial.removeFromParent();
+        }
         if (highlightNode != null) {
 
             highlightNode.setCullHint(Spatial.CullHint.Always);
@@ -832,6 +929,8 @@ public void loadTexture(String texturePath) {
         }
 
         partGeometry = null;
+        modelSpatial = null;
+        loadedModelPath = null;
         highlightNode = null;
         pivotMarker = null;
 
@@ -893,8 +992,19 @@ public void loadTexture(String texturePath) {
         return bone;
     }
 
+    /**
+     * @return 部件的Quad几何体。3D模型骨骼没有Quad，返回null（3D射线选中暂不支持模型骨骼，
+     *         这类骨骼仍可以通过部件列表面板按名字选中——见PartListPanel）
+     */
     public Geometry getGeometry() {
         return partGeometry;
+    }
+
+    /**
+     * @return 3D模型骨骼加载的模型Spatial，非模型骨骼返回null
+     */
+    public com.jme3.scene.Spatial getModelSpatial() {
+        return modelSpatial;
     }
 
     public boolean isInitialized() {
@@ -1307,12 +1417,18 @@ public void loadTexture(String texturePath) {
         }
 
         int frameWidthPx = bone.getStripFrameWidthPx();
-        // 所需总宽度：15个固定位置里最后一个位置的起点(STEPS_PER_REVOLUTION-1)再加上取景框宽度
-        int requiredWidthPx = (STEPS_PER_REVOLUTION - 1) + frameWidthPx;
+        int calibrationOffsetPx = bone.getStripCalibrationOffsetPx();
+
+        // 左侧留白：校准偏移理论上最负也只会是-(STEPS_PER_REVOLUTION-1)（selPixelX=0时），
+        // 固定预留这么多像素的透明留白，保证校准偏移为负数时取景框仍有合法像素可采样，
+        // 不需要在下面夹紧坐标——夹紧会导致转到某些角度时取景框卡住不动，达不到"按原规则移动"的要求。
+        int leftMarginPx = STEPS_PER_REVOLUTION - 1;
+        // 右侧（原图+右侧补齐）所需宽度：正的校准偏移量 + 15个固定位置最后一个的起点 + 取景框宽度
+        int requiredWidthPx = Math.max(0, calibrationOffsetPx) + (STEPS_PER_REVOLUTION - 1) + frameWidthPx;
 
         com.Hecate.puppet.core.RotationStripTextureUtil.PaddedStrip strip =
                 com.Hecate.puppet.core.RotationStripTextureUtil.getOrCreatePaddedStrip(
-                        app.getAssetManager(), stripPath, requiredWidthPx);
+                        app.getAssetManager(), stripPath, leftMarginPx, requiredWidthPx);
         if (strip == null) {
             return;
         }
@@ -1338,12 +1454,26 @@ public void loadTexture(String texturePath) {
         // 每转DEGREES_PER_STEP度挪1个像素，一步只走一个像素
         int stepIndex = Math.round(yawDeg / DEGREES_PER_STEP);
         stepIndex = ((stepIndex % STEPS_PER_REVOLUTION) + STEPS_PER_REVOLUTION) % STEPS_PER_REVOLUTION;
-        int pixelStart = stepIndex; // 步长恒为1像素
+
+        // 校准偏移：把"摄像机朝向0° -> 取景框从像素0开始采样"这条固定规则整体平移
+        // calibrationOffsetPx像素。用户在选区面板对准某个朝向手动拖好取景框后点击"校准"
+        // 写入这个值，换贴图也不受影响（存在Bone上，不跟着贴图文件走）。加上leftMarginPx
+        // 换算到这张贴图的实际像素坐标——偏移无论正负，贴图左侧留白都保证了坐标始终合法，
+        // 取景框能按固定1像素/步连续滑动，不会在任何朝向卡住。
+        int pixelStart = leftMarginPx + calibrationOffsetPx + stepIndex;
 
         float u0 = pixelStart / (float) paddedWidthPx;
         float u1 = (pixelStart + frameWidthPx) / (float) paddedWidthPx;
-        float v0 = 0f;
+
+        // 【关键修复】V范围必须按取景框高度裁剪，不能永远取贴图整张高度。
+        // 之前v0/v1硬编码为0/1，导致无论取景框选多高，都把整张贴图的高度塞进
+        // 按stripFrameHeightPx算出来的四边形里，两者高宽比不一致时贴图就被拉伸/压扁。
+        // 取景框从贴图顶部往下框选（与选区面板"像素从上到下数"的约定一致），
+        // 顶部对应V=1，取景框底部对应V = 1 - frameHeightPx/纹理实际高度。
+        int frameHeightPx = bone.getStripFrameHeightPx();
+        int texHeightPx = strip.heightPx;
         float v1 = 1f;
+        float v0 = (texHeightPx > 0) ? Math.max(0f, 1f - frameHeightPx / (float) texHeightPx) : 0f;
 
         if (partQuad != null) {
             float[] texCoords = new float[]{

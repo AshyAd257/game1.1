@@ -1843,6 +1843,11 @@ public class PuppetEditorApp extends SimpleApplication {
                 }
 
                 @Override
+                public void onImportModel() {
+                    importModelPart();
+                }
+
+                @Override
                 public void onPlayPauseToggle(boolean playing) {
                     // 播放/暂停动画
                     if (playing) {
@@ -2119,8 +2124,24 @@ public class PuppetEditorApp extends SimpleApplication {
                 @Override
                 public void onRotationStripSelectionChanged(int pixelX, int pixelY, int pixelWidth, int pixelHeight) {
                     if (selectedBone != null) {
+                        // setStripFrameWidthPx/Height内部会按固定像素/单位比例同步重算stripWidth/stripHeight，
+                        // 保证部件显示形状始终匹配取景框的像素比例，不会再出现忽宽忽窄的拉伸
                         selectedBone.setStripFrameWidthPx(pixelWidth);
                         selectedBone.setStripFrameHeightPx(pixelHeight);
+
+                        // 立即刷新宽高滑条显示，避免数值和实际渲染尺寸不同步
+                        if (editorUI != null) {
+                            editorUI.updateInspector();
+                        }
+                    }
+                }
+
+                @Override
+                public void onRotationStripCalibrated(int calibrationOffsetPx) {
+                    // 把"当前摄像机朝向 <-> 当前取景框位置"的对应关系写入部件，
+                    // 存在Bone上而不是贴图文件里，所以以后换贴图这个对应关系依然保留
+                    if (selectedBone != null) {
+                        selectedBone.setStripCalibrationOffsetPx(calibrationOffsetPx);
                     }
                 }
             });
@@ -3191,6 +3212,7 @@ public class PuppetEditorApp extends SimpleApplication {
                             selectedBone.getStripFrameWidthPx(),
                             selectedBone.getStripFrameHeightPx()
                         );
+                        panel.setCalibrationOffsetPx(selectedBone.getStripCalibrationOffsetPx());
                         panel.setLivePreviewTarget(partRenderer);
                         panel.show();
                     }
@@ -3442,6 +3464,115 @@ public class PuppetEditorApp extends SimpleApplication {
         }
 
         // 刷新部件列表面板
+        if (editorUI != null && editorUI.getPartListPanel() != null) {
+            editorUI.getPartListPanel().refreshPartList();
+        }
+
+        // 自动选择新创建的部件
+        for (int i = 0; i < allBones.length; i++) {
+            if (allBones[i].getName().equals(newPartName)) {
+                selectBone(i);
+                break;
+            }
+        }
+    }
+
+    /**
+     * 导入OBJ模型，创建一个新的"3D模型骨骼"部件（与普通Quad部件是完全不同的一条渲染路径，
+     * 详见Bone.isModelEnabled()）。这个新部件默认挂在当前骨架根骨骼下（没有根骨骼则自己
+     * 成为根骨骼），跟普通"添加部件"的挂载规则一致。
+     *
+     * 目前只支持挂"整个模型固定跟随一个变换"——如果以后想让脸贴在模型上会动的某个部位，
+     * 需要模型自带命名锚点/子节点，那是后续扩展，不在这次范围内（见Bone.java里
+     * modelEnabled字段上方的扩展点注释）。
+     *
+     * 导入完成后，用户可以用现有的"设置父骨骼"功能（两步选择模式），把一个普通的Quad部件
+     * （比如脸）挂到这个新模型骨骼下面成为子骨骼——子骨骼的世界变换由Bone.getWorldTransform()
+     * 统一递归计算，不需要为模型骨骼做任何特殊处理，父子关系机制是完全通用的。
+     */
+    private void importModelPart() {
+        if (puppetTestScene == null || puppetTestScene.getTestSkeleton() == null) {
+            return;
+        }
+
+        new Thread(() -> {
+            JFrame parentFrame = createTopMostFrame();
+
+            JFileChooser fileChooser = new JFileChooser();
+            fileChooser.setDialogTitle("选择OBJ模型文件");
+            fileChooser.setFileFilter(new FileNameExtensionFilter("OBJ Model Files (*.obj)", "obj"));
+
+            File defaultDir = new File("Models");
+            if (!defaultDir.exists()) {
+                defaultDir = new File("src/main/resources/Models");
+            }
+            if (defaultDir.exists()) {
+                fileChooser.setCurrentDirectory(defaultDir);
+            }
+
+            int result = fileChooser.showOpenDialog(parentFrame);
+            parentFrame.dispose();
+
+            if (result == JFileChooser.APPROVE_OPTION) {
+                File file = fileChooser.getSelectedFile();
+                String absolutePath = file.getAbsolutePath();
+                String modelPath = convertToResourcePath(absolutePath);
+
+                final String finalPath = modelPath;
+                enqueue(() -> {
+                    createModelBone(finalPath);
+                    return null;
+                });
+            }
+        }).start();
+    }
+
+    /**
+     * 创建一个新的3D模型骨骼，加载指定路径的OBJ模型
+     */
+    private void createModelBone(String modelPath) {
+        // 生成新部件名称（与addPart()同款命名/去重规则）
+        int partCount = puppetTestScene.getTestSkeleton().getBoneCount();
+        String newPartName = "Model_" + (partCount + 1);
+        int suffix = 1;
+        while (puppetTestScene.getTestSkeleton().findBone(newPartName) != null) {
+            suffix++;
+            newPartName = "Model_" + (partCount + suffix);
+        }
+
+        EditorBone newBone = new EditorBone(newPartName);
+
+        // 模型骨骼固定朝向，不跟随摄像机旋转——模型本身有正反面，billboard会导致穿模/朝向错乱
+        newBone.setBillboardEnabled(false);
+
+        newBone.setModelEnabled(true);
+        newBone.setModelFilePath(modelPath);
+
+        // 设置默认变换
+        newBone.setRestPosition(new Vector3f(0, 0, 0));
+        newBone.setRestRotation(new com.jme3.math.Quaternion());
+        newBone.setRestScale(new Vector3f(1, 1, 1));
+        newBone.resetToRestPose();
+
+        // 检查是否有根骨骼（挂载规则与addPart()一致）
+        EditorBone rootBone = puppetTestScene.getTestSkeleton().getRootBone();
+        if (rootBone == null) {
+            puppetTestScene.getTestSkeleton().setRootBone(newBone);
+        } else {
+            rootBone.addChild(newBone);
+        }
+
+        puppetTestScene.getTestSkeleton().addBone(newBone);
+
+        // 创建部件渲染器（内部会因为bone.isModelEnabled()走模型加载路径，不创建Quad）
+        puppetTestScene.getPuppetRenderer().addPartRenderer(newBone);
+
+        collectAllBones();
+
+        if (puppetTestScene.getPuppetRenderer() != null) {
+            puppetTestScene.getPuppetRenderer().refreshBoneConnections();
+        }
+
         if (editorUI != null && editorUI.getPartListPanel() != null) {
             editorUI.getPartListPanel().refreshPartList();
         }

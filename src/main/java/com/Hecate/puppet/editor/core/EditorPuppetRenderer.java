@@ -1135,12 +1135,18 @@ public class EditorPuppetRenderer {
             com.Hecate.puppet.core.Bone baseBone = skeleton.getBaseSkeleton().findBone(editorBone.getName());
 
             if (baseBone != null) {
-                // 创建基础部件渲染器
+                // 创建基础部件渲染器（3D模型骨骼在addPartRenderer()内部的initialize()里
+                // 就已经按bone.getModelFilePath()把模型加载好了，不需要额外处理）
                 com.Hecate.puppet.core.PuppetPartRenderer basePartRenderer = renderer.addPartRenderer(
                     baseBone,
                     editorPartRenderer.getWidth(),
                     editorPartRenderer.getHeight()
                 );
+
+                // 3D模型骨骼没有offset/自定义旋转/中心点/UV这些Quad专用属性，跳过复制
+                if (baseBone.isModelEnabled()) {
+                    continue;
+                }
 
                 // 复制偏移
                 Vector3f offset = editorPartRenderer.getOffset();

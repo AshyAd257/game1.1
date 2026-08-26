@@ -40,20 +40,36 @@ public class RotationStripTextureUtil {
     private static final Map<String, PaddedStrip> cache = new HashMap<>();
 
     /**
-     * 获取（必要时生成）补齐到至少requiredSteps像素宽的条状贴图
+     * 获取（必要时生成）补齐到至少requiredSteps像素宽的条状贴图（左侧不额外留白，向后兼容旧调用）
+     */
+    public static PaddedStrip getOrCreatePaddedStrip(AssetManager assetManager, String texturePath, int requiredSteps) {
+        return getOrCreatePaddedStrip(assetManager, texturePath, 0, requiredSteps);
+    }
+
+    /**
+     * 获取（必要时生成）补齐后的条状贴图，支持在左侧预留一段透明像素的"校准余量"。
+     *
+     * 校准偏移允许为负数（比如摄像机朝向对应的采样步数比用户手动选定的取景框像素还大），
+     * 这时候取景框要往贴图左边界以外取样。原贴图内容不能真的往左边移，所以改用在内存里
+     * 生成的临时贴图左侧插入leftMarginPx像素的透明留白，调用方后续把逻辑像素坐标一律
+     * 加上leftMarginPx就能落在这张贴图的有效范围内，取景框仍能按固定1像素/步连续滑动，
+     * 不会因为越界被硬夹在边界上产生"卡住不动"的问题。
      *
      * @param assetManager 资源管理器
      * @param texturePath 原始条状贴图路径
-     * @param requiredSteps 所需的最小像素宽度（对应方向档数，档数<=0时不需要补齐）
-     * @return 补齐后的贴图信息，如果加载失败返回null
+     * @param leftMarginPx 左侧预留的透明留白像素数（>=0，通常是一个固定常量，与校准偏移的
+     *                     理论最小负值相匹配，比如STEPS_PER_REVOLUTION-1）
+     * @param requiredWidthPx 除左侧留白外，右侧（原图内容+右侧补齐）总共需要的最小像素宽度
+     * @return 补齐后的贴图信息（paddedWidthPx已包含左侧留白），如果加载失败返回null
      */
-    public static PaddedStrip getOrCreatePaddedStrip(AssetManager assetManager, String texturePath, int requiredSteps) {
+    public static PaddedStrip getOrCreatePaddedStrip(AssetManager assetManager, String texturePath, int leftMarginPx, int requiredWidthPx) {
         if (texturePath == null || texturePath.isEmpty() || assetManager == null) {
             return null;
         }
 
-        int effectiveRequiredSteps = Math.max(1, requiredSteps);
-        String cacheKey = texturePath + "#" + effectiveRequiredSteps;
+        int effectiveLeftMargin = Math.max(0, leftMarginPx);
+        int effectiveRequiredWidth = Math.max(1, requiredWidthPx);
+        String cacheKey = texturePath + "#" + effectiveLeftMargin + "#" + effectiveRequiredWidth;
 
         PaddedStrip cached = cache.get(cacheKey);
         if (cached != null) {
@@ -71,8 +87,8 @@ public class RotationStripTextureUtil {
             int height = sourceImage.getHeight();
 
             PaddedStrip result;
-            if (width >= effectiveRequiredSteps) {
-                // 原贴图已足够宽，直接复用（不生成新贴图，不额外占用内存）
+            if (effectiveLeftMargin == 0 && width >= effectiveRequiredWidth) {
+                // 不需要左侧留白，且原贴图已足够宽，直接复用（不生成新贴图，不额外占用内存）
                 Texture2D texture2D = (rawTexture instanceof Texture2D)
                         ? (Texture2D) rawTexture
                         : new Texture2D(sourceImage);
@@ -80,7 +96,8 @@ public class RotationStripTextureUtil {
                 texture2D.setMinFilter(Texture.MinFilter.NearestNoMipMaps);
                 result = new PaddedStrip(texture2D, width, height);
             } else {
-                result = createPaddedTexture(sourceImage, width, height, effectiveRequiredSteps);
+                int totalWidth = effectiveLeftMargin + Math.max(width, effectiveRequiredWidth);
+                result = createPaddedTexture(sourceImage, width, height, effectiveLeftMargin, totalWidth);
             }
 
             cache.put(cacheKey, result);
@@ -94,10 +111,10 @@ public class RotationStripTextureUtil {
     }
 
     /**
-     * 生成一张右侧补齐透明像素的加宽贴图
-     * 左侧保留原始像素内容，右侧补齐部分完全透明（alpha=0），不是白色
+     * 生成一张两侧补齐透明像素的加宽贴图
+     * 左侧leftMargin像素透明留白，中间保留原始像素内容，右侧补齐部分也完全透明（alpha=0，不是白色）
      */
-    private static PaddedStrip createPaddedTexture(Image sourceImage, int srcWidth, int srcHeight, int paddedWidth) {
+    private static PaddedStrip createPaddedTexture(Image sourceImage, int srcWidth, int srcHeight, int leftMargin, int paddedWidth) {
         ByteBuffer srcData = sourceImage.getData(0);
         Image.Format format = sourceImage.getFormat();
         int bytesPerPixel = getBytesPerPixel(format);
@@ -125,8 +142,9 @@ public class RotationStripTextureUtil {
 
         for (int y = 0; y < srcHeight; y++) {
             for (int x = 0; x < paddedWidth; x++) {
-                if (x < srcWidth) {
-                    int srcIndex = (y * srcWidth + x) * bytesPerPixel;
+                int srcX = x - leftMargin;
+                if (srcX >= 0 && srcX < srcWidth) {
+                    int srcIndex = (y * srcWidth + srcX) * bytesPerPixel;
                     int r, g, b, a;
 
                     switch (format) {
@@ -162,7 +180,7 @@ public class RotationStripTextureUtil {
 
                     destBuffer.put((byte) r).put((byte) g).put((byte) b).put((byte) a);
                 } else {
-                    // 补齐区域：完全透明（不是白色）
+                    // 左侧留白或右侧补齐区域：完全透明（不是白色）
                     destBuffer.put((byte) 0).put((byte) 0).put((byte) 0).put((byte) 0);
                 }
             }

@@ -170,6 +170,15 @@ public class PuppetIO {
                 partConfig.setStripRotationY(bone.getStripRotationY());
                 partConfig.setStripRotationZ(bone.getStripRotationZ());
                 partConfig.setStripPriority(bone.getStripPriority());
+                partConfig.setStripCalibrationOffsetPx(bone.getStripCalibrationOffsetPx());
+
+                // 保存3D模型骨骼配置（新增）
+                partConfig.setModelEnabled(bone.isModelEnabled());
+                partConfig.setModelFilePath(bone.getModelFilePath());
+                partConfig.setModelRotationX(bone.getModelRotationX());
+                partConfig.setModelRotationY(bone.getModelRotationY());
+                partConfig.setModelRotationZ(bone.getModelRotationZ());
+                partConfig.setModelScale(bone.getModelScale());
 
                 // TODO: 添加调试颜色支持
 
@@ -477,6 +486,17 @@ public class PuppetIO {
                     partConfig.getStripRotationZ()
                 );
                 bone.setStripPriority(partConfig.getStripPriority());
+                bone.setStripCalibrationOffsetPx(partConfig.getStripCalibrationOffsetPx());
+
+                // 加载3D模型骨骼配置（新增）
+                bone.setModelEnabled(partConfig.isModelEnabled());
+                bone.setModelFilePath(partConfig.getModelFilePath());
+                bone.setModelRotation(
+                    partConfig.getModelRotationX(),
+                    partConfig.getModelRotationY(),
+                    partConfig.getModelRotationZ()
+                );
+                bone.setModelScale(partConfig.getModelScale());
             }
 
             // 加载骨骼分组ID（新增）
@@ -780,6 +800,17 @@ public class PuppetIO {
                     partConfig.getStripRotationZ()
                 );
                 bone.setStripPriority(partConfig.getStripPriority());
+                bone.setStripCalibrationOffsetPx(partConfig.getStripCalibrationOffsetPx());
+
+                // 加载3D模型骨骼配置（新增）
+                bone.setModelEnabled(partConfig.isModelEnabled());
+                bone.setModelFilePath(partConfig.getModelFilePath());
+                bone.setModelRotation(
+                    partConfig.getModelRotationX(),
+                    partConfig.getModelRotationY(),
+                    partConfig.getModelRotationZ()
+                );
+                bone.setModelScale(partConfig.getModelScale());
             }
 
             boneMap.put(bone.getName(), bone);
@@ -999,6 +1030,17 @@ public class PuppetIO {
                     partConfig.getStripRotationZ()
                 );
                 bone.setStripPriority(partConfig.getStripPriority());
+                bone.setStripCalibrationOffsetPx(partConfig.getStripCalibrationOffsetPx());
+
+                // 加载3D模型骨骼配置（新增）
+                bone.setModelEnabled(partConfig.isModelEnabled());
+                bone.setModelFilePath(partConfig.getModelFilePath());
+                bone.setModelRotation(
+                    partConfig.getModelRotationX(),
+                    partConfig.getModelRotationY(),
+                    partConfig.getModelRotationZ()
+                );
+                bone.setModelScale(partConfig.getModelScale());
             }
 
             boneMap.put(bone.getName(), bone);
@@ -1265,6 +1307,17 @@ public class PuppetIO {
                     partConfig.getStripRotationZ()
                 );
                 bone.setStripPriority(partConfig.getStripPriority());
+                bone.setStripCalibrationOffsetPx(partConfig.getStripCalibrationOffsetPx());
+
+                // 加载3D模型骨骼配置（新增）
+                bone.setModelEnabled(partConfig.isModelEnabled());
+                bone.setModelFilePath(partConfig.getModelFilePath());
+                bone.setModelRotation(
+                    partConfig.getModelRotationX(),
+                    partConfig.getModelRotationY(),
+                    partConfig.getModelRotationZ()
+                );
+                bone.setModelScale(partConfig.getModelScale());
             }
 
             boneMap.put(bone.getName(), bone);

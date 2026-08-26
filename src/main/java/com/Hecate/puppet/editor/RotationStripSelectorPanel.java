@@ -77,6 +77,18 @@ public class RotationStripSelectorPanel {
     private Button widthButton;
     private Button heightButton;
     private Button livePreviewButton;
+    private Button calibrateButton;
+    private BitmapText calibrationInfoText;
+
+    /**
+     * 校准回调：用户对准某个摄像机朝向手动拖好取景框后点击"校准"，
+     * 面板算出对应的像素偏移，回调方负责把它写回当前部件的Bone
+     */
+    public interface CalibrationListener {
+        void onCalibrate(int calibrationOffsetPx);
+    }
+
+    private CalibrationListener calibrationListener;
 
     // 实时预览：跟随相机高亮当前正被采样的那一格（用青色区分手动选区的黄色框）
     private boolean livePreviewEnabled = false;
@@ -161,6 +173,18 @@ public class RotationStripSelectorPanel {
         });
         livePreviewButton.getRootNode().setLocalTranslation(0, 0, 5.3f);
         rootNode.attachChild(livePreviewButton.getRootNode());
+
+        // 校准按钮：把当前取景框位置和当前摄像机朝向的对应关系写入部件（换贴图也保留这个关系）
+        calibrateButton = new Button(app, font, "校准当前朝向", x + width - 600, y + height - 40, 130, 30);
+        calibrateButton.setClickListener(this::performCalibration);
+        calibrateButton.getRootNode().setLocalTranslation(0, 0, 5.3f);
+        rootNode.attachChild(calibrateButton.getRootNode());
+
+        calibrationInfoText = new BitmapText(font);
+        calibrationInfoText.setSize(font.getCharSet().getRenderedSize() * 0.8f);
+        calibrationInfoText.setColor(new ColorRGBA(1.0f, 0.85f, 0.2f, 1.0f));
+        calibrationInfoText.setLocalTranslation(x + 10, y + height - 115, 5.3f);
+        rootNode.attachChild(calibrationInfoText);
 
         // 宽/高数字输入按钮（点击弹出JOptionPane）。旋转规则固定为"每转24度挪1像素"，不可配置
         widthButton = new Button(app, font, "框宽: " + selPixelWidth + "px", x + 10, y + 10, 150, 30);
@@ -278,6 +302,7 @@ public class RotationStripSelectorPanel {
         livePreviewButton.update(tpf);
         widthButton.update(tpf);
         heightButton.update(tpf);
+        calibrateButton.update(tpf);
 
         if (!livePreviewEnabled || !isVisible() || livePreviewPartRenderer == null || texWidthPx <= 0) {
             return;
@@ -295,14 +320,69 @@ public class RotationStripSelectorPanel {
         float yawDeg = yawRad * com.jme3.math.FastMath.RAD_TO_DEG;
 
         // 用与运行时applyRotationStripUV()相同的固定公式：每转24度挪1像素
-        int requiredWidthPx = (STEPS_PER_REVOLUTION - 1) + selPixelWidth;
+        int requiredWidthPx = Math.max(0, currentCalibrationOffsetPx) + (STEPS_PER_REVOLUTION - 1) + selPixelWidth;
         int paddedWidthPx = Math.max(texWidthPx, requiredWidthPx);
 
         int stepIndex = Math.round(yawDeg / DEGREES_PER_STEP);
         stepIndex = ((stepIndex % STEPS_PER_REVOLUTION) + STEPS_PER_REVOLUTION) % STEPS_PER_REVOLUTION;
-        int pixelStart = stepIndex; // 步长恒为1像素
+        int pixelStart = currentCalibrationOffsetPx + stepIndex; // 步长恒为1像素，叠加已保存的校准偏移
 
         updateLivePreviewBox(pixelStart, paddedWidthPx, yawDeg);
+    }
+
+    // 当前部件已保存的校准偏移（打开面板时由调用方通过setCalibrationOffsetPx()同步进来，
+    // 用于让实时预览框的位置和运行时applyRotationStripUV()保持一致）
+    private int currentCalibrationOffsetPx = 0;
+
+    /**
+     * 设置当前部件已保存的校准偏移（供实时预览框计算使用，不影响手动选区selPixelX/Y）
+     */
+    public void setCalibrationOffsetPx(int calibrationOffsetPx) {
+        this.currentCalibrationOffsetPx = calibrationOffsetPx;
+    }
+
+    public void setCalibrationListener(CalibrationListener listener) {
+        this.calibrationListener = listener;
+    }
+
+    /**
+     * 校准：把"当前摄像机对该部件的水平朝向"和"当前手动选区selPixelX"的对应关系算出来，
+     * 即 calibrationOffsetPx = selPixelX - stepIndex(当前朝向)。
+     * 之后运行时采样公式 pixelStart = calibrationOffsetPx + stepIndex(朝向) 在这个朝向下
+     * 正好等于selPixelX，也就是校准时用户手动摆好的位置。
+     */
+    private void performCalibration() {
+        if (livePreviewPartRenderer == null) {
+            calibrationInfoText.setText("校准失败：未指定要跟踪的部件");
+            return;
+        }
+
+        com.jme3.math.Vector3f partPos = livePreviewPartRenderer.getFinalWorldPosition();
+        com.jme3.math.Vector3f camPos = app.getCamera().getLocation();
+        com.jme3.math.Vector3f toCam = camPos.subtract(partPos);
+        com.jme3.math.Vector3f horizontalDir = new com.jme3.math.Vector3f(toCam.x, 0f, toCam.z);
+        if (horizontalDir.lengthSquared() < 0.0001f) {
+            calibrationInfoText.setText("校准失败：摄像机正上/正下方，水平朝向不可判定");
+            return;
+        }
+        horizontalDir.normalizeLocal();
+        float yawRad = com.jme3.math.FastMath.atan2(horizontalDir.x, horizontalDir.z);
+        float yawDeg = yawRad * com.jme3.math.FastMath.RAD_TO_DEG;
+
+        int stepIndex = Math.round(yawDeg / DEGREES_PER_STEP);
+        stepIndex = ((stepIndex % STEPS_PER_REVOLUTION) + STEPS_PER_REVOLUTION) % STEPS_PER_REVOLUTION;
+
+        int newCalibrationOffsetPx = selPixelX - stepIndex;
+        currentCalibrationOffsetPx = newCalibrationOffsetPx;
+
+        calibrationInfoText.setText(String.format(
+            "已校准：当前朝向 %.1f° <-> 取景框起点 %dpx（偏移量 %dpx）",
+            yawDeg, selPixelX, newCalibrationOffsetPx
+        ));
+
+        if (calibrationListener != null) {
+            calibrationListener.onCalibrate(newCalibrationOffsetPx);
+        }
     }
 
     /**
@@ -545,6 +625,7 @@ public class RotationStripSelectorPanel {
         if (livePreviewButton.handleMouseClick(mouseX, mouseY)) return true;
         if (widthButton.handleMouseClick(mouseX, mouseY)) return true;
         if (heightButton.handleMouseClick(mouseX, mouseY)) return true;
+        if (calibrateButton.handleMouseClick(mouseX, mouseY)) return true;
 
         if (isPointInDisplay(mouseX, mouseY)) {
             isDragging = true;

@@ -83,6 +83,15 @@ public class PartConfig {
     private float stripRotationY;
     private float stripRotationZ;
     private int stripPriority;
+    private int stripCalibrationOffsetPx;
+
+    // 3D模型骨骼系统（与Bone/EditorBone保持一致）
+    private boolean modelEnabled = false;
+    private String modelFilePath;
+    private float modelRotationX;
+    private float modelRotationY;
+    private float modelRotationZ;
+    private float modelScale = 1.0f;
 
     public PartConfig() {
     }
@@ -383,5 +392,61 @@ public class PartConfig {
 
     public void setStripPriority(int stripPriority) {
         this.stripPriority = stripPriority;
+    }
+
+    public int getStripCalibrationOffsetPx() {
+        return stripCalibrationOffsetPx;
+    }
+
+    public void setStripCalibrationOffsetPx(int stripCalibrationOffsetPx) {
+        this.stripCalibrationOffsetPx = stripCalibrationOffsetPx;
+    }
+
+    public boolean isModelEnabled() {
+        return modelEnabled;
+    }
+
+    public void setModelEnabled(boolean modelEnabled) {
+        this.modelEnabled = modelEnabled;
+    }
+
+    public String getModelFilePath() {
+        return modelFilePath;
+    }
+
+    public void setModelFilePath(String modelFilePath) {
+        this.modelFilePath = modelFilePath;
+    }
+
+    public float getModelRotationX() {
+        return modelRotationX;
+    }
+
+    public void setModelRotationX(float modelRotationX) {
+        this.modelRotationX = modelRotationX;
+    }
+
+    public float getModelRotationY() {
+        return modelRotationY;
+    }
+
+    public void setModelRotationY(float modelRotationY) {
+        this.modelRotationY = modelRotationY;
+    }
+
+    public float getModelRotationZ() {
+        return modelRotationZ;
+    }
+
+    public void setModelRotationZ(float modelRotationZ) {
+        this.modelRotationZ = modelRotationZ;
+    }
+
+    public float getModelScale() {
+        return modelScale;
+    }
+
+    public void setModelScale(float modelScale) {
+        this.modelScale = modelScale;
     }
 }

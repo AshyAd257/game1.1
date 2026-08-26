@@ -186,6 +186,18 @@ public class EditorBone {
     private float stripRotationZ = 0f;
     private int stripPriority = 0;
 
+    // 取景框校准偏移（像素），与core.Bone保持一致
+    private int stripCalibrationOffsetPx = 0;
+
+    // ==================== 3D模型骨骼系统（与core.Bone保持一致） ====================
+    // 扩展点说明见core.Bone.java同名字段上方的注释（逐帧模型动画的接入方式）
+    private boolean modelEnabled = false;
+    private String modelFilePath;
+    private float modelRotationX = 0f;
+    private float modelRotationY = 0f;
+    private float modelRotationZ = 0f;
+    private float modelScale = 1.0f;
+
     // ==================== 骨骼分组系统 ====================
 
     // 骨骼组ID（所属分组的唯一标识）
@@ -544,12 +556,16 @@ public class EditorBone {
         this.stripSteps = Math.max(0, stripSteps);
     }
 
+    // 取景框像素 -> 世界单位的固定换算比例（32px = 1单位），与core.Bone保持一致
+    public static final float STRIP_PIXELS_PER_UNIT = 32f;
+
     public int getStripFrameWidthPx() {
         return stripFrameWidthPx;
     }
 
     public void setStripFrameWidthPx(int stripFrameWidthPx) {
         this.stripFrameWidthPx = Math.max(1, stripFrameWidthPx);
+        syncStripSizeFromFramePixels();
     }
 
     public int getStripFrameHeightPx() {
@@ -558,6 +574,15 @@ public class EditorBone {
 
     public void setStripFrameHeightPx(int stripFrameHeightPx) {
         this.stripFrameHeightPx = Math.max(1, stripFrameHeightPx);
+        syncStripSizeFromFramePixels();
+    }
+
+    /**
+     * 根据取景框像素宽高，按固定比例重算部件世界尺寸，保证显示形状与取景框像素比例始终一致。
+     */
+    private void syncStripSizeFromFramePixels() {
+        this.stripWidth = stripFrameWidthPx / STRIP_PIXELS_PER_UNIT;
+        this.stripHeight = stripFrameHeightPx / STRIP_PIXELS_PER_UNIT;
     }
 
     public float getBillboardPitchFullRangeDeg() {
@@ -626,6 +651,58 @@ public class EditorBone {
 
     public void setStripPriority(int stripPriority) {
         this.stripPriority = stripPriority;
+    }
+
+    public int getStripCalibrationOffsetPx() {
+        return stripCalibrationOffsetPx;
+    }
+
+    public void setStripCalibrationOffsetPx(int stripCalibrationOffsetPx) {
+        this.stripCalibrationOffsetPx = stripCalibrationOffsetPx;
+    }
+
+    // ==================== 3D模型骨骼系统 Getter & Setter ====================
+
+    public boolean isModelEnabled() {
+        return modelEnabled;
+    }
+
+    public void setModelEnabled(boolean modelEnabled) {
+        this.modelEnabled = modelEnabled;
+    }
+
+    public String getModelFilePath() {
+        return modelFilePath;
+    }
+
+    public void setModelFilePath(String modelFilePath) {
+        this.modelFilePath = modelFilePath;
+    }
+
+    public float getModelRotationX() {
+        return modelRotationX;
+    }
+
+    public float getModelRotationY() {
+        return modelRotationY;
+    }
+
+    public float getModelRotationZ() {
+        return modelRotationZ;
+    }
+
+    public void setModelRotation(float rotationX, float rotationY, float rotationZ) {
+        this.modelRotationX = rotationX;
+        this.modelRotationY = rotationY;
+        this.modelRotationZ = rotationZ;
+    }
+
+    public float getModelScale() {
+        return modelScale;
+    }
+
+    public void setModelScale(float modelScale) {
+        this.modelScale = modelScale;
     }
 
     // ==================== 骨骼分组系统方法 ====================

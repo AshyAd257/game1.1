@@ -261,6 +261,45 @@ public class EditorSkeleton {
         bone.setCustomGravityVector(editorBone.getCustomGravityVector().clone());
         bone.setFreedomValue(editorBone.getFreedomValue());
 
+        // 复制旋转条状贴图系统属性（这里之前一直缺失——导出/预览为运行时Bone时
+        // 旋转条状贴图部件会丢失所有条状贴图配置，改用6方向系统渲染。补上避免
+        // 加3D模型骨骼系统时又留下同样的坑）
+        bone.setRotationStripEnabled(editorBone.isRotationStripEnabled());
+        if (editorBone.getStripTexturePath() != null) {
+            bone.setStripTexturePath(editorBone.getStripTexturePath());
+        }
+        bone.setStripSteps(editorBone.getStripSteps());
+        bone.setStripFrameWidthPx(editorBone.getStripFrameWidthPx());
+        bone.setStripFrameHeightPx(editorBone.getStripFrameHeightPx());
+        bone.setStripCalibrationOffsetPx(editorBone.getStripCalibrationOffsetPx());
+        bone.setBillboardPitchFullRangeDeg(editorBone.getBillboardPitchFullRangeDeg());
+        bone.setBillboardPitchLockDeg(editorBone.getBillboardPitchLockDeg());
+        bone.setStripWidth(editorBone.getStripWidth());
+        bone.setStripHeight(editorBone.getStripHeight());
+        bone.setStripOffset(
+            editorBone.getStripOffset().x,
+            editorBone.getStripOffset().y,
+            editorBone.getStripOffset().z
+        );
+        bone.setStripRotation(
+            editorBone.getStripRotationX(),
+            editorBone.getStripRotationY(),
+            editorBone.getStripRotationZ()
+        );
+        bone.setStripPriority(editorBone.getStripPriority());
+
+        // 复制3D模型骨骼系统属性（新增）
+        bone.setModelEnabled(editorBone.isModelEnabled());
+        if (editorBone.getModelFilePath() != null) {
+            bone.setModelFilePath(editorBone.getModelFilePath());
+        }
+        bone.setModelRotation(
+            editorBone.getModelRotationX(),
+            editorBone.getModelRotationY(),
+            editorBone.getModelRotationZ()
+        );
+        bone.setModelScale(editorBone.getModelScale());
+
         // 递归转换子骨骼
         for (EditorBone child : editorBone.getChildren()) {
             com.Hecate.puppet.core.Bone childBone = convertBone(child);

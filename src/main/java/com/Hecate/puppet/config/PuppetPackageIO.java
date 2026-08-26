@@ -256,6 +256,11 @@ public class PuppetPackageIO {
                 if (partConfig.getStripTexturePath() != null && !partConfig.getStripTexturePath().isEmpty()) {
                     paths.add(partConfig.getStripTexturePath());
                 }
+
+                // 3D模型文件路径
+                if (partConfig.getModelFilePath() != null && !partConfig.getModelFilePath().isEmpty()) {
+                    paths.add(partConfig.getModelFilePath());
+                }
             }
         }
 
@@ -301,6 +306,17 @@ public class PuppetPackageIO {
                     String newPath = pathMapping.get(originalPath);
                     if (newPath != null) {
                         partConfig.setStripTexturePath(newPath);
+                    }
+                }
+
+                // 3D模型文件路径（注意：目前只打包.obj本身，不会跟随收集.obj引用的.mtl
+                // 材质文件和材质里引用的贴图——如果模型带贴图，打包后可能丢材质，
+                // 这是已知限制，等真正用到带材质OBJ打包时再补）
+                if (partConfig.getModelFilePath() != null && !partConfig.getModelFilePath().isEmpty()) {
+                    String originalPath = partConfig.getModelFilePath();
+                    String newPath = pathMapping.get(originalPath);
+                    if (newPath != null) {
+                        partConfig.setModelFilePath(newPath);
                     }
                 }
             }

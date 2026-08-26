@@ -106,6 +106,8 @@ public class SliderColumnPanel {
         void onUVChanged(float uvOffsetX, float uvOffsetY, float uvScaleX, float uvScaleY);
         // 旋转条状贴图：选区框（像素单位）变化回调
         void onRotationStripSelectionChanged(int pixelX, int pixelY, int pixelWidth, int pixelHeight);
+        // 旋转条状贴图：校准回调（把当前摄像机朝向和当前取景框位置的对应关系写入部件）
+        void onRotationStripCalibrated(int calibrationOffsetPx);
     }
     private SliderCallbacks callbacks;
 
@@ -407,6 +409,12 @@ public class SliderColumnPanel {
         rotationStripSelectorPanel.setSelectionChangeListener((pixelX, pixelY, pixelWidth, pixelHeight) -> {
             if (callbacks != null) {
                 callbacks.onRotationStripSelectionChanged(pixelX, pixelY, pixelWidth, pixelHeight);
+            }
+        });
+
+        rotationStripSelectorPanel.setCalibrationListener((calibrationOffsetPx) -> {
+            if (callbacks != null) {
+                callbacks.onRotationStripCalibrated(calibrationOffsetPx);
             }
         });
     }
@@ -1025,6 +1033,7 @@ public class SliderColumnPanel {
             bone.getStripFrameWidthPx(),
             bone.getStripFrameHeightPx()
         );
+        rotationStripSelectorPanel.setCalibrationOffsetPx(bone.getStripCalibrationOffsetPx());
         // 实时预览要跟踪的部件（用于每帧读取骨骼世界位置计算相机夹角）
         rotationStripSelectorPanel.setLivePreviewTarget(currentPartRenderer);
         rotationStripSelectorPanel.show();

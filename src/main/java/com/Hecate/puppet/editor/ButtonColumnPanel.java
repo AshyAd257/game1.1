@@ -55,6 +55,7 @@ public class ButtonColumnPanel {
     private Button textureModeButton;  // 新增：纹理模式按钮（单贴图/多贴图）
     private Button rotationStripToggleButton;  // 新增：旋转条状贴图模式开关按钮
     private Button loadStripTextureButton;  // 新增：加载旋转条状贴图按钮
+    private Button importModelButton;  // 新增：导入3D模型骨骼（OBJ）按钮
 
     // 播放控制按钮
     private Button playPauseButton;
@@ -110,6 +111,7 @@ public class ButtonColumnPanel {
         void onTextureModeToggle(boolean multiTextureEnabled);  // 新增：纹理模式切换回调
         void onRotationStripToggle(boolean enabled);  // 新增：旋转条状贴图模式切换回调
         void onLoadStripTexture();  // 新增：加载旋转条状贴图回调
+        void onImportModel();  // 新增：导入3D模型骨骼（OBJ）回调
         void onPlayPauseToggle(boolean playing);
         void onReset();
         void onDirectionChanged(String direction);
@@ -422,6 +424,11 @@ public class ButtonColumnPanel {
             () -> { if (callbacks != null) callbacks.onLoadStripTexture(); });
         rightY -= (buttonHeight + buttonSpacing);
 
+        // Import OBJ Model（新增：导入3D模型骨骼，创建一个新部件加载外部OBJ模型）
+        importModelButton = createButtonWithChinese("导入OBJ模型", "Import OBJ", rightColumnX, rightY - buttonHeight, buttonWidth, buttonHeight,
+            () -> { if (callbacks != null) callbacks.onImportModel(); });
+        rightY -= (buttonHeight + buttonSpacing);
+
         // Gravity Direction（新增：重力方向切换按钮）
         gravityDirectionButton = createButtonWithChinese("重力:下", "Gravity: Down", rightColumnX, rightY - buttonHeight, buttonWidth, buttonHeight,
             () -> {
@@ -528,6 +535,7 @@ public class ButtonColumnPanel {
         textureModeButton.update(tpf);  // 新增
         rotationStripToggleButton.update(tpf);  // 新增
         loadStripTextureButton.update(tpf);  // 新增
+        importModelButton.update(tpf);  // 新增
         cameraFollowButton.update(tpf);  // 新增
         swingEnableButton.update(tpf);  // 新增
         swingAxisButton.update(tpf);  // 新增
@@ -569,6 +577,7 @@ public class ButtonColumnPanel {
         if (textureModeButton.handleMouseClick(mouseX, mouseY)) return true;  // 新增：纹理模式按钮
         if (rotationStripToggleButton.handleMouseClick(mouseX, mouseY)) return true;  // 新增：旋转条状贴图模式按钮
         if (loadStripTextureButton.handleMouseClick(mouseX, mouseY)) return true;  // 新增：加载条状贴图按钮
+        if (importModelButton.handleMouseClick(mouseX, mouseY)) return true;  // 新增：导入OBJ模型按钮
         if (cameraFollowButton.handleMouseClick(mouseX, mouseY)) return true;  // 新增：相机跟随按钮
         if (swingEnableButton.handleMouseClick(mouseX, mouseY)) return true;  // 新增：摇摆开关按钮
         if (swingAxisButton.handleMouseClick(mouseX, mouseY)) return true;  // 新增：摇摆轴按钮

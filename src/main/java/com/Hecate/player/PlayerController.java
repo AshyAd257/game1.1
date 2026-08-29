@@ -136,6 +136,9 @@ public class PlayerController implements ActionListener, AnalogListener {
     // 弹药系统
     private PlayerAmmo playerAmmo;
 
+    // 事件总线（武器装备/弹药变化等事件通知PanelManager等UI系统）
+    private com.Hecate.event.EventBus eventBus;
+
     // 战斗控制器（武器、攻击逻辑）
     private PlayerCombatController combatController;
 
@@ -366,11 +369,14 @@ public class PlayerController implements ActionListener, AnalogListener {
         playerAmmo.setAmmoChangeListener(new PlayerAmmo.AmmoChangeListener() {
             @Override
             public void onAmmoChanged(float currentAmmo, float maxAmmo) {
-                // TODO: 更新UI显示弹药
                 LogUtils.debug(PlayerController.class, String.format(
                     "弹药: %.0f/%.0f (%.1f%%)",
                     currentAmmo, maxAmmo, (currentAmmo/maxAmmo)*100
                 ));
+
+                if (eventBus != null) {
+                    eventBus.publish(new com.Hecate.event.AmmoChangedEvent(currentAmmo, maxAmmo));
+                }
             }
 
             @Override
@@ -759,6 +765,15 @@ public class PlayerController implements ActionListener, AnalogListener {
 
     @Override
     public void onAction(String name, boolean isPressed, float tpf) {
+        // 左键"松开"事件必须无条件放行，不能被下面几道守卫拦截：否则如果玩家在
+        // 按住左键开火期间打开了控制台/背包，松开事件会被提前return吞掉，
+        // combatController.isLeftButtonPressed()永久卡在true，导致开火状态判断
+        // （见updateGroundType()附近的isFiring）误判为"一直在开火"，堵死墨水上的
+        // 恢复/加速能力。按下事件仍走下面的正常拦截逻辑，只放行松开。
+        if (name.equals("DigTerrain") && !isPressed && combatController != null) {
+            combatController.setLeftButtonPressed(false);
+        }
+
         // 控制台打开时忽略玩家输入
         if (gameConsole != null && gameConsole.isVisible()) {
             return;
@@ -1176,8 +1191,12 @@ public class PlayerController implements ActionListener, AnalogListener {
         // 【地面类型检测】检测玩家脚下的墨水类型
         updateGroundType();
 
-        // 【三选二状态管理】在友方墨水上根据按键决定激活哪两种状态
-        if (currentGroundType == GroundType.FRIENDLY) {
+        // 【三选二状态管理】在友方墨水上根据按键决定激活哪两种状态。
+        // 开火期间（左键按住/正在射击）禁止进入任何三选二状态——否则右键恢复
+        // （50%maxAmmo/秒量级）会盖过开火消耗（大多数武器仅个位数/秒），弹药条
+        // 表现为"打不完"，实质是漏了开火与恢复互斥的判断。
+        boolean isFiring = combatController.isHoldingWeapon() && combatController.isLeftButtonPressed();
+        if (currentGroundType == GroundType.FRIENDLY && !isFiring) {
             boolean bothPressed = isShiftPressed && isRightButtonPressed;
 
             if (bothPressed) {
@@ -1292,9 +1311,18 @@ public class PlayerController implements ActionListener, AnalogListener {
 
                 movement.multLocal(baseSpeed * speedMultiplier * inkSpeedMultiplier * sprintMultiplier * tpf);
 
-                // 暂时禁用体素碰撞检测，使用地形碰撞系统
-                // TODO: 未来需要整合体素碰撞和地形碰撞
-                playerPosition.addLocal(movement);
+                // 体素方块碰撞检测（水平方向）：用移动前的碰撞盒对水平位移做修正，
+                // 避免玩家直接穿过stone/dirt/wood1等体素方块。updatePlayerBox()
+                // 此时反映的是移动前的位置，正好符合checkCollision需要的"当前碰撞盒"语义。
+                if (collisionManager != null) {
+                    updatePlayerBox();
+                    Vector3f horizontalMovement = new Vector3f(movement.x, 0, movement.z);
+                    Vector3f corrected = collisionManager.checkCollision(playerBox, horizontalMovement);
+                    playerPosition.x += corrected.x;
+                    playerPosition.z += corrected.z;
+                } else {
+                    playerPosition.addLocal(movement);
+                }
 
                 lastMovementDirection.set(movement.clone().normalizeLocal());
             }
@@ -1302,8 +1330,33 @@ public class PlayerController implements ActionListener, AnalogListener {
 
         velocity.y += GRAVITY * tpf;
 
-        // 应用重力（先更新Y坐标）
-        playerPosition.y += velocity.y * tpf;
+        // 应用重力前先用移动前的碰撞盒检测竖直方向的体素碰撞（站在方块顶上/撞天花板），
+        // 再运行下面的地形高度贴合逻辑（处理连续地形曲面）。两者互补：
+        // 体素碰撞管"一格一格摆出来的方块"，地形碰撞管"高度场生成的连续曲面"，
+        // 缺一都会出现"能穿过方块"或"能穿过地形"的问题。
+        boolean landedOnVoxelBlockThisFrame = false;
+        if (collisionManager != null) {
+            updatePlayerBox();
+            Vector3f verticalMovement = new Vector3f(0, velocity.y * tpf, 0);
+            Vector3f correctedVertical = collisionManager.checkCollision(playerBox, verticalMovement);
+            playerPosition.y += correctedVertical.y;
+
+            // 竖直方向被体素方块挡住（correctedVertical.y与原本想要的位移不一致）时停止下落/上升，
+            // 避免撞到方块顶部/底部后仍持续累积速度
+            if (Math.abs(correctedVertical.y - verticalMovement.y) > 0.0001f) {
+                if (velocity.y < 0) {
+                    isJumping = false;
+                    isOnGround = true;
+                    landedOnVoxelBlockThisFrame = true; // 标记：这一帧是站在体素方块上，
+                    // 下面的地形高度贴合逻辑不应该因为"离地形曲面很远"而把这个状态覆盖掉
+                    // （悬空的wood1平台离地形曲面本来就隔着一段距离，这是正常情况不是悬空）
+                }
+                velocity.y = 0;
+            }
+        } else {
+            // 应用重力（先更新Y坐标）
+            playerPosition.y += velocity.y * tpf;
+        }
 
         updatePlayerBox();
 
@@ -1324,8 +1377,9 @@ public class PlayerController implements ActionListener, AnalogListener {
                         isJumping = false;
                         isOnGround = true;
                     }
-                } else if (playerPosition.y > terrainHeight + 0.1f) {
-                    // 玩家在空中
+                } else if (playerPosition.y > terrainHeight + 0.1f && !landedOnVoxelBlockThisFrame) {
+                    // 玩家在空中（且这一帧不是刚站到体素方块上——那种情况离地形曲面
+                    // 隔着一段距离是正常的，不代表悬空）
                     isOnGround = false;
                 }
             } else {
@@ -1889,6 +1943,14 @@ public class PlayerController implements ActionListener, AnalogListener {
     }
 
     /**
+     * 设置方块交互系统的获取方式（用于 /give 调试命令）
+     * 传入Supplier而不是具体实例，确保切换世界（如竞技场）后 /give 操作的是当前激活的世界
+     */
+    public void setBlockInteractionSupplier(java.util.function.Supplier<com.Hecate.block.BlockInteraction> blockInteractionSupplier) {
+        debugCommands.setBlockInteractionSupplier(blockInteractionSupplier);
+    }
+
+    /**
      * "攻击弹道+1"buff的当前叠加数量（FlameWeapon开火时读取）
      * 现在从效果系统读取
      */
@@ -2023,6 +2085,12 @@ public class PlayerController implements ActionListener, AnalogListener {
      */
     public void setPlayerStateManager(PlayerStateManager playerStateManager) {
         this.playerStateManager = playerStateManager;
+
+        // debugCommands在构造函数中创建，此时playerStateManager还不存在，
+        // 这里补上/give命令需要的装备系统引用（把方块放入当前选中的快捷栏槽位）
+        if (debugCommands != null && playerStateManager != null) {
+            debugCommands.setPlayerEquipment(playerStateManager.getEquipment());
+        }
     }
 
     /**
@@ -2055,6 +2123,59 @@ public class PlayerController implements ActionListener, AnalogListener {
      */
     public PlayerAmmo getPlayerAmmo() {
         return playerAmmo;
+    }
+
+    /**
+     * 设置事件总线（武器装备/卸下/弹药变化事件的发布源），同时转发给CombatController。
+     * <p>并订阅武器装备/卸下事件，同步更新PlayerEquipment的外部武器覆盖标记——
+     * Gun1/Gun2（PlayerCombatController，独立于快捷栏的老系统）与快捷栏方块/武器槛位
+     * 原本是两套互不知情的"手持物"状态，导致装备Gun1/Gun2后右键依然能放置方块。
+     * 见PlayerEquipment.setExternalWeaponOverride()。
+     */
+    public void setEventBus(com.Hecate.event.EventBus eventBus) {
+        this.eventBus = eventBus;
+        if (combatController != null) {
+            combatController.setEventBus(eventBus);
+        }
+        if (eventBus != null) {
+            eventBus.subscribe(com.Hecate.event.WeaponEquippedEvent.class,
+                    event -> setExternalWeaponOverride(true));
+            eventBus.subscribe(com.Hecate.event.WeaponUnequippedEvent.class,
+                    event -> setExternalWeaponOverride(false));
+        }
+    }
+
+    /**
+     * 同步Gun1/Gun2的装备状态到PlayerEquipment的外部武器覆盖标记
+     */
+    private void setExternalWeaponOverride(boolean active) {
+        if (playerStateManager != null) {
+            playerStateManager.getEquipment().setExternalWeaponOverride(active);
+        }
+    }
+
+    /**
+     * 是否装备着Gun1/Gun2（快捷栏之外的独立武器系统）
+     */
+    public boolean isHoldingGunWeapon() {
+        return combatController != null && combatController.isHoldingGun();
+    }
+
+    /**
+     * 强制卸下Gun1/Gun2（切换快捷栏槛位时调用，确保二者互斥）
+     */
+    public void forceUnequipGunWeapon() {
+        if (combatController != null) {
+            combatController.unequipAllWeapons();
+        }
+    }
+
+    /**
+     * 鼠标是否处于"解放"状态（可自由移动指向物品，而非锁定控制镜头朝向）。
+     * 目前唯一会解除鼠标锁定的界面是背包UI，其他覆盖层（如GameConsole）不影响此状态。
+     */
+    public boolean isCursorFree() {
+        return inventoryUI != null && inventoryUI.isVisible();
     }
 
     /**

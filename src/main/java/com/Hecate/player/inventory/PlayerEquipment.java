@@ -19,6 +19,11 @@ public class PlayerEquipment {
     private WeaponDefinition currentWeapon;
     private Block currentBlock;
 
+    // 外部武器覆盖：Gun1/Gun2（PlayerCombatController，独立于快捷栏的老系统）装备时置true。
+    // 快捷栏本身的选中槛位不受影响（仍可能是stone等方块），但isHoldingBlock()/isHoldingWeapon()
+    // 需要如实反映"玩家实际手上拿的是枪"，否则右键会在持枪时依然触发方块放置。
+    private boolean externalWeaponOverride = false;
+
     public PlayerEquipment(BlockRegistry blockRegistry, WeaponRegistry weaponRegistry) {
         this.hotbar = new PlayerHotbar();
         this.blockRegistry = blockRegistry;
@@ -89,17 +94,34 @@ public class PlayerEquipment {
     }
 
     /**
-     * 检查当前是否持有武器
+     * 检查当前是否持有武器（快捷栏武器槛位，或外部覆盖——见{@link #setExternalWeaponOverride}）
      */
     public boolean isHoldingWeapon() {
-        return currentWeapon != null;
+        return externalWeaponOverride || currentWeapon != null;
     }
 
     /**
-     * 检查当前是否持有方块
+     * 检查当前是否持有方块。外部武器覆盖生效时（Gun1/Gun2已装备），即使快捷栏
+     * 选中的是方块槛位，也视为"手上没有方块"，避免持枪状态下右键依然放置方块。
      */
     public boolean isHoldingBlock() {
-        return currentBlock != null;
+        return !externalWeaponOverride && currentBlock != null;
+    }
+
+    /**
+     * 设置外部武器覆盖状态（由PlayerController在Gun1/Gun2装备/卸下时调用）。
+     * 该覆盖不改变快捷栏本身选中的槛位，只影响isHoldingWeapon()/isHoldingBlock()的
+     * 判定结果，确保"手持方块"与"手持Gun1/Gun2"始终互斥。
+     */
+    public void setExternalWeaponOverride(boolean active) {
+        this.externalWeaponOverride = active;
+    }
+
+    /**
+     * 查询外部武器覆盖是否生效（Gun1/Gun2是否已装备）
+     */
+    public boolean isExternalWeaponOverrideActive() {
+        return externalWeaponOverride;
     }
 
     /**

@@ -14,64 +14,56 @@ import java.util.Map;
 /**
  * 旋转条状贴图工具类
  *
- * 负责加载"环绕360°的条状贴图"，并在贴图实际像素宽度不足以容纳所需档数时，
- * 在内存中生成一张右侧补齐透明像素的加宽版本（不修改原始贴图文件）。
+ * 负责加载"环绕360°的条状贴图"，并保证贴图内容宽度正好等于一圈的步数
+ * （framesPerRevolution，一步一像素），这样才能配合GPU的Repeat环绕模式实现
+ * 真正无缝的360°环形取样：转到第0步和转到第framesPerRevolution步（即绕回
+ * 第0步）之间，硬件采样会自然衔接，不会有整段跳变。
  *
- * 补齐后的贴图会按 (贴图路径 + 所需档数) 缓存，避免每帧重新生成。
+ * 如果原始贴图宽度不等于framesPerRevolution，会在内存中生成一张宽度恰好为
+ * framesPerRevolution的版本（不修改原始贴图文件）：
+ * - 原图更窄：右侧用透明像素（alpha=0，不是白色）补齐
+ * - 原图更宽：只使用最前面framesPerRevolution列，多出的部分不会被采样到
+ * 两种情况都会打印警告，提醒贴图内容宽度应该恰好匹配一圈步数。
+ *
+ * 补齐/裁剪后的贴图会按 (贴图路径 + 所需步数) 缓存，避免每帧重新生成。
  */
 public class RotationStripTextureUtil {
 
     /**
-     * 缓存的补齐贴图信息
+     * 环形条状贴图信息
      */
-    public static class PaddedStrip {
+    public static class RingStrip {
         public final Texture2D texture;
-        public final int paddedWidthPx;
+        public final int widthPx;  // 始终等于framesPerRevolution
         public final int heightPx;
 
-        PaddedStrip(Texture2D texture, int paddedWidthPx, int heightPx) {
+        RingStrip(Texture2D texture, int widthPx, int heightPx) {
             this.texture = texture;
-            this.paddedWidthPx = paddedWidthPx;
+            this.widthPx = widthPx;
             this.heightPx = heightPx;
         }
     }
 
-    // 缓存key: 贴图路径 + "#" + 所需档数 -> 补齐后的贴图
-    private static final Map<String, PaddedStrip> cache = new HashMap<>();
+    // 缓存key: 贴图路径 + "#" + 一圈步数 -> 环形贴图
+    private static final Map<String, RingStrip> cache = new HashMap<>();
 
     /**
-     * 获取（必要时生成）补齐到至少requiredSteps像素宽的条状贴图（左侧不额外留白，向后兼容旧调用）
-     */
-    public static PaddedStrip getOrCreatePaddedStrip(AssetManager assetManager, String texturePath, int requiredSteps) {
-        return getOrCreatePaddedStrip(assetManager, texturePath, 0, requiredSteps);
-    }
-
-    /**
-     * 获取（必要时生成）补齐后的条状贴图，支持在左侧预留一段透明像素的"校准余量"。
-     *
-     * 校准偏移允许为负数（比如摄像机朝向对应的采样步数比用户手动选定的取景框像素还大），
-     * 这时候取景框要往贴图左边界以外取样。原贴图内容不能真的往左边移，所以改用在内存里
-     * 生成的临时贴图左侧插入leftMarginPx像素的透明留白，调用方后续把逻辑像素坐标一律
-     * 加上leftMarginPx就能落在这张贴图的有效范围内，取景框仍能按固定1像素/步连续滑动，
-     * 不会因为越界被硬夹在边界上产生"卡住不动"的问题。
+     * 获取（必要时生成）宽度恰好为framesPerRevolution像素、且开启了S轴Repeat环绕的条状贴图。
      *
      * @param assetManager 资源管理器
      * @param texturePath 原始条状贴图路径
-     * @param leftMarginPx 左侧预留的透明留白像素数（>=0，通常是一个固定常量，与校准偏移的
-     *                     理论最小负值相匹配，比如STEPS_PER_REVOLUTION-1）
-     * @param requiredWidthPx 除左侧留白外，右侧（原图内容+右侧补齐）总共需要的最小像素宽度
-     * @return 补齐后的贴图信息（paddedWidthPx已包含左侧留白），如果加载失败返回null
+     * @param framesPerRevolution 一圈的步数（贴图内容的周期宽度，单位像素）
+     * @return 环形贴图信息，如果加载失败返回null
      */
-    public static PaddedStrip getOrCreatePaddedStrip(AssetManager assetManager, String texturePath, int leftMarginPx, int requiredWidthPx) {
+    public static RingStrip getOrCreateRingStrip(AssetManager assetManager, String texturePath, int framesPerRevolution) {
         if (texturePath == null || texturePath.isEmpty() || assetManager == null) {
             return null;
         }
 
-        int effectiveLeftMargin = Math.max(0, leftMarginPx);
-        int effectiveRequiredWidth = Math.max(1, requiredWidthPx);
-        String cacheKey = texturePath + "#" + effectiveLeftMargin + "#" + effectiveRequiredWidth;
+        int targetWidth = Math.max(1, framesPerRevolution);
+        String cacheKey = texturePath + "#ring#" + targetWidth;
 
-        PaddedStrip cached = cache.get(cacheKey);
+        RingStrip cached = cache.get(cacheKey);
         if (cached != null) {
             return cached;
         }
@@ -86,18 +78,25 @@ public class RotationStripTextureUtil {
             int width = sourceImage.getWidth();
             int height = sourceImage.getHeight();
 
-            PaddedStrip result;
-            if (effectiveLeftMargin == 0 && width >= effectiveRequiredWidth) {
-                // 不需要左侧留白，且原贴图已足够宽，直接复用（不生成新贴图，不额外占用内存）
+            RingStrip result;
+            if (width == targetWidth) {
+                // 宽度正好匹配一圈步数，直接复用（不生成新贴图，不额外占用内存）
                 Texture2D texture2D = (rawTexture instanceof Texture2D)
                         ? (Texture2D) rawTexture
                         : new Texture2D(sourceImage);
-                texture2D.setMagFilter(Texture.MagFilter.Nearest);
-                texture2D.setMinFilter(Texture.MinFilter.NearestNoMipMaps);
-                result = new PaddedStrip(texture2D, width, height);
+                configureRingTexture(texture2D);
+                result = new RingStrip(texture2D, width, height);
             } else {
-                int totalWidth = effectiveLeftMargin + Math.max(width, effectiveRequiredWidth);
-                result = createPaddedTexture(sourceImage, width, height, effectiveLeftMargin, totalWidth);
+                if (width > targetWidth) {
+                    System.err.println("[RotationStripTextureUtil] 贴图宽度 " + width
+                            + "px 超过一圈所需的 " + targetWidth
+                            + "px，多出的列不会被使用（贴图内容周期必须正好等于一圈步数才能无缝环绕）: " + texturePath);
+                } else {
+                    System.err.println("[RotationStripTextureUtil] 贴图宽度 " + width
+                            + "px 小于一圈所需的 " + targetWidth
+                            + "px，右侧将用透明像素补齐到 " + targetWidth + "px: " + texturePath);
+                }
+                result = createRingTexture(sourceImage, width, height, targetWidth);
             }
 
             cache.put(cacheKey, result);
@@ -111,40 +110,53 @@ public class RotationStripTextureUtil {
     }
 
     /**
-     * 生成一张两侧补齐透明像素的加宽贴图
-     * 左侧leftMargin像素透明留白，中间保留原始像素内容，右侧补齐部分也完全透明（alpha=0，不是白色）
+     * 给环形贴图配置最近邻过滤（不产生半像素糊边）和S轴Repeat环绕（支持360°无缝取样，
+     * 也支持任意正负U坐标——GPU的Repeat会对U坐标自动取小数部分，等价于取模，
+     * 越界坐标不需要在CPU侧夹紧或做留白）。T轴使用EdgeClamp，因为取景框高度方向
+     * 不需要环绕，用EdgeClamp避免边缘因为过滤或极端UV值意外取到对面的像素。
      */
-    private static PaddedStrip createPaddedTexture(Image sourceImage, int srcWidth, int srcHeight, int leftMargin, int paddedWidth) {
+    private static void configureRingTexture(Texture2D texture) {
+        texture.setMagFilter(Texture.MagFilter.Nearest);
+        texture.setMinFilter(Texture.MinFilter.NearestNoMipMaps);
+        texture.setWrap(Texture.WrapAxis.S, Texture.WrapMode.Repeat);
+        texture.setWrap(Texture.WrapAxis.T, Texture.WrapMode.EdgeClamp);
+    }
+
+    /**
+     * 生成一张宽度恰好为targetWidth的贴图：原图内容从左对齐拷贝
+     * min(srcWidth, targetWidth)列，多出的宽度（仅当srcWidth<targetWidth时）
+     * 用透明像素补齐（alpha=0，不是白色）；原图更宽的部分直接丢弃不拷贝。
+     */
+    private static RingStrip createRingTexture(Image sourceImage, int srcWidth, int srcHeight, int targetWidth) {
         ByteBuffer srcData = sourceImage.getData(0);
         Image.Format format = sourceImage.getFormat();
         int bytesPerPixel = getBytesPerPixel(format);
 
         if (bytesPerPixel == 0 || srcData == null) {
-            System.err.println("[RotationStripTextureUtil] 不支持的图像格式，无法补齐: " + format);
+            System.err.println("[RotationStripTextureUtil] 不支持的图像格式，无法处理: " + format);
             // 无法读取像素数据时，仍返回一张全透明的占位贴图，保证渲染不崩
-            ByteBuffer blankBuffer = BufferUtils.createByteBuffer(paddedWidth * srcHeight * 4);
-            for (int i = 0; i < paddedWidth * srcHeight; i++) {
+            ByteBuffer blankBuffer = BufferUtils.createByteBuffer(targetWidth * srcHeight * 4);
+            for (int i = 0; i < targetWidth * srcHeight; i++) {
                 blankBuffer.put((byte) 0).put((byte) 0).put((byte) 0).put((byte) 0);
             }
             blankBuffer.flip();
-            Image blankImage = new Image(Image.Format.RGBA8, paddedWidth, srcHeight, blankBuffer, ColorSpace.Linear);
+            Image blankImage = new Image(Image.Format.RGBA8, targetWidth, srcHeight, blankBuffer, ColorSpace.Linear);
             Texture2D blankTexture = new Texture2D(blankImage);
-            blankTexture.setMagFilter(Texture.MagFilter.Nearest);
-            blankTexture.setMinFilter(Texture.MinFilter.NearestNoMipMaps);
-            return new PaddedStrip(blankTexture, paddedWidth, srcHeight);
+            configureRingTexture(blankTexture);
+            return new RingStrip(blankTexture, targetWidth, srcHeight);
         }
 
         int alphaOffset = getAlphaOffset(format);
         boolean hasAlpha = alphaOffset != -1;
+        int copyWidth = Math.min(srcWidth, targetWidth);
 
-        ByteBuffer destBuffer = BufferUtils.createByteBuffer(paddedWidth * srcHeight * 4);
+        ByteBuffer destBuffer = BufferUtils.createByteBuffer(targetWidth * srcHeight * 4);
         srcData.rewind();
 
         for (int y = 0; y < srcHeight; y++) {
-            for (int x = 0; x < paddedWidth; x++) {
-                int srcX = x - leftMargin;
-                if (srcX >= 0 && srcX < srcWidth) {
-                    int srcIndex = (y * srcWidth + srcX) * bytesPerPixel;
+            for (int x = 0; x < targetWidth; x++) {
+                if (x < copyWidth) {
+                    int srcIndex = (y * srcWidth + x) * bytesPerPixel;
                     int r, g, b, a;
 
                     switch (format) {
@@ -180,19 +192,18 @@ public class RotationStripTextureUtil {
 
                     destBuffer.put((byte) r).put((byte) g).put((byte) b).put((byte) a);
                 } else {
-                    // 左侧留白或右侧补齐区域：完全透明（不是白色）
+                    // 右侧补齐区域（仅当原图比目标窄时才会走到这里）：完全透明（不是白色）
                     destBuffer.put((byte) 0).put((byte) 0).put((byte) 0).put((byte) 0);
                 }
             }
         }
         destBuffer.flip();
 
-        Image paddedImage = new Image(Image.Format.RGBA8, paddedWidth, srcHeight, destBuffer, ColorSpace.Linear);
-        Texture2D paddedTexture = new Texture2D(paddedImage);
-        paddedTexture.setMagFilter(Texture.MagFilter.Nearest);
-        paddedTexture.setMinFilter(Texture.MinFilter.NearestNoMipMaps);
+        Image ringImage = new Image(Image.Format.RGBA8, targetWidth, srcHeight, destBuffer, ColorSpace.Linear);
+        Texture2D ringTexture = new Texture2D(ringImage);
+        configureRingTexture(ringTexture);
 
-        return new PaddedStrip(paddedTexture, paddedWidth, srcHeight);
+        return new RingStrip(ringTexture, targetWidth, srcHeight);
     }
 
     private static int getBytesPerPixel(Image.Format format) {

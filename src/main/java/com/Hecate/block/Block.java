@@ -17,18 +17,14 @@ public class Block {
     private final BlockTexture texture;
     private final String modelPath;
     private final boolean isTransparent;
+    private final Axis axis; // 摆放朝向轴（默认Y=竖直），仅对方向性方块（如原木）有意义
+    private final String orientationGroup; // 同一族朝向变体共享的分组key（如"wood1"），null表示非方向性方块
 
     /**
      * 创建一个新的方块类型（完整版本）
      */
     public Block(String id, String name, boolean solid, float hardness, BlockTexture texture, String modelPath, boolean isTransparent) {
-        this.id = id;
-        this.name = name;
-        this.solid = solid;
-        this.hardness = hardness;
-        this.texture = texture;
-        this.modelPath = modelPath;
-        this.isTransparent = isTransparent;
+        this(id, name, solid, hardness, texture, modelPath, isTransparent, Axis.Y, null);
     }
 
     /**
@@ -43,26 +39,38 @@ public class Block {
      * 纹理由 BlockTextureManager 管理
      */
     public Block(String id, String name, boolean solid, float hardness, boolean isTransparent) {
-        this.id = id;
-        this.name = name;
-        this.solid = solid;
-        this.hardness = hardness;
-        this.texture = null;
-        this.modelPath = null;
-        this.isTransparent = isTransparent;
+        this(id, name, solid, hardness, null, null, isTransparent, Axis.Y, null);
     }
 
     /**
      * 带自定义模型的构造器
      */
     public Block(String id, String name, boolean solid, float hardness, boolean isTransparent, String modelPath) {
+        this(id, name, solid, hardness, null, modelPath, isTransparent, Axis.Y, null);
+    }
+
+    /**
+     * 带朝向轴的构造器（用于原木一类方向性方块的某个具体朝向变体）
+     *
+     * @param axis 该变体摆放时长轴所沿的方向
+     * @param orientationGroup 同一族朝向变体共享的分组key（如"wood1"），放置时用它找到"另外两个朝向的兄弟方块"
+     */
+    public Block(String id, String name, boolean solid, float hardness, boolean isTransparent, String modelPath,
+                 Axis axis, String orientationGroup) {
+        this(id, name, solid, hardness, null, modelPath, isTransparent, axis, orientationGroup);
+    }
+
+    private Block(String id, String name, boolean solid, float hardness, BlockTexture texture, String modelPath,
+                   boolean isTransparent, Axis axis, String orientationGroup) {
         this.id = id;
         this.name = name;
         this.solid = solid;
         this.hardness = hardness;
-        this.texture = null;
+        this.texture = texture;
         this.modelPath = modelPath;
         this.isTransparent = isTransparent;
+        this.axis = axis;
+        this.orientationGroup = orientationGroup;
     }
 
     // Getter 方法
@@ -96,6 +104,18 @@ public class Block {
 
     public boolean hasCustomModel() {
         return modelPath != null && !modelPath.isEmpty();
+    }
+
+    public Axis getAxis() {
+        return axis;
+    }
+
+    public String getOrientationGroup() {
+        return orientationGroup;
+    }
+
+    public boolean isDirectional() {
+        return orientationGroup != null;
     }
 
     /**

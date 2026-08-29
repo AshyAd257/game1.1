@@ -1,5 +1,6 @@
 package com.Hecate.physics;
 
+import com.Hecate.block.BlockShapeRegistry;
 import com.Hecate.world.ChunkManager;
 import com.Hecate.world.ChunkPosition;
 import com.Hecate.world.Chunk;
@@ -11,6 +12,9 @@ import com.jme3.math.Vector3f;
  */
 public class CollisionManager {
     private ChunkManager chunkManager;
+    // 各方块ID的实际碰撞盒尺寸（如wood1这种细柱子远小于满格）。为null时退化为
+    // 所有方块都是满格1x1x1实心立方体（向后兼容未注入时的行为）。
+    private BlockShapeRegistry shapeRegistry;
 
     // 碰撞检测参数
     private static final float COLLISION_TOLERANCE = 0.001f;
@@ -36,6 +40,13 @@ public class CollisionManager {
      */
     public ChunkManager getChunkManager() {
         return chunkManager;
+    }
+
+    /**
+     * 设置方块碰撞尺寸管理器（用于查询各方块实际碰撞盒大小，而不是一律满格）
+     */
+    public void setShapeRegistry(BlockShapeRegistry shapeRegistry) {
+        this.shapeRegistry = shapeRegistry;
     }
 
     /**
@@ -171,20 +182,24 @@ public class CollisionManager {
                 return movement;
         }
 
-        // 获取可能碰撞的方块范围
-        int minX = (int) Math.floor(movedBox.getMinX());
-        int maxX = (int) Math.floor(movedBox.getMaxX());
-        int minY = (int) Math.floor(movedBox.getMinY());
-        int maxY = (int) Math.floor(movedBox.getMaxY());
-        int minZ = (int) Math.floor(movedBox.getMinZ());
-        int maxZ = (int) Math.floor(movedBox.getMaxZ());
+        // 获取可能碰撞的方块范围。方块坐标n占据[n-0.5,n+0.5]（坐标本身是中心不是角点），
+        // 所以查询范围要各往外扩0.5再取整，否则贴近格子边界时会漏检相邻格子
+        // （例如movedBox.getMaxX()=3.7，真正该检查的格子中心是4，因为它占据[3.5,4.5]
+        // 与3.7有重叠，但floor(3.7)=3会漏掉它）。多检查几个格子无害，intersects()会精确过滤。
+        int minX = (int) Math.floor(movedBox.getMinX() - 0.5f);
+        int maxX = (int) Math.floor(movedBox.getMaxX() + 0.5f);
+        int minY = (int) Math.floor(movedBox.getMinY() - 0.5f);
+        int maxY = (int) Math.floor(movedBox.getMaxY() + 0.5f);
+        int minZ = (int) Math.floor(movedBox.getMinZ() - 0.5f);
+        int maxZ = (int) Math.floor(movedBox.getMaxZ() + 0.5f);
 
         // 检测范围内的所有方块
         for (int x = minX; x <= maxX; x++) {
             for (int y = minY; y <= maxY; y++) {
                 for (int z = minZ; z <= maxZ; z++) {
-                    if (isBlockSolid(x, y, z)) {
-                        AABB blockBox = new AABB(x, y, z, x + 1, y + 1, z + 1);
+                    String blockId = getBlockIdAt(x, y, z);
+                    if (blockId != null && !blockId.equals("air")) {
+                        AABB blockBox = buildBlockAABB(x, y, z, blockId);
                         if (movedBox.intersects(blockBox)) {
                             // 发生碰撞，计算修正后的移动距离
                             return calculateCorrectedMovement(entityBox, blockBox, movement, axis);
@@ -236,9 +251,17 @@ public class CollisionManager {
      * 使用你现有的ChunkManager系统
      */
     private boolean isBlockSolid(int x, int y, int z) {
+        String blockId = getBlockIdAt(x, y, z);
+        return blockId != null && !blockId.equals("air");
+    }
+
+    /**
+     * 获取指定整数格子坐标的方块ID；查不到（区块未加载/越界）时返回null（视为空气）
+     */
+    private String getBlockIdAt(int x, int y, int z) {
         if (chunkManager == null) {
-            // 没有ChunkManager时的简单测试逻辑
-            return y <= 0; // 地面以下都是固体
+            // 没有ChunkManager时的简单测试逻辑：地面以下都是固体
+            return y <= 0 ? "stone" : null;
         }
 
         try {
@@ -251,7 +274,7 @@ public class CollisionManager {
             Chunk chunk = chunkManager.getChunk(chunkPos);
 
             if (chunk == null) {
-                return false; // 未加载的区块视为空气
+                return null; // 未加载的区块视为空气
             }
 
             // 计算区块内坐标（确保在0-15范围内）
@@ -263,19 +286,33 @@ public class CollisionManager {
             if (localX < 0 || localX >= Chunk.SIZE ||
                 localY < 0 || localY >= Chunk.SIZE ||
                 localZ < 0 || localZ >= Chunk.SIZE) {
-                return false;
+                return null;
             }
 
-            // 使用Chunk.getBlockId的方法
-            String blockId = chunk.getBlockId(localX, localY, localZ);
-            boolean isSolid = blockId != null && !blockId.equals("air");
-
-            return isSolid;
+            return chunk.getBlockId(localX, localY, localZ);
 
         } catch (Exception e) {
             e.printStackTrace();
-            return false;
+            return null;
         }
+    }
+
+    /**
+     * 构造指定整数格子坐标处方块的碰撞盒。方块渲染约定"整数坐标=格子中心本身"（如坐标5的
+     * 方块用Box(0.5,0.5,0.5)直接摆在Vector3f(5,y,z)上，占据[4.5,5.5]），不是把整数坐标当
+     * "角点"——之前的写法new AABB(x,y,z,x+1,y+1,z+1)正是把整数坐标当成了角点，构造出的
+     * 盒子跨度是[x,x+1]，跟真实渲染位置整整错位了半格。这里以(x,y,z)本身为中心构造，
+     * 尺寸从BlockShapeRegistry查询该方块的实际登记尺寸（默认满格1x1x1；wood1这类细柱子会
+     * 小得多），而不是一律满格。
+     */
+    private AABB buildBlockAABB(int x, int y, int z, String blockId) {
+        Vector3f half = shapeRegistry != null
+                ? shapeRegistry.getHalfExtents(blockId)
+                : new Vector3f(0.5f, 0.5f, 0.5f);
+        return new AABB(
+                x - half.x, y - half.y, z - half.z,
+                x + half.x, y + half.y, z + half.z
+        );
     }
 
     /**
@@ -285,18 +322,20 @@ public class CollisionManager {
         // 检查实体下方是否有固体方块
         AABB groundCheckBox = entityBox.offset(0, -0.1f, 0);
 
-        int minX = (int) Math.floor(groundCheckBox.getMinX());
-        int maxX = (int) Math.floor(groundCheckBox.getMaxX());
-        int minY = (int) Math.floor(groundCheckBox.getMinY());
-        int maxY = (int) Math.floor(groundCheckBox.getMaxY());
-        int minZ = (int) Math.floor(groundCheckBox.getMinZ());
-        int maxZ = (int) Math.floor(groundCheckBox.getMaxZ());
+        // 同checkAxisCollision：方块坐标n占据[n-0.5,n+0.5]，查询范围要各往外扩0.5再取整
+        int minX = (int) Math.floor(groundCheckBox.getMinX() - 0.5f);
+        int maxX = (int) Math.floor(groundCheckBox.getMaxX() + 0.5f);
+        int minY = (int) Math.floor(groundCheckBox.getMinY() - 0.5f);
+        int maxY = (int) Math.floor(groundCheckBox.getMaxY() + 0.5f);
+        int minZ = (int) Math.floor(groundCheckBox.getMinZ() - 0.5f);
+        int maxZ = (int) Math.floor(groundCheckBox.getMaxZ() + 0.5f);
 
         for (int x = minX; x <= maxX; x++) {
             for (int y = minY; y <= maxY; y++) {
                 for (int z = minZ; z <= maxZ; z++) {
-                    if (isBlockSolid(x, y, z)) {
-                        AABB blockBox = new AABB(x, y, z, x + 1, y + 1, z + 1);
+                    String blockId = getBlockIdAt(x, y, z);
+                    if (blockId != null && !blockId.equals("air")) {
+                        AABB blockBox = buildBlockAABB(x, y, z, blockId);
                         if (groundCheckBox.intersects(blockBox)) {
                             return true;
                         }

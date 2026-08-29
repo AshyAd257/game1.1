@@ -53,6 +53,9 @@ public class PlayerCombatController {
     private int playerFactionId = com.Hecate.ink.FactionRegistry.DARK_DEFAULT;
     private com.Hecate.monster.MonsterManager monsterManager;
 
+    // 事件总线（武器装备/卸下时通知PanelManager等UI系统）
+    private com.Hecate.event.EventBus eventBus;
+
     /**
      * 位置提供者接口
      */
@@ -98,6 +101,13 @@ public class PlayerCombatController {
      */
     public void setFlameRenderer(com.Hecate.flame.SimpleFlameRenderer flameRenderer) {
         this.flameRenderer = flameRenderer;
+    }
+
+    /**
+     * 设置事件总线（Gun1/Gun2装备/卸下时发布事件，供PanelManager等UI系统订阅）
+     */
+    public void setEventBus(com.Hecate.event.EventBus eventBus) {
+        this.eventBus = eventBus;
     }
 
     /**
@@ -204,6 +214,11 @@ public class PlayerCombatController {
 
             setCurrentWeapon(steampunkGun);
 
+            if (eventBus != null) {
+                eventBus.publish(new com.Hecate.event.WeaponEquippedEvent(
+                        steampunkGun.getKind(), playerAmmo.getCurrentAmmo(), playerAmmo.getMaxAmmo()));
+            }
+
             return true;
         } catch (Exception e) {
             System.err.println("装备Gun1失败: " + e.getMessage());
@@ -232,6 +247,10 @@ public class PlayerCombatController {
 
         // 恢复默认武器
         setCurrentWeapon(BasicShooter.createDefault());
+
+        if (eventBus != null) {
+            eventBus.publish(new com.Hecate.event.WeaponUnequippedEvent());
+        }
 
         return true;
     }
@@ -305,6 +324,11 @@ public class PlayerCombatController {
 
             setCurrentWeapon(sniperRifle);
 
+            if (eventBus != null) {
+                eventBus.publish(new com.Hecate.event.WeaponEquippedEvent(
+                        sniperRifle.getKind(), playerAmmo.getCurrentAmmo(), playerAmmo.getMaxAmmo()));
+            }
+
             return true;
         } catch (Exception e) {
             System.err.println("装备Gun2失败: " + e.getMessage());
@@ -334,13 +358,18 @@ public class PlayerCombatController {
         // 恢复默认武器
         setCurrentWeapon(BasicShooter.createDefault());
 
+        if (eventBus != null) {
+            eventBus.publish(new com.Hecate.event.WeaponUnequippedEvent());
+        }
+
         return true;
     }
 
     /**
-     * 卸下所有武器
+     * 卸下所有武器（公开：切换快捷栏槛位时，PlayerController需要强制卸下Gun1/Gun2，
+     * 确保"手上拿方块/普通武器"与"手上拿Gun1/Gun2"互斥）
      */
-    private void unequipAllWeapons() {
+    public void unequipAllWeapons() {
         if (isGun1Equipped) {
             unequipGun1();
         }
@@ -508,6 +537,8 @@ public class PlayerCombatController {
      * 扔掉当前手持物品
      */
     public void dropCurrentItem() {
+        boolean wasHoldingGun = isGun1Equipped || isGun2Equipped;
+
         // 清除武器引用
         if (currentWeapon != null) {
             currentWeapon.cancelCharge();
@@ -531,7 +562,9 @@ public class PlayerCombatController {
         isLeftButtonPressed = false;
         continuousFireTimer = 0f;
 
-
+        if (wasHoldingGun && eventBus != null) {
+            eventBus.publish(new com.Hecate.event.WeaponUnequippedEvent());
+        }
     }
 
     /**

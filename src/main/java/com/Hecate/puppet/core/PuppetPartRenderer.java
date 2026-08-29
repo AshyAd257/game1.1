@@ -1518,12 +1518,21 @@ public class PuppetPartRenderer {
      * 三条规矩：
      * 1. 取景框只能停在整数像素格线上（不做半像素插值）
      * 2. 取样是纯拷贝，不做混合/缩放（配合Nearest过滤）
-     * 3. 档数不足时贴图右侧用透明像素在内存中补齐（不修改原文件）
+     * 3. 贴图内容宽度必须恰好等于一圈的步数（STEPS_PER_REVOLUTION），不足时右侧
+     *    用透明像素在内存中补齐（不修改原文件），保证贴图开启Repeat环绕后能
+     *    无缝绕回起点
+     *
+     * 环形寻址原理：atan2算出的yaw在±180°处会有一次数学上的跳变（从+180°瞬间
+     * 变成-180°），对应stepIndex会跳变整整一个周期（STEPS_PER_REVOLUTION步）。
+     * 这里不对stepIndex做取模归一化，而是让贴图的S轴开启WrapMode.Repeat——
+     * U坐标每变化1.0正好对应贴图绕一圈，跳变前后的UV正好相差整数倍的1.0，
+     * GPU按小数部分采样，两个UV落在完全相同的像素上，视觉上是无缝的连续过渡，
+     * 不会出现"整张图突然切换"的跳变。
      */
-    // 固定规则：摄像机每转DEGREES_PER_STEP度，取景框挪1个像素。360°正好整除成15个固定位置，
-    // 不可配置，不考虑档数/连续模式——先把最基本的效果做对
+    // 固定规则：摄像机每转DEGREES_PER_STEP度，取景框挪1个像素。360°正好整除成
+    // STEPS_PER_REVOLUTION个固定位置，不可配置，不考虑档数/连续模式
     private static final float DEGREES_PER_STEP = 10f;
-    private static final int STEPS_PER_REVOLUTION = 360 / (int) DEGREES_PER_STEP; // 15
+    private static final int STEPS_PER_REVOLUTION = 360 / (int) DEGREES_PER_STEP; // 36
 
     private void applyRotationStripUV(Vector3f worldPos) {
         String stripPath = bone.getStripTexturePath();
@@ -1534,20 +1543,13 @@ public class PuppetPartRenderer {
         int frameWidthPx = bone.getStripFrameWidthPx();
         int calibrationOffsetPx = bone.getStripCalibrationOffsetPx();
 
-        // 左侧留白：校准偏移理论上最负也只会是-(STEPS_PER_REVOLUTION-1)（selPixelX=0时），
-        // 固定预留这么多像素的透明留白，保证校准偏移为负数时取景框仍有合法像素可采样，
-        // 不需要在下面夹紧坐标——夹紧会导致转到某些角度时取景框卡住不动，达不到"按原规则移动"的要求。
-        int leftMarginPx = STEPS_PER_REVOLUTION - 1;
-        // 右侧（原图+右侧补齐）所需宽度：正的校准偏移量 + 15个固定位置最后一个的起点 + 取景框宽度
-        int requiredWidthPx = Math.max(0, calibrationOffsetPx) + (STEPS_PER_REVOLUTION - 1) + frameWidthPx;
-
-        RotationStripTextureUtil.PaddedStrip strip =
-                RotationStripTextureUtil.getOrCreatePaddedStrip(app.getAssetManager(), stripPath, leftMarginPx, requiredWidthPx);
+        RotationStripTextureUtil.RingStrip strip =
+                RotationStripTextureUtil.getOrCreateRingStrip(app.getAssetManager(), stripPath, STEPS_PER_REVOLUTION);
         if (strip == null) {
             return;
         }
 
-        // 确保材质上贴的是这张（可能是补齐后的）贴图，而不是loadTexture()原样加载的那份
+        // 确保材质上贴的是这张（可能是补齐后的）环形贴图，而不是loadTexture()原样加载的那份
         if (texture != strip.texture) {
             texture = strip.texture;
             partMaterial.setTexture("DiffuseMap", texture);
@@ -1566,21 +1568,22 @@ public class PuppetPartRenderer {
         float yawRad = FastMath.atan2(horizontalDir.x, horizontalDir.z);
         float yawDeg = yawRad * FastMath.RAD_TO_DEG;
 
-        int paddedWidthPx = strip.paddedWidthPx;
+        int ringWidthPx = strip.widthPx;
 
-        // 每转DEGREES_PER_STEP度挪1个像素，一步只走一个像素
+        // 每转DEGREES_PER_STEP度挪1个像素，一步只走一个像素。
+        // 【关键】不做取模归一化——保留atan2在±180°处的原始跳变（正好是±STEPS_PER_REVOLUTION），
+        // 交给贴图的Repeat环绕模式在UV层面无缝吸收这个跳变。
         int stepIndex = Math.round(yawDeg / DEGREES_PER_STEP);
-        stepIndex = ((stepIndex % STEPS_PER_REVOLUTION) + STEPS_PER_REVOLUTION) % STEPS_PER_REVOLUTION; // 归一化负数取模
-
+///
         // 校准偏移：把"摄像机朝向0° -> 取景框从像素0开始采样"这条固定规则整体平移
         // calibrationOffsetPx像素。用户在选区面板对准某个朝向手动拖好取景框后点击"校准"
-        // 写入这个值，换贴图也不受影响（存在Bone上，不跟着贴图文件走）。加上leftMarginPx
-        // 换算到这张贴图的实际像素坐标——偏移无论正负，贴图左侧留白都保证了坐标始终合法，
-        // 取景框能按固定1像素/步连续滑动，不会在任何朝向卡住。
-        int pixelStart = leftMarginPx + calibrationOffsetPx + stepIndex;
+        // 写入这个值，换贴图也不受影响（存在Bone上，不跟着贴图文件走）。偏移和stepIndex
+        // 都可能是任意整数（正负不限，超出一圈范围也没关系），Repeat环绕会自动按
+        // 周期折算，不需要在CPU侧夹紧或取模。
+        int pixelStart = calibrationOffsetPx + stepIndex;
 
-        float u0 = pixelStart / (float) paddedWidthPx;
-        float u1 = (pixelStart + frameWidthPx) / (float) paddedWidthPx;
+        float u0 = pixelStart / (float) ringWidthPx;
+        float u1 = (pixelStart + frameWidthPx) / (float) ringWidthPx;
 
         // 【关键修复】V范围必须按取景框高度裁剪，不能永远取贴图整张高度。
         // 之前v0/v1硬编码为0/1，导致无论取景框选多高，都把整张贴图的高度塞进

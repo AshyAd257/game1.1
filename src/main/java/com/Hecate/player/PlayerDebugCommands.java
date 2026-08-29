@@ -1,5 +1,6 @@
 package com.Hecate.player;
 
+import com.Hecate.block.BlockInteraction;
 import com.Hecate.ui.GameConsole;
 import com.jme3.app.SimpleApplication;
 import com.jme3.math.FastMath;
@@ -17,6 +18,11 @@ public class PlayerDebugCommands {
     private final PlayerCombatController combatController;
     private com.Hecate.monster.MonsterManager monsterManager;
     private Node currentWorldNode;
+    // 用Supplier而不是缓存单个实例：世界切换（如进入/离开竞技场）时
+    // PlayerControlModule会重新创建绑定新世界的BlockInteraction，
+    // 缓存旧引用会导致/give命令永远操作切换前的那个世界
+    private java.util.function.Supplier<BlockInteraction> blockInteractionSupplier;
+    private com.Hecate.player.inventory.PlayerEquipment playerEquipment;
 
     /**
      * 位置和朝向提供者接口
@@ -59,6 +65,21 @@ public class PlayerDebugCommands {
     }
 
     /**
+     * 设置方块交互系统的获取方式（用于 /give 命令校验方块ID是否存在）
+     * 传入的是Supplier而不是具体实例，确保世界切换后总能拿到当前激活世界的最新交互系统
+     */
+    public void setBlockInteractionSupplier(java.util.function.Supplier<BlockInteraction> blockInteractionSupplier) {
+        this.blockInteractionSupplier = blockInteractionSupplier;
+    }
+
+    /**
+     * 设置玩家装备管理器（用于 /give 命令把方块放进当前选中的快捷栏槽位）
+     */
+    public void setPlayerEquipment(com.Hecate.player.inventory.PlayerEquipment playerEquipment) {
+        this.playerEquipment = playerEquipment;
+    }
+
+    /**
      * 注册所有调试命令
      */
     public void registerAllCommands() {
@@ -67,6 +88,60 @@ public class PlayerDebugCommands {
         registerMob1Command();
         registerWave1Command();
         registerDataCommand();
+        registerGiveCommand();
+    }
+
+    /**
+     * 注册Give命令 - 把指定方块放入玩家当前选中的快捷栏槽位
+     * 用法: /give <blockId>，例如 /give wood1
+     * 放入后可用左键破坏方块的同款瞄准方式，右键放置（手持方块时右键=放置，空手/持武器时右键=原恢复功能）
+     */
+    private void registerGiveCommand() {
+        gameConsole.registerCommand("give", new GameConsole.CommandHandler() {
+            @Override
+            public void execute(String[] args) {
+                app.enqueue(() -> {
+                    try {
+                        if (args.length < 1) {
+                            gameConsole.addHistory("用法: /give <方块ID>");
+                            gameConsole.addHistory("示例: /give wood1");
+                            return null;
+                        }
+
+                        BlockInteraction blockInteraction = blockInteractionSupplier != null
+                                ? blockInteractionSupplier.get() : null;
+                        if (blockInteraction == null) {
+                            gameConsole.addHistory("错误: 方块交互系统未初始化");
+                            return null;
+                        }
+                        if (playerEquipment == null) {
+                            gameConsole.addHistory("错误: 玩家装备系统未初始化");
+                            return null;
+                        }
+
+                        String blockId = args[0];
+                        if (!blockInteraction.isBlockValid(blockId)) {
+                            gameConsole.addHistory("[FAIL] unknown block: " + blockId);
+                            return null;
+                        }
+
+                        int slot = playerEquipment.getSelectedSlot();
+                        playerEquipment.setHotbarSlot(slot,
+                                com.Hecate.player.inventory.HeldItem.block(blockId));
+                        gameConsole.addHistory("[OK] slot " + (slot + 1) + " = " + blockId);
+                    } catch (Exception e) {
+                        gameConsole.addHistory("Give命令执行失败: " + e.getMessage());
+                        e.printStackTrace();
+                    }
+                    return null;
+                });
+            }
+
+            @Override
+            public String getDescription() {
+                return "将指定方块放入当前选中的快捷栏槽位";
+            }
+        });
     }
 
     /**

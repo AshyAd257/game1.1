@@ -55,7 +55,7 @@ public class RotationStripSelectorPanel {
 
     // 固定规则：摄像机每转DEGREES_PER_STEP度，取景框挪1个像素，不可配置
     private static final float DEGREES_PER_STEP = 10f;
-    private static final int STEPS_PER_REVOLUTION = 360 / (int) DEGREES_PER_STEP; // 15
+    private static final int STEPS_PER_REVOLUTION = 360 / (int) DEGREES_PER_STEP; // 36
 
     // 拖拽状态
     private boolean isDragging = false;
@@ -319,15 +319,18 @@ public class RotationStripSelectorPanel {
         float yawRad = com.jme3.math.FastMath.atan2(horizontalDir.x, horizontalDir.z);
         float yawDeg = yawRad * com.jme3.math.FastMath.RAD_TO_DEG;
 
-        // 用与运行时applyRotationStripUV()相同的固定公式：每转24度挪1像素
-        int requiredWidthPx = Math.max(0, currentCalibrationOffsetPx) + (STEPS_PER_REVOLUTION - 1) + selPixelWidth;
-        int paddedWidthPx = Math.max(texWidthPx, requiredWidthPx);
+        // 用与运行时applyRotationStripUV()相同的固定公式：每转DEGREES_PER_STEP度挪1像素。
+        // 环形寻址：贴图宽度固定为STEPS_PER_REVOLUTION（配合Repeat环绕），实际采样时
+        // stepIndex不取模，交给贴图环绕在UV层面无缝吸收±180°处的跳变。但这里是给人看的
+        // 调试高亮框，需要落在贴图预览区域的可见范围内，所以单独对显示坐标做一次
+        // 周期折算（不影响运行时真正的采样公式）。
+        int ringWidthPx = STEPS_PER_REVOLUTION;
 
         int stepIndex = Math.round(yawDeg / DEGREES_PER_STEP);
-        stepIndex = ((stepIndex % STEPS_PER_REVOLUTION) + STEPS_PER_REVOLUTION) % STEPS_PER_REVOLUTION;
         int pixelStart = currentCalibrationOffsetPx + stepIndex; // 步长恒为1像素，叠加已保存的校准偏移
+        int displayPixelStart = ((pixelStart % ringWidthPx) + ringWidthPx) % ringWidthPx; // 仅用于显示定位，折算回[0, ringWidthPx)
 
-        updateLivePreviewBox(pixelStart, paddedWidthPx, yawDeg);
+        updateLivePreviewBox(displayPixelStart, ringWidthPx, yawDeg);
     }
 
     // 当前部件已保存的校准偏移（打开面板时由调用方通过setCalibrationOffsetPx()同步进来，
@@ -545,9 +548,10 @@ public class RotationStripSelectorPanel {
     }
 
     private void updateInfoText() {
-        // 固定规则：每转24度挪1像素，转一圈固定15个位置。
-        // 所需总宽度 = 15个位置里最后一个的起点 + 取景框宽度
-        int requiredWidth = (STEPS_PER_REVOLUTION - 1) + selPixelWidth;
+        // 环形寻址：贴图开启Repeat环绕后无缝转一圈，要求贴图内容宽度恰好等于
+        // STEPS_PER_REVOLUTION（一步一像素）。不是"至少多宽"，宽了会浪费未使用的列，
+        // 窄了会被透明像素补齐——两种情况都不是"正好绕回原点"，都要提示。
+        int requiredWidth = STEPS_PER_REVOLUTION;
 
         infoText.setText(String.format(
             "贴图: %dx%d px | 缩放: %dx | 取景框: (%d, %d) %dx%d px | 每转%.0f°挪1像素，一圈%d个位置",
@@ -555,12 +559,20 @@ public class RotationStripSelectorPanel {
             DEGREES_PER_STEP, STEPS_PER_REVOLUTION
         ));
 
-        if (texWidthPx < requiredWidth) {
-            int missing = requiredWidth - texWidthPx;
-            paddingWarningText.setText(String.format(
-                "贴图宽 %d px，需要至少 %d px，右侧将用透明像素自动填充 %d px",
-                texWidthPx, requiredWidth, missing
-            ));
+        if (texWidthPx != requiredWidth) {
+            if (texWidthPx < requiredWidth) {
+                int missing = requiredWidth - texWidthPx;
+                paddingWarningText.setText(String.format(
+                    "贴图宽 %d px，环形无缝旋转要求正好 %d px，右侧将用透明像素自动填充 %d px（会出现拼接痕迹）",
+                    texWidthPx, requiredWidth, missing
+                ));
+            } else {
+                int extra = texWidthPx - requiredWidth;
+                paddingWarningText.setText(String.format(
+                    "贴图宽 %d px，环形无缝旋转要求正好 %d px，右侧多出的 %d px 不会被使用",
+                    texWidthPx, requiredWidth, extra
+                ));
+            }
             paddingWarningText.setCullHint(Spatial.CullHint.Never);
         } else {
             paddingWarningText.setCullHint(Spatial.CullHint.Always);

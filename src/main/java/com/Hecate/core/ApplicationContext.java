@@ -13,6 +13,8 @@ import com.Hecate.pointer.PointerSystem;
 import com.Hecate.flame.SimpleFlameRenderer;
 import com.Hecate.ink.SparseGridManager;
 import com.Hecate.ink.GridDebugRenderer;
+import com.Hecate.event.EventBus;
+import com.Hecate.ui.PanelManager;
 
 // 模块系统
 import com.Hecate.module.world.WorldModule;
@@ -78,6 +80,12 @@ public class ApplicationContext {
     // ==================== 怪物系统 ====================
     private com.Hecate.monster.MonsterManager monsterManager;
 
+    // ==================== 事件系统 ====================
+    private final EventBus eventBus = new EventBus();
+
+    // ==================== 面板系统 ====================
+    private PanelManager panelManager;
+
     // ==================== 固定逻辑刻 ====================
     // 战斗判定（怪物攻击冷却、未来的buff/DOT结算、技能计时）挂在这里，
     // 保证判定时序在任意渲染帧率下一致。详见 FixedTickScheduler。
@@ -113,6 +121,11 @@ public class ApplicationContext {
      */
     public void initializeCollisionSystem() {
         collisionManager = new CollisionManager();
+        // 注入方块碰撞尺寸管理器：initializeRegistries()已在此之前创建了blockRegistry，
+        // 让碰撞系统能查到wood1这类方块的实际（非满格）碰撞盒尺寸
+        if (blockRegistry != null) {
+            collisionManager.setShapeRegistry(blockRegistry.getShapeRegistry());
+        }
     }
 
     /**
@@ -133,7 +146,7 @@ public class ApplicationContext {
         worldModule.onInitialize();
 
         // 初始化玩家控制模块
-        playerControlModule = new PlayerControlModule(app);
+        playerControlModule = new PlayerControlModule(app, blockRegistry);
         playerControlModule.onInitialize();
 
         // 玩家效果系统（buff/debuff剩余时长倒计时、持续伤害等）挂在固定逻辑刻上，
@@ -289,10 +302,23 @@ public class ApplicationContext {
     }
 
     /**
+     * 初始化面板系统（枪械仪表盘、说明面板等HUD表盘）
+     * <p>依赖：无强制依赖，但应在connectSystems()之前创建，以便注入事件总线
+     */
+    public void initializePanelSystem() {
+        panelManager = new PanelManager(app, eventBus);
+    }
+
+    /**
      * 连接各个系统的依赖关系
      * <p>必须在所有系统初始化完成后调用
      */
     public void connectSystems() {
+        // 【面板系统】将事件总线注入玩家控制模块，武器装备/卸下/弹药变化时通知PanelManager
+        if (playerControlModule != null && playerControlModule.getPlayerController() != null) {
+            playerControlModule.getPlayerController().setEventBus(eventBus);
+        }
+
         // 将ChunkManager连接到碰撞检测系统
         if (worldModule != null && worldModule.getChunkManager() != null) {
             collisionManager.setChunkManager(worldModule.getChunkManager());
@@ -309,6 +335,11 @@ public class ApplicationContext {
 
                 // 将PlayerController连接到WorldModule（用于方块放置等交互）
                 worldModule.setPlayerController(playerControlModule.getPlayerController());
+
+                // 【方块系统】连接方块交互系统到调试命令（/give 命令用）
+                // 传方法引用而不是当前值：世界切换（竞技场）时playerControlModule内部会
+                // 重新创建BlockInteraction，method reference每次调用都会取到最新的那个
+                playerControlModule.getPlayerController().setBlockInteractionSupplier(playerControlModule::getBlockInteraction);
             }
         }
 
@@ -386,6 +417,11 @@ public class ApplicationContext {
      * 清理所有系统资源
      */
     public void cleanup() {
+        // 清理面板系统
+        if (panelManager != null) {
+            panelManager.cleanup();
+        }
+
         // 清理怪物系统
         if (monsterManager != null) {
             monsterManager.clear();
@@ -484,5 +520,13 @@ public class ApplicationContext {
 
     public GameScheduler getGameScheduler() {
         return gameScheduler;
+    }
+
+    public EventBus getEventBus() {
+        return eventBus;
+    }
+
+    public PanelManager getPanelManager() {
+        return panelManager;
     }
 }

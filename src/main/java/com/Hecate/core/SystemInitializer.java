@@ -76,7 +76,10 @@ public class SystemInitializer {
             // 第9步：初始化竞技场系统
             initializeArenaSystem(context);
 
-            // 第10步：连接各系统的依赖关系
+            // 第10步：初始化面板系统（枪械仪表盘、说明面板）
+            initializePanelSystem(context);
+
+            // 第11步：连接各系统的依赖关系
             connectSystems(context);
 
         } catch (Exception e) {
@@ -94,7 +97,7 @@ public class SystemInitializer {
      */
     private static void initializeRegistries(ApplicationContext context) {
         try {
-
+            context.initializeRegistries();
         } catch (Exception e) {
             throw new RuntimeException("注册表系统初始化失败", e);
         }
@@ -218,7 +221,22 @@ public class SystemInitializer {
     }
 
     /**
-     * 第10步：连接各系统的依赖关系
+     * 第10步：初始化面板系统
+     * <p>无强制依赖，应在连接系统之前完成，以便注入事件总线
+     */
+    private static void initializePanelSystem(ApplicationContext context) {
+        try {
+
+            context.initializePanelSystem();
+
+        } catch (Exception e) {
+            System.err.println("   面板系统初始化失败，继续执行...");
+            e.printStackTrace();
+        }
+    }
+
+    /**
+     * 第11步：连接各系统的依赖关系
      * <p>必须在所有系统初始化完成后调用
      */
     private static void connectSystems(ApplicationContext context) {

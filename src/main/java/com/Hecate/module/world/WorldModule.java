@@ -203,6 +203,7 @@ public class WorldModule extends AbstractGameModule {
 
         // 为每种方块类型创建一个批量渲染的批次
         int totalBlocks = 0;
+        java.util.List<Vector3f> customModelPositions = new java.util.ArrayList<>();
         for (java.util.Map.Entry<String, java.util.List<Vector3f>> entry : blockPositions.entrySet()) {
             String blockId = entry.getKey();
             java.util.List<Vector3f> positions = entry.getValue();
@@ -213,6 +214,23 @@ public class WorldModule extends AbstractGameModule {
                     chunkNode.attachChild(batchSpatial);
                     totalBlocks += positions.size();
                 }
+
+                com.Hecate.block.Block block = blockRegistry != null ? blockRegistry.getBlock(blockId) : null;
+                if (block != null && block.hasCustomModel()) {
+                    customModelPositions.addAll(positions);
+                }
+            }
+        }
+
+        // 自定义模型方块（如wood1）本身的可见模型很瘦（不到整格体积），若只靠模型自身的
+        // 三角面做射线检测，玩家瞄准格子里模型以外的空间（占格子大部分）会直接穿过去打到
+        // 后面的东西，导致叠放/横放几乎打不中。这里单独用一批完全不可见、和默认立方体同尺寸
+        // 的碰撞代理，让整个格子在射线检测里表现得跟普通方块一样"实心"。故意不与可见模型
+        // 放进同一个BatchNode合并，避免批处理后CullHint状态不可控导致代理意外可见。
+        if (!customModelPositions.isEmpty()) {
+            com.jme3.scene.Spatial hitboxBatch = createHitboxBatch(customModelPositions, chunkWorldPos);
+            if (hitboxBatch != null) {
+                chunkNode.attachChild(hitboxBatch);
             }
         }
 
@@ -270,7 +288,7 @@ public class WorldModule extends AbstractGameModule {
                 chunkWorldPos.z + localPos.z
             );
 
-            Geometry blockGeom = createBlockGeometry(blockId, worldPos);
+            com.jme3.scene.Spatial blockGeom = createBlockGeometry(blockId, worldPos);
             if (blockGeom != null) {
                 batchNode.attachChild(blockGeom);
             }
@@ -279,13 +297,62 @@ public class WorldModule extends AbstractGameModule {
         // 执行批处理：合并所有Geometry为一个，大幅减少绘制调用
         batchNode.batch();
 
+        // 【关键修复】BatchNode.batch()把多个子Geometry合并成新网格，子节点原先各自设置的
+        // 阴影模式（如wood1模型的CastAndReceive）不保证在合并后被保留，必须在合批完成后
+        // 对批次本身重新设置一次，否则自定义模型方块合批后可能不再投射/接收阴影
+        batchNode.setShadowMode(com.jme3.renderer.queue.RenderQueue.ShadowMode.CastAndReceive);
+
+        return batchNode;
+    }
+
+    /**
+     * 为自定义模型方块（如wood1）创建一批完全不可见、整格大小的碰撞代理，
+     * 保证射线检测（挖/放置瞄准）在整个格子范围内都能命中，不受模型本身瘦长外形影响。
+     */
+    private com.jme3.scene.Spatial createHitboxBatch(java.util.List<Vector3f> positions, Vector3f chunkWorldPos) {
+        if (positions.isEmpty()) {
+            return null;
+        }
+
+        BatchNode batchNode = new BatchNode("CustomModelHitboxes");
+        // BatchNode.batch()要求合并前每个子Geometry都必须有材质，即使最终整体设为不可见也不例外
+        Material hitboxMaterial = new Material(app.getAssetManager(), "Common/MatDefs/Misc/Unshaded.j3md");
+
+        for (Vector3f localPos : positions) {
+            Vector3f worldPos = new Vector3f(
+                chunkWorldPos.x + localPos.x,
+                chunkWorldPos.y + localPos.y,
+                chunkWorldPos.z + localPos.z
+            );
+
+            Box box = new Box(0.5f, 0.5f, 0.5f);
+            Geometry hitboxGeom = new Geometry("Hitbox_" + worldPos.toString(), box);
+            hitboxGeom.setLocalTranslation(worldPos);
+            hitboxGeom.setMaterial(hitboxMaterial);
+            batchNode.attachChild(hitboxGeom);
+        }
+
+        batchNode.batch();
+        // 整个批次统一设为不可见：合并后是单个Geometry，直接设CullHint不存在
+        // "子节点状态不可预期"的问题（这也是不与可见模型放进同一批次合并的原因）
+        batchNode.setCullHint(com.jme3.scene.Spatial.CullHint.Always);
+
         return batchNode;
     }
 
     /**
      * 创建方块几何体
      */
-    private Geometry createBlockGeometry(String blockId, Vector3f position) {
+    private com.jme3.scene.Spatial createBlockGeometry(String blockId, Vector3f position) {
+        com.Hecate.block.Block block = blockRegistry != null ? blockRegistry.getBlock(blockId) : null;
+        if (block != null && block.hasCustomModel()) {
+            com.jme3.scene.Spatial customModel = createCustomModelGeometry(blockId, block.getModelPath(), position, block.getAxis());
+            if (customModel != null) {
+                return customModel;
+            }
+            // 模型加载失败时，回退到默认立方体
+        }
+
         // 创建1x1x1的立方体
         Box box = new Box(0.5f, 0.5f, 0.5f);
         Geometry geometry = new Geometry("Block_" + blockId + "_" + position.toString(), box);
@@ -298,6 +365,53 @@ public class WorldModule extends AbstractGameModule {
         geometry.setLocalTranslation(position);
 
         return geometry;
+    }
+
+    // 方块格子的世界空间高度（与默认立方体一致），自定义模型会按此高度等比缩放
+    private static final float BLOCK_MODEL_TARGET_HEIGHT = 1.0f;
+
+    /**
+     * 加载自定义模型方块（如 wood1.glb），并按方块高度(1格)等比缩放后居中放置在方块格子内。
+     * 方块格子沿用现有约定：方块坐标 position 是格子中心，占据 [position-0.5, position+0.5]。
+     * 模型本身是按竖直（Y轴）朝向制作的，axis非Y时在缩放完成后额外旋转90度让长轴倒向对应的水平轴。
+     */
+    private com.jme3.scene.Spatial createCustomModelGeometry(String blockId, String modelPath, Vector3f position, com.Hecate.block.Axis axis) {
+        try {
+            com.jme3.scene.Spatial modelSpatial = app.getAssetManager().loadModel(modelPath);
+            modelSpatial.setName("Block_" + blockId + "_" + position.toString());
+
+            // 计算模型原始高度，按方块高度(1格)等比缩放
+            modelSpatial.updateModelBound();
+            modelSpatial.updateGeometricState();
+            com.jme3.bounding.BoundingVolume bound = modelSpatial.getWorldBound();
+            if (bound instanceof com.jme3.bounding.BoundingBox) {
+                com.jme3.bounding.BoundingBox box = (com.jme3.bounding.BoundingBox) bound;
+                float currentHeight = box.getYExtent() * 2f;
+                if (currentHeight > 0.0001f) {
+                    float scaleFactor = BLOCK_MODEL_TARGET_HEIGHT / currentHeight;
+                    modelSpatial.scale(scaleFactor);
+                }
+            }
+
+            // 模型按竖直（Y轴）朝向制作，横放变体需要把长轴转到对应的水平轴：
+            // 绕Z轴转90度把Y轴转到X轴；绕X轴转90度把Y轴转到Z轴。竖直摆放（Y轴）不需要旋转。
+            if (axis == com.Hecate.block.Axis.X) {
+                modelSpatial.rotate(0, 0, com.jme3.math.FastMath.HALF_PI);
+            } else if (axis == com.Hecate.block.Axis.Z) {
+                modelSpatial.rotate(com.jme3.math.FastMath.HALF_PI, 0, 0);
+            }
+
+            // 模型原点即为其中心，直接居中放置在方块格子内（与立方体方块坐标约定一致）
+            modelSpatial.setLocalTranslation(position);
+
+            modelSpatial.setShadowMode(com.jme3.renderer.queue.RenderQueue.ShadowMode.CastAndReceive);
+            modelSpatial.setQueueBucket(com.jme3.renderer.queue.RenderQueue.Bucket.Opaque);
+
+            return modelSpatial;
+        } catch (Exception e) {
+            LogUtils.error(getClass(), "加载自定义方块模型失败: " + modelPath, e);
+            return null;
+        }
     }
 
     @Override

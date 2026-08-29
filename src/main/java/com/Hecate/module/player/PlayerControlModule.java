@@ -13,10 +13,10 @@ import com.Hecate.module.Version;
 import com.Hecate.block.BlockInteraction;
 import com.Hecate.block.BlockBreaking;
 import com.Hecate.block.BlockRegistry;
+import com.Hecate.block.BlockPlacementOutline;
 import com.Hecate.world.ChunkManager;
 import com.Hecate.player.PlayerController;
 import com.Hecate.player.inventory.PlayerStateManager;
-import com.Hecate.player.inventory.PlayerHotbar;
 import com.Hecate.player.inventory.HeldItem;
 import com.Hecate.weapon.WeaponRegistry;
 import com.Hecate.utils.LogUtils;
@@ -29,12 +29,14 @@ public class PlayerControlModule extends AbstractGameModule implements ActionLis
     private static final Version MODULE_VERSION = new Version(1, 0, 0);
 
     private final SimpleApplication app;
+    private final BlockRegistry blockRegistry;
     private PlayerController playerController;
     private PlayerStateManager playerStateManager;
 
     // 方块交互系统
     private BlockInteraction blockInteraction;
     private BlockBreaking blockBreaking;
+    private BlockPlacementOutline blockPlacementOutline;
     private ChunkManager chunkManager;
     private Node worldNode;
 
@@ -42,8 +44,18 @@ public class PlayerControlModule extends AbstractGameModule implements ActionLis
         return playerController;
     }
 
+    public PlayerControlModule(SimpleApplication app, BlockRegistry blockRegistry) {
+        this.app = app;
+        this.blockRegistry = blockRegistry;
+    }
+
+    /**
+     * @deprecated 推荐使用 {@link #PlayerControlModule(SimpleApplication, BlockRegistry)} 进行依赖注入
+     */
+    @Deprecated
     public PlayerControlModule(SimpleApplication app) {
         this.app = app;
+        this.blockRegistry = BlockRegistry.getInstance();
     }
 
     @Override
@@ -62,21 +74,24 @@ public class PlayerControlModule extends AbstractGameModule implements ActionLis
         playerController = new PlayerController(app);
 
         // 初始化玩家状态管理器（物品栏系统）
-        BlockRegistry blockRegistry = BlockRegistry.getInstance();
         WeaponRegistry weaponRegistry = WeaponRegistry.getInstance();
         playerStateManager = new PlayerStateManager(blockRegistry, weaponRegistry);
         playerController.setPlayerStateManager(playerStateManager);
 
-        // 初始化快捷栏并添加默认方块
-        PlayerHotbar hotbar = playerStateManager.getEquipment().getHotbar();
-        hotbar.setSlot(0, HeldItem.block("stone"));
-        hotbar.setSlot(1, HeldItem.block("dirt"));
-        hotbar.setSlot(2, HeldItem.block("grass"));
-        hotbar.setSlot(3, HeldItem.block("glass"));
-        hotbar.selectSlot(0); // 默认选中第一个槽位
+        // 初始化快捷栏并添加默认方块（走PlayerEquipment而不是直接操作hotbar，
+        // 确保currentBlock/currentWeapon缓存与槛位内容同步）
+        com.Hecate.player.inventory.PlayerEquipment equipment = playerStateManager.getEquipment();
+        equipment.setHotbarSlot(0, HeldItem.block("stone"));
+        equipment.setHotbarSlot(1, HeldItem.block("dirt"));
+        equipment.setHotbarSlot(2, HeldItem.block("grass"));
+        equipment.setHotbarSlot(3, HeldItem.block("glass"));
+        equipment.selectHotbarSlot(0); // 默认选中第一个槽位
 
         // 设置方块交互输入
         setupBlockInteractionInputs();
+
+        // 初始化放置预览框（挂在根节点下，不依赖世界节点，可以立即创建）
+        blockPlacementOutline = new BlockPlacementOutline(app.getAssetManager(), app.getRootNode());
     }
 
     @Override
@@ -104,12 +119,25 @@ public class PlayerControlModule extends AbstractGameModule implements ActionLis
      */
     private void initializeBlockInteraction() {
         if (chunkManager != null && worldNode != null) {
-            blockInteraction = new BlockInteraction(app.getCamera(), worldNode, chunkManager);
-            blockBreaking = new BlockBreaking(chunkManager);
+            blockInteraction = new BlockInteraction(app.getCamera(), worldNode, chunkManager, blockRegistry);
+            // 交互距离用玩家本体位置计算（而不是可能被拉远到玩家身后8~15格的摄像机位置），
+            // 否则第三人称镜头拉远时，即使玩家贴着方块也会被误判"太远"。射线本身仍从
+            // 摄像机发出（BlockInteraction内部固定），保证"准星指哪"和"实际判定点"一致。
+            if (playerController != null) {
+                blockInteraction.setPlayerPositionSupplier(playerController::getPlayerPosition);
+            }
+            blockBreaking = new BlockBreaking(chunkManager, blockRegistry);
 
         } else {
 
         }
+    }
+
+    /**
+     * 获取方块交互系统（用于 /give 等控制台命令直接放置方块）
+     */
+    public BlockInteraction getBlockInteraction() {
+        return blockInteraction;
     }
 
     /**
@@ -184,6 +212,27 @@ public class PlayerControlModule extends AbstractGameModule implements ActionLis
         if (blockBreaking != null) {
             blockBreaking.updateBreaking(tpf);
         }
+
+        // 更新放置预览框：只有手持方块且瞄准有效位置时才显示，其余情况隐藏
+        updatePlacementOutline();
+    }
+
+    /**
+     * 更新放置预览框（手持方块时显示将要放置的那一格，参考MC的方块选取框）
+     */
+    private void updatePlacementOutline() {
+        if (blockPlacementOutline == null) {
+            return;
+        }
+
+        if (blockInteraction == null || playerStateManager == null
+                || !playerStateManager.getEquipment().isHoldingBlock()) {
+            blockPlacementOutline.hide();
+            return;
+        }
+
+        Vector3f previewPos = blockInteraction.previewPlacementPosition();
+        blockPlacementOutline.update(previewPos);
     }
 
     public PlayerStateManager getPlayerStateManager() {
@@ -203,6 +252,11 @@ public class PlayerControlModule extends AbstractGameModule implements ActionLis
 
         // 删除监听器
         app.getInputManager().removeListener(this);
+
+        // 清理放置预览框
+        if (blockPlacementOutline != null) {
+            blockPlacementOutline.cleanup();
+        }
     }
 
     @Override
@@ -220,19 +274,27 @@ public class PlayerControlModule extends AbstractGameModule implements ActionLis
                 }
             }
         } else if (name.equals("PlaceBlock")) {
-            // 右键用于恢复，不再用于放置方块
-            if (playerController != null) {
+            // 右键行为按手持物品自动切换：手持方块时放置方块；空手/持武器时保留原有的"恢复"功能，
+            // 不能同时触发——放置是瞬时动作（按下时判定一次），恢复是持续状态（跟着按住/松开）
+            com.Hecate.player.inventory.PlayerEquipment equipment = playerStateManager.getEquipment();
+            if (isPressed && equipment.isHoldingBlock() && blockInteraction != null) {
+                blockInteraction.placeBlock(equipment.getCurrentBlock().getId());
+            } else if (!equipment.isHoldingBlock() && playerController != null) {
                 playerController.setRightButtonForRecovery(isPressed);
             }
         } else if (name.startsWith("SelectSlot") && isPressed) {
-            // 动态处理快捷栏选择（1-9键）
+            // 动态处理快捷栏选择（1-9键）：必须经过PlayerEquipment.selectHotbarSlot()而不是
+            // 直接调用hotbar.selectSlot()，否则currentBlock/currentWeapon缓存不会刷新，
+            // 导致isHoldingBlock()等查询读到切换前的旧数据
+
+            // 反方向互斥：若正装备着Gun1/Gun2（快捷栏之外的独立武器系统），切换快捷栏
+            // 槛位前先强制卸枪，确保"手持快捷栏物品"与"手持Gun1/Gun2"始终互斥
+            if (playerController != null && playerController.isHoldingGunWeapon()) {
+                playerController.forceUnequipGunWeapon();
+            }
+
             int slotIndex = Integer.parseInt(name.substring("SelectSlot".length()));
-            PlayerHotbar hotbar = playerStateManager.getEquipment().getHotbar();
-            hotbar.selectSlot(slotIndex);
-
-            HeldItem selectedItem = hotbar.getCurrentItem();
-
-
+            playerStateManager.getEquipment().selectHotbarSlot(slotIndex);
         }
     }
 }

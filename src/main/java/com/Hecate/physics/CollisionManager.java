@@ -309,9 +309,17 @@ public class CollisionManager {
         Vector3f half = shapeRegistry != null
                 ? shapeRegistry.getHalfExtents(blockId)
                 : new Vector3f(0.5f, 0.5f, 0.5f);
+        // 碰撞盒中心 = 方块位置 + 登记的偏移（大多数方块偏移为0，中心与方块位置重合；
+        // 半砖这类贴地放置、几何范围非对称的方块需要偏移，见BlockShapeRegistry.registerShapeWithOffset）
+        Vector3f offset = shapeRegistry != null
+                ? shapeRegistry.getCenterOffset(blockId)
+                : Vector3f.ZERO;
+        float cx = x + offset.x;
+        float cy = y + offset.y;
+        float cz = z + offset.z;
         return new AABB(
-                x - half.x, y - half.y, z - half.z,
-                x + half.x, y + half.y, z + half.z
+                cx - half.x, cy - half.y, cz - half.z,
+                cx + half.x, cy + half.y, cz + half.z
         );
     }
 

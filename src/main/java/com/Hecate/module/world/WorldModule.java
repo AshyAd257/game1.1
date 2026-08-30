@@ -346,7 +346,8 @@ public class WorldModule extends AbstractGameModule {
     private com.jme3.scene.Spatial createBlockGeometry(String blockId, Vector3f position) {
         com.Hecate.block.Block block = blockRegistry != null ? blockRegistry.getBlock(blockId) : null;
         if (block != null && block.hasCustomModel()) {
-            com.jme3.scene.Spatial customModel = createCustomModelGeometry(blockId, block.getModelPath(), position, block.getAxis());
+            com.jme3.scene.Spatial customModel = createCustomModelGeometry(
+                blockId, block.getModelPath(), block.getModelTexturePath(), position, block.getAxis(), block.isSkipAutoScale());
             if (customModel != null) {
                 return customModel;
             }
@@ -376,20 +377,34 @@ public class WorldModule extends AbstractGameModule {
      * 模型本身是按竖直（Y轴）朝向制作的，axis非Y时在缩放完成后额外旋转90度让长轴倒向对应的水平轴。
      */
     private com.jme3.scene.Spatial createCustomModelGeometry(String blockId, String modelPath, Vector3f position, com.Hecate.block.Axis axis) {
+        return createCustomModelGeometry(blockId, modelPath, null, position, axis, false);
+    }
+
+    private com.jme3.scene.Spatial createCustomModelGeometry(String blockId, String modelPath, String modelTexturePath,
+            Vector3f position, com.Hecate.block.Axis axis, boolean skipAutoScale) {
         try {
             com.jme3.scene.Spatial modelSpatial = app.getAssetManager().loadModel(modelPath);
             modelSpatial.setName("Block_" + blockId + "_" + position.toString());
 
-            // 计算模型原始高度，按方块高度(1格)等比缩放
-            modelSpatial.updateModelBound();
-            modelSpatial.updateGeometricState();
-            com.jme3.bounding.BoundingVolume bound = modelSpatial.getWorldBound();
-            if (bound instanceof com.jme3.bounding.BoundingBox) {
-                com.jme3.bounding.BoundingBox box = (com.jme3.bounding.BoundingBox) bound;
-                float currentHeight = box.getYExtent() * 2f;
-                if (currentHeight > 0.0001f) {
-                    float scaleFactor = BLOCK_MODEL_TARGET_HEIGHT / currentHeight;
-                    modelSpatial.scale(scaleFactor);
+            if (modelTexturePath != null && !modelTexturePath.isEmpty()) {
+                applyExternalModelTexture(modelSpatial, modelTexturePath);
+            }
+
+            // 按高度归一化缩放到1格：只适用于wood1一类"用Blender随便建模、原始尺寸不确定"
+            // 的旧模型。cube/wedge/halfbrick这类由generate_block_shapes.py生成的形状原型
+            // 已经按世界单位精确建模（skipAutoScale=true），不能再缩放——否则halfbrick
+            // 的0.5高度会被强行拉伸回1.0，且scale()三轴等比缩放会把宽/深一起放大到2倍。
+            if (!skipAutoScale) {
+                modelSpatial.updateModelBound();
+                modelSpatial.updateGeometricState();
+                com.jme3.bounding.BoundingVolume bound = modelSpatial.getWorldBound();
+                if (bound instanceof com.jme3.bounding.BoundingBox) {
+                    com.jme3.bounding.BoundingBox box = (com.jme3.bounding.BoundingBox) bound;
+                    float currentHeight = box.getYExtent() * 2f;
+                    if (currentHeight > 0.0001f) {
+                        float scaleFactor = BLOCK_MODEL_TARGET_HEIGHT / currentHeight;
+                        modelSpatial.scale(scaleFactor);
+                    }
                 }
             }
 
@@ -412,6 +427,40 @@ public class WorldModule extends AbstractGameModule {
             LogUtils.error(getClass(), "加载自定义方块模型失败: " + modelPath, e);
             return null;
         }
+    }
+
+    /**
+     * 给"形状原型"模型（cube.glb/wedge.glb/halfbrick.glb等只提供几何+UV、不内置贴图的模型）
+     * 覆盖设置一张外部贴图。与wood1一类贴图烘焙在glb内部的旧模型不同，这些模型加载后材质
+     * 是空白的默认PBR材质，需要在这里手动把贴图贴上去。
+     *
+     * jME的glTF加载器会把glb里pbrMetallicRoughness材质转换成"Common/MatDefs/Light/PBRLighting.j3md"
+     * （纹理参数名是BaseColorMap），不是项目里其他方块用的"Common/MatDefs/Light/Lighting.j3md"
+     * （参数名DiffuseMap）——两种材质定义并存，按实际材质名分支处理，不能假设固定用哪个。
+     */
+    private void applyExternalModelTexture(com.jme3.scene.Spatial modelSpatial, String modelTexturePath) {
+        com.jme3.texture.Texture texture = app.getAssetManager().loadTexture(modelTexturePath);
+        texture.setMagFilter(com.jme3.texture.Texture.MagFilter.Nearest);
+        texture.setMinFilter(com.jme3.texture.Texture.MinFilter.NearestNoMipMaps);
+
+        modelSpatial.depthFirstTraversal(spatial -> {
+            if (!(spatial instanceof Geometry)) {
+                return;
+            }
+            Geometry geom = (Geometry) spatial;
+            Material material = geom.getMaterial();
+            if (material == null) {
+                return;
+            }
+            String defName = material.getMaterialDef().getName();
+            if ("PBR Lighting".equals(defName)) {
+                material.setTexture("BaseColorMap", texture);
+            } else {
+                // 默认按Lighting.j3md处理（DiffuseMap），涵盖项目里其余方块材质的情形
+                material.setTexture("DiffuseMap", texture);
+                material.setBoolean("UseMaterialColors", false);
+            }
+        });
     }
 
     @Override

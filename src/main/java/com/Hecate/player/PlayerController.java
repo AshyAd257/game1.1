@@ -322,8 +322,8 @@ public class PlayerController implements ActionListener, AnalogListener {
             app.getAssetManager(),
             app.getRootNode()
         );
-        // 默认显示碰撞箱（可以通过按键切换）
-        collisionBoxRenderer.setVisible(true);
+        // 默认不显示碰撞箱（可以通过按键切换）
+        collisionBoxRenderer.setVisible(false);
     }
 
     /**

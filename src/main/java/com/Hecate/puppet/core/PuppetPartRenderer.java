@@ -760,8 +760,9 @@ public class PuppetPartRenderer {
             partGeometry.setLocalRotation(worldRot);
         } else if (billboardMode == PuppetRenderer.BillboardMode.UNIFIED) {
             // 统一billboard模式：所有部件使用相同的旋转，像纸人一样整体朝向相机
-            // 俯仰角范围内平滑过渡：中间正常billboard，接近顶/底时逐渐过渡到自然竖直朝向，
-            // 不再依赖离散的"up"/"down"方向key判断（旋转条状贴图模式没有这些key，也要能正常工作）
+            // 俯仰夹紧（pitch clamp）：卡片俯仰角 = clamp(摄像机仰角, -下限, +上限)。
+            // 仰角在限制范围内时完全跟随摄像机（标准billboard），超过后俯仰角冻结在限制值本身，
+            // 不再继续跟随（不会像旧版那样锁回纯竖直朝向）。
             billboardControl.setEnabled(false);
 
             Quaternion baseBillboardRot = parentRenderer.getUnifiedBillboardRotation();
@@ -775,29 +776,9 @@ public class PuppetPartRenderer {
             } else {
                 toCam.normalizeLocal();
 
-                float fullRangeDeg = bone.getBillboardPitchFullRangeDeg();
-                float lockDeg = bone.getBillboardPitchLockDeg();
-                // 俯仰角：toCam与水平面的夹角，0°=水平看，90°=从正上方/正下方看
-                float pitchDeg = FastMath.asin(FastMath.clamp(toCam.y, -1f, 1f)) * FastMath.RAD_TO_DEG;
-                float absPitch = Math.abs(pitchDeg);
-
-                if (absPitch <= fullRangeDeg) {
-                    // 中间区域：完全billboard，面向摄像机
-                    finalBillboardRot = baseBillboardRot;
-                } else {
-                    // 接近顶/底：计算"自然竖直"朝向（只绕世界Y轴对齐视线水平分量，不跟随俯仰）
-                    Quaternion uprightRot = calculateUprightRotation(toCam);
-
-                    if (absPitch >= lockDeg) {
-                        // 完全锁定竖直，不再billboard
-                        finalBillboardRot = uprightRot;
-                    } else {
-                        // 过渡区：在billboard和竖直朝向之间平滑插值
-                        float t = (absPitch - fullRangeDeg) / (lockDeg - fullRangeDeg);
-                        finalBillboardRot = new Quaternion();
-                        finalBillboardRot.slerp(baseBillboardRot, uprightRot, t);
-                    }
-                }
+                float clampUpDeg = bone.getBillboardPitchClampUpDeg();
+                float clampDownDeg = bone.getBillboardPitchClampDownDeg();
+                finalBillboardRot = calculateClampedBillboardRotation(toCam, clampUpDeg, clampDownDeg);
             }
 
             partGeometry.setLocalRotation(finalBillboardRot);
@@ -841,45 +822,57 @@ public class PuppetPartRenderer {
      * 鏇存柊高光鐨勪綅缃拰旋�?
      */
     /**
-     * 计算"自然竖直"朝向：只绕世界Y轴对齐视线的水平分量，忽略俯仰角。
-     * 效果类似jME内置的BillboardControl.Alignment.AxialY——贴图始终保持竖直站立，
-     * 转头看着摄像机的水平方向，但不会因为俯仰角而歪倒。
-     * 用于Billboard俯仰角范围过渡：接近顶/底视角时，部件不再面向摄像机翻转，而是自然竖立。
+     * 计算俯仰夹紧（pitch clamp）后的billboard旋转。
+     * 卡片俯仰角 = clamp(摄像机仰角, -clampDownDeg, +clampUpDeg)：
+     * 摄像机仰角在限制范围内时结果与标准billboard完全一致（完全跟随），
+     * 超过限制后俯仰角冻结在限制值本身（不会继续跟随，也不会跳回水平/竖直朝向）。
+     * 水平朝向（yaw）不受限制，始终跟随摄像机。
+     *
+     * @param toCam 从部件指向摄像机的归一化方向
+     * @param clampUpDeg 向上仰视的夹紧上限（度，正数）
+     * @param clampDownDeg 向下俯视的夹紧下限（度，正数）
      */
-    private Quaternion calculateUprightRotation(Vector3f toCam) {
-        Vector3f up = Vector3f.UNIT_Y;
-        Vector3f horizontalDir = new Vector3f(toCam.x, 0f, toCam.z);
+    private Quaternion calculateClampedBillboardRotation(Vector3f toCam, float clampUpDeg, float clampDownDeg) {
+        float pitchDeg = FastMath.asin(FastMath.clamp(toCam.y, -1f, 1f)) * FastMath.RAD_TO_DEG;
+        float clampedPitchDeg = FastMath.clamp(pitchDeg, -Math.abs(clampDownDeg), Math.abs(clampUpDeg));
+        float clampedPitchRad = clampedPitchDeg * FastMath.DEG_TO_RAD;
 
-        Vector3f left;
+        Vector3f horizontalDir = new Vector3f(toCam.x, 0f, toCam.z);
         if (horizontalDir.lengthSquared() < 0.0001f) {
-            // 摄像机几乎正上方/正下方，水平方向不可判定，使用固定参考轴保持稳定
-            Vector3f referenceAxis = Vector3f.UNIT_Z;
-            left = referenceAxis.cross(toCam);
-            if (left.lengthSquared() < 0.0001f) {
-                referenceAxis = Vector3f.UNIT_X;
-                left = referenceAxis.cross(toCam);
-                if (left.lengthSquared() < 0.0001f) {
-                    left = Vector3f.UNIT_Z;
-                } else {
-                    left.normalizeLocal();
-                }
-            } else {
-                left.normalizeLocal();
-            }
+            // 摄像机几乎正上方/正下方，水平朝向不可判定，使用固定参考轴保持稳定
+            horizontalDir = Vector3f.UNIT_Z;
         } else {
             horizontalDir.normalizeLocal();
-            left = up.cross(horizontalDir);
-            if (left.lengthSquared() < 0.0001f) {
-                left = Vector3f.UNIT_X;
-            } else {
-                left.normalizeLocal();
-            }
         }
 
-        Vector3f forward = left.cross(up).normalizeLocal();
-        Quaternion uprightRot = new Quaternion();
-        uprightRot.fromAxes(left, up, forward);
-        return uprightRot;
+        float cosPitch = FastMath.cos(clampedPitchRad);
+        float sinPitch = FastMath.sin(clampedPitchRad);
+        Vector3f clampedDir = new Vector3f(
+            horizontalDir.x * cosPitch,
+            sinPitch,
+            horizontalDir.z * cosPitch
+        ).normalizeLocal();
+
+        // 与PuppetRenderer.updateUnifiedBillboardRotation保持相同的坐标轴构造方式，
+        // 确保夹紧范围内（clampedDir与toCam相同）时结果与标准billboard完全一致
+        Vector3f up;
+        if (Math.abs(clampedDir.y) > 0.99f) {
+            up = Vector3f.UNIT_X;
+        } else {
+            up = Vector3f.UNIT_Y;
+        }
+
+        Vector3f left = up.cross(clampedDir);
+        if (left.lengthSquared() < 0.0001f) {
+            left = Vector3f.UNIT_X;
+        } else {
+            left.normalizeLocal();
+        }
+        Vector3f realUp = clampedDir.cross(left).normalizeLocal();
+
+        Quaternion clampedRot = new Quaternion();
+        clampedRot.fromAxes(left, realUp, clampedDir);
+        return clampedRot;
     }
 
     private void updateHighlightTransform(Vector3f position, Quaternion rotation, Vector3f scale, boolean hasCustomRotation) {

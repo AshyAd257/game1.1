@@ -40,6 +40,10 @@ public class PlayerControlModule extends AbstractGameModule implements ActionLis
     private ChunkManager chunkManager;
     private Node worldNode;
 
+    // 半砖竖放模式：按住Alt时为true（左右前后朝向），松开为false（上下朝向，默认）。
+    // Alt键目前完全未被占用（Shift=隐藏、Ctrl=普通模式），不会冲突。
+    private boolean isSlabVerticalMode = false;
+
     public PlayerController getPlayerController() {
         return playerController;
     }
@@ -188,6 +192,11 @@ public class PlayerControlModule extends AbstractGameModule implements ActionLis
         app.getInputManager().addMapping("BreakBlock", new MouseButtonTrigger(MouseInput.BUTTON_LEFT));
         app.getInputManager().addMapping("PlaceBlock", new MouseButtonTrigger(MouseInput.BUTTON_RIGHT));
 
+        // 半砖竖放模式切换（按住Alt=竖放左右前后，松开=横放上下）。左右Alt都绑，
+        // 参照PlayerController里NormalMode/NormalModeAlt绑定左右Ctrl的写法
+        app.getInputManager().addMapping("SlabVerticalModeL", new KeyTrigger(KeyInput.KEY_LMENU));
+        app.getInputManager().addMapping("SlabVerticalModeR", new KeyTrigger(KeyInput.KEY_RMENU));
+
         // 快捷栏选择（1-9键）
         for (int i = 0; i < 9; i++) {
             String mappingName = "SelectSlot" + i;
@@ -196,7 +205,7 @@ public class PlayerControlModule extends AbstractGameModule implements ActionLis
 
         // 注册监听器
         app.getInputManager().addListener(this,
-                "BreakBlock", "PlaceBlock",
+                "BreakBlock", "PlaceBlock", "SlabVerticalModeL", "SlabVerticalModeR",
                 "SelectSlot0", "SelectSlot1", "SelectSlot2", "SelectSlot3",
                 "SelectSlot4", "SelectSlot5", "SelectSlot6", "SelectSlot7", "SelectSlot8");
     }
@@ -245,6 +254,8 @@ public class PlayerControlModule extends AbstractGameModule implements ActionLis
         // 清除输入映射
         app.getInputManager().deleteMapping("BreakBlock");
         app.getInputManager().deleteMapping("PlaceBlock");
+        app.getInputManager().deleteMapping("SlabVerticalModeL");
+        app.getInputManager().deleteMapping("SlabVerticalModeR");
         app.getInputManager().deleteMapping("SelectStone");
         app.getInputManager().deleteMapping("SelectDirt");
         app.getInputManager().deleteMapping("SelectGrass");
@@ -278,10 +289,12 @@ public class PlayerControlModule extends AbstractGameModule implements ActionLis
             // 不能同时触发——放置是瞬时动作（按下时判定一次），恢复是持续状态（跟着按住/松开）
             com.Hecate.player.inventory.PlayerEquipment equipment = playerStateManager.getEquipment();
             if (isPressed && equipment.isHoldingBlock() && blockInteraction != null) {
-                blockInteraction.placeBlock(equipment.getCurrentBlock().getId());
+                blockInteraction.placeBlock(equipment.getCurrentBlock().getId(), isSlabVerticalMode);
             } else if (!equipment.isHoldingBlock() && playerController != null) {
                 playerController.setRightButtonForRecovery(isPressed);
             }
+        } else if (name.equals("SlabVerticalModeL") || name.equals("SlabVerticalModeR")) {
+            isSlabVerticalMode = isPressed;
         } else if (name.startsWith("SelectSlot") && isPressed) {
             // 动态处理快捷栏选择（1-9键）：必须经过PlayerEquipment.selectHotbarSlot()而不是
             // 直接调用hotbar.selectSlot()，否则currentBlock/currentWeapon缓存不会刷新，

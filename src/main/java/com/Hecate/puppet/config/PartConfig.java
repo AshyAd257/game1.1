@@ -71,9 +71,9 @@ public class PartConfig {
     private int stripFrameWidthPx = 32;
     private int stripFrameHeightPx = 32;
 
-    // Billboard俯仰角平滑过渡阈值（度）
-    private float billboardPitchFullRangeDeg = 60f;
-    private float billboardPitchLockDeg = 80f;
+    // Billboard俯仰夹紧上下限（度）：卡片俯仰角 = clamp(摄像机仰角, -下限, +上限)
+    private float billboardPitchClampUpDeg = 20f;
+    private float billboardPitchClampDownDeg = 20f;
 
     // 旋转条状贴图专用变换数据（单一值，不按方向分槎）
     private float stripWidth = 1.0f;
@@ -322,20 +322,20 @@ public class PartConfig {
         this.stripFrameHeightPx = stripFrameHeightPx;
     }
 
-    public float getBillboardPitchFullRangeDeg() {
-        return billboardPitchFullRangeDeg;
+    public float getBillboardPitchClampUpDeg() {
+        return billboardPitchClampUpDeg;
     }
 
-    public void setBillboardPitchFullRangeDeg(float billboardPitchFullRangeDeg) {
-        this.billboardPitchFullRangeDeg = billboardPitchFullRangeDeg;
+    public void setBillboardPitchClampUpDeg(float billboardPitchClampUpDeg) {
+        this.billboardPitchClampUpDeg = billboardPitchClampUpDeg;
     }
 
-    public float getBillboardPitchLockDeg() {
-        return billboardPitchLockDeg;
+    public float getBillboardPitchClampDownDeg() {
+        return billboardPitchClampDownDeg;
     }
 
-    public void setBillboardPitchLockDeg(float billboardPitchLockDeg) {
-        this.billboardPitchLockDeg = billboardPitchLockDeg;
+    public void setBillboardPitchClampDownDeg(float billboardPitchClampDownDeg) {
+        this.billboardPitchClampDownDeg = billboardPitchClampDownDeg;
     }
 
     public float getStripWidth() {

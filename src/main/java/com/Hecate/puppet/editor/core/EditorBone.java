@@ -166,12 +166,12 @@ public class EditorBone {
     // 取景框高度（像素）
     private int stripFrameHeightPx = 32;
 
-    // Billboard俯仰角范围（度）：|pitch| <= 此值时完全billboard（面向摄像机）
-    private float billboardPitchFullRangeDeg = 60f;
+    // Billboard俯仰夹紧上限（度）：与core.Bone保持一致的字段名/默认值，
+    // 编辑器渲染器目前不消费这两个字段（预览逻辑未做pitch clamp同步），仅用于数据存储/导出
+    private float billboardPitchClampUpDeg = 20f;
 
-    // Billboard俯仰角锁定阈值（度）：|pitch| >= 此值时完全锁定竖直朝向，不再billboard
-    // fullRangeDeg与此值之间做平滑插值过渡
-    private float billboardPitchLockDeg = 80f;
+    // Billboard俯仰夹紧下限（度，正数）
+    private float billboardPitchClampDownDeg = 20f;
 
     // ==================== 旋转条状贴图专用变换数据（单一值，不按方向分槎） ====================
     // 旋转条状贴图部件转身时不切换方向key，所以宽高/偏移/旋转/优先级只需要一份数据，
@@ -585,20 +585,20 @@ public class EditorBone {
         this.stripHeight = stripFrameHeightPx / STRIP_PIXELS_PER_UNIT;
     }
 
-    public float getBillboardPitchFullRangeDeg() {
-        return billboardPitchFullRangeDeg;
+    public float getBillboardPitchClampUpDeg() {
+        return billboardPitchClampUpDeg;
     }
 
-    public void setBillboardPitchFullRangeDeg(float degrees) {
-        this.billboardPitchFullRangeDeg = degrees;
+    public void setBillboardPitchClampUpDeg(float degrees) {
+        this.billboardPitchClampUpDeg = degrees;
     }
 
-    public float getBillboardPitchLockDeg() {
-        return billboardPitchLockDeg;
+    public float getBillboardPitchClampDownDeg() {
+        return billboardPitchClampDownDeg;
     }
 
-    public void setBillboardPitchLockDeg(float degrees) {
-        this.billboardPitchLockDeg = degrees;
+    public void setBillboardPitchClampDownDeg(float degrees) {
+        this.billboardPitchClampDownDeg = degrees;
     }
 
     // ==================== 旋转条状贴图专用变换数据 Getter & Setter ====================

@@ -122,18 +122,38 @@ public class BlockInteraction {
     }
 
     /**
-     * 放置方块
+     * 放置方块（非半砖场景，向后兼容旧签名，默认水平朝向模式）
      */
     public boolean placeBlock(String blockId) {
+        return placeBlock(blockId, false);
+    }
+
+    /**
+     * 放置方块
+     *
+     * @param verticalMode 半砖朝向模式：false=水平半砖（上/下，由点击位置的Y分量决定），
+     *                      true=竖直半砖（左/右/前/后，由点击位置的X/Z分量决定）。
+     *                      仅当手持方块是半砖族时才有意义，对其他方块无影响。
+     */
+    public boolean placeBlock(String blockId, boolean verticalMode) {
         BlockHitResult hitResult = raycastBlock();
         if (!hitResult.isHit()) {
             return false;
         }
 
+        Block heldBlock = blockRegistry.getBlock(blockId);
+        if (heldBlock == null) {
+            return false;
+        }
+
+        if (heldBlock.isSlabPart()) {
+            return placeSlab(heldBlock, hitResult, verticalMode);
+        }
+
         Vector3f placePos = computePlacementPosition(hitResult);
         String currentBlock = BlockUtils.getBlockAt(placePos, chunkManager);
 
-        if ("air".equals(currentBlock) && blockRegistry.getBlock(blockId) != null) {
+        if ("air".equals(currentBlock)) {
             // 方向性方块（如原木）依据被点击面的法线换算出目标朝向的具体变体ID，
             // 非方向性方块原样返回blockId，两者用同一套逻辑无需分支
             String resolvedBlockId = blockRegistry.resolvePlacementVariant(blockId, hitResult.getNormal());
@@ -141,6 +161,69 @@ public class BlockInteraction {
         }
 
         return false;
+    }
+
+    /**
+     * 半砖放置逻辑：先尝试"合并进被点击的那一格"（如果那一格已经放了同族半砖且能凑成
+     * 互补朝向，直接叠满变成完整方块），失败再退回"放进相邻的空气格"这条常规路径。
+     *
+     * 关键点：自定义模型方块（半砖也是）在WorldModule里挂的是一个完整1x1x1的不可见
+     * 碰撞代理用于射线检测（见WorldModule.createHitboxBatch），不是贴合可见几何体的
+     * 半高/半宽代理——所以"点击已有半砖露出的那一面"，命中点实际落在这一整格的边界上，
+     * 命中方块坐标（hitResult.getBlockPosition()）就是这一格本身，不是相邻格。这正好是
+     * 判断"是否要在同一格里合并"的依据：如果按标准公式算出的相邻格来判断合并，永远不会
+     * 命中已有的半砖，只会尝试在旁边新开一格。
+     */
+    private boolean placeSlab(Block heldBlock, BlockHitResult hitResult, boolean verticalMode) {
+        String family = heldBlock.getSlabFamily();
+
+        Vector3f clickedPos = hitResult.getBlockPosition();
+        String clickedId = BlockUtils.getBlockAt(clickedPos, chunkManager);
+        Block clickedBlock = blockRegistry.getBlock(clickedId);
+
+        if (clickedBlock != null && clickedBlock.isSlabPart() && family.equals(clickedBlock.getSlabFamily())) {
+            SlabOrientation requested = inferSlabOrientation(hitResult, clickedPos, verticalMode);
+            String merged = blockRegistry.resolveSlabPlacement(family, requested, clickedId);
+            if (merged != null) {
+                return BlockUtils.setBlockAt(clickedPos, merged, chunkManager);
+            }
+            // 推断出的朝向和已有半砖不互补（比如点了已有下半砖的下半部分），不合并，
+            // 继续走下面的常规相邻格放置逻辑
+        }
+
+        Vector3f placePos = computePlacementPosition(hitResult);
+        String currentAtPlace = BlockUtils.getBlockAt(placePos, chunkManager);
+        if (!"air".equals(currentAtPlace)) {
+            return false;
+        }
+
+        SlabOrientation requested = inferSlabOrientation(hitResult, placePos, verticalMode);
+        String resolvedBlockId = blockRegistry.resolveSlabPlacement(family, requested, currentAtPlace);
+        return BlockUtils.setBlockAt(placePos, resolvedBlockId, chunkManager);
+    }
+
+    /**
+     * 根据命中点相对参考格中心的局部偏移，推断玩家想要放置的半砖朝向。
+     * 参考格可能是"被点击的已有半砖所在格"（合并场景）或"将要放置新半砖的空气格"
+     * （常规场景），两种场景用同一套推断逻辑：
+     * - 非竖直模式：只看Y偏移，>=0认为点在上半部分->TOP，否则->BOTTOM。
+     *   命中点落在法线为Y的面时，Y偏移会被锁定在±0.5（跟哪个面被点中一一对应，
+     *   结果稳定）；落在法线为水平方向的面时，Y偏移能连续反映点击的实际高度。
+     * - 竖直模式：比较X/Z偏移的绝对值，谁更大就沿那根轴分裂（|X|更大->LEFT/RIGHT，
+     *   |Z|更大->FRONT/BACK），再由符号决定具体方向。
+     */
+    private SlabOrientation inferSlabOrientation(BlockHitResult hitResult, Vector3f referencePos, boolean verticalMode) {
+        Vector3f offset = hitResult.getHitPoint().subtract(referencePos);
+
+        if (!verticalMode) {
+            return offset.y >= 0 ? SlabOrientation.TOP : SlabOrientation.BOTTOM;
+        }
+
+        if (Math.abs(offset.x) >= Math.abs(offset.z)) {
+            return offset.x >= 0 ? SlabOrientation.RIGHT : SlabOrientation.LEFT;
+        } else {
+            return offset.z >= 0 ? SlabOrientation.FRONT : SlabOrientation.BACK;
+        }
     }
 
     /**

@@ -16,15 +16,33 @@ public class Block {
     private final float hardness;
     private final BlockTexture texture;
     private final String modelPath;
+    // 自定义模型（modelPath非空时）外挂的贴图路径（classpath相对路径，如"Textures/blocks/xx.png"）。
+    // 与wood1一类"贴图直接烘焙进.glb内部"的旧模型不同：这个路径指向一张独立的png文件，
+    // 加载模型后会在其上覆盖设置DiffuseMap，换贴图只需要换这个png，不需要重新导出模型。
+    // null表示沿用模型自带的材质（wood1等旧模型的行为不变）。
+    private final String modelTexturePath;
+    // true=模型几何体已经按世界单位精确建模（如cube.glb/wedge.glb/halfbrick.glb这类由
+    // generate_block_shapes.py生成的形状原型，halfbrick的Y方向故意就是0.5），加载后不能再
+    // 做"按高度自动归一化缩放到1.0"的处理——那是给wood1一类"用Blender随便建模、原始尺寸
+    // 不确定"的旧模型设计的兜底逻辑，如果套在已经精确建模的halfbrick上会被强行拉伸回1.0
+    // 高度，且scale()是三轴等比缩放，宽/深会跟着被放大到2倍，导致方块比整格还大。
+    // false=沿用旧的自动缩放行为（wood1等模型的行为不变）。
+    private final boolean skipAutoScale;
     private final boolean isTransparent;
     private final Axis axis; // 摆放朝向轴（默认Y=竖直），仅对方向性方块（如原木）有意义
     private final String orientationGroup; // 同一族朝向变体共享的分组key（如"wood1"），null表示非方向性方块
+    // 半砖族标识：同一材质的slabFamily相同（如"xx"），slabOrientation区分该变体是
+    // BOTTOM/TOP/LEFT/RIGHT/FRONT/BACK/DOUBLE中的哪一个。两者都为null表示不是半砖，
+    // 与原木的orientationGroup/axis是完全独立的另一套朝向机制（原木只有3个变体且
+    // 不支持"叠放合并"，半砖有7个变体且合并逻辑不同，故不复用同一套字段）。
+    private final String slabFamily;
+    private final SlabOrientation slabOrientation;
 
     /**
      * 创建一个新的方块类型（完整版本）
      */
     public Block(String id, String name, boolean solid, float hardness, BlockTexture texture, String modelPath, boolean isTransparent) {
-        this(id, name, solid, hardness, texture, modelPath, isTransparent, Axis.Y, null);
+        this(id, name, solid, hardness, texture, modelPath, null, isTransparent, Axis.Y, null, null, null);
     }
 
     /**
@@ -39,14 +57,23 @@ public class Block {
      * 纹理由 BlockTextureManager 管理
      */
     public Block(String id, String name, boolean solid, float hardness, boolean isTransparent) {
-        this(id, name, solid, hardness, null, null, isTransparent, Axis.Y, null);
+        this(id, name, solid, hardness, null, null, null, isTransparent, Axis.Y, null, null, null);
     }
 
     /**
-     * 带自定义模型的构造器
+     * 带自定义模型的构造器（模型贴图烘焙在模型文件内部，如wood1.glb）
      */
     public Block(String id, String name, boolean solid, float hardness, boolean isTransparent, String modelPath) {
-        this(id, name, solid, hardness, null, modelPath, isTransparent, Axis.Y, null);
+        this(id, name, solid, hardness, null, modelPath, null, isTransparent, Axis.Y, null, null, null);
+    }
+
+    /**
+     * 带自定义模型+独立贴图路径的构造器：模型本身只提供几何形状/UV（如cube.glb/wedge.glb/
+     * halfbrick.glb这类形状原型），贴图是外部单独的png文件，加载模型后另外覆盖设置。
+     */
+    public Block(String id, String name, boolean solid, float hardness, boolean isTransparent, String modelPath,
+                 String modelTexturePath) {
+        this(id, name, solid, hardness, null, modelPath, modelTexturePath, isTransparent, Axis.Y, null, null, null);
     }
 
     /**
@@ -57,20 +84,50 @@ public class Block {
      */
     public Block(String id, String name, boolean solid, float hardness, boolean isTransparent, String modelPath,
                  Axis axis, String orientationGroup) {
-        this(id, name, solid, hardness, null, modelPath, isTransparent, axis, orientationGroup);
+        this(id, name, solid, hardness, null, modelPath, null, isTransparent, axis, orientationGroup, null, null);
+    }
+
+    /**
+     * 带朝向轴+独立贴图路径的构造器（方向性方块使用形状原型模型+外部贴图的场景）
+     */
+    public Block(String id, String name, boolean solid, float hardness, boolean isTransparent, String modelPath,
+                 String modelTexturePath, Axis axis, String orientationGroup) {
+        this(id, name, solid, hardness, null, modelPath, modelTexturePath, isTransparent, axis, orientationGroup, null, null);
+    }
+
+    /**
+     * 半砖族变体的构造器：模型是generate_block_shapes.py生成的形状原型
+     * （slab_bottom.glb等6个单朝向，或叠满态直接复用cube.glb），贴图统一是同一张
+     * 完整方块贴图（美术只画一张，模型UV各自采样其中一半区域，叠满态则采样整张）。
+     *
+     * @param slabFamily 同一材质的所有变体共享的分组key（如"xx"），用于放置时查找同族的其他朝向
+     * @param slabOrientation 该变体的具体朝向
+     */
+    public Block(String id, String name, boolean solid, float hardness, String modelPath, String modelTexturePath,
+                 String slabFamily, SlabOrientation slabOrientation) {
+        this(id, name, solid, hardness, null, modelPath, modelTexturePath, false, Axis.Y, null, slabFamily, slabOrientation);
     }
 
     private Block(String id, String name, boolean solid, float hardness, BlockTexture texture, String modelPath,
-                   boolean isTransparent, Axis axis, String orientationGroup) {
+                   String modelTexturePath, boolean isTransparent, Axis axis, String orientationGroup,
+                   String slabFamily, SlabOrientation slabOrientation) {
         this.id = id;
         this.name = name;
         this.solid = solid;
         this.hardness = hardness;
         this.texture = texture;
         this.modelPath = modelPath;
+        this.modelTexturePath = modelTexturePath;
+        // 目前只有"形状原型+外部贴图"这条新路径（modelTexturePath非空）在用精确建模的模型
+        // （cube/wedge/halfbrick/slab_*），wood1一类旧模型走的是"贴图烘焙进glb内部"
+        // （modelTexturePath为null）+需要自动缩放。用modelTexturePath是否存在来推断是否
+        // 跳过自动缩放，两条路径目前完全对应，不需要再单独加一个构造器参数。
+        this.skipAutoScale = modelTexturePath != null && !modelTexturePath.isEmpty();
         this.isTransparent = isTransparent;
         this.axis = axis;
         this.orientationGroup = orientationGroup;
+        this.slabFamily = slabFamily;
+        this.slabOrientation = slabOrientation;
     }
 
     // Getter 方法
@@ -98,6 +155,18 @@ public class Block {
         return modelPath;
     }
 
+    public String getModelTexturePath() {
+        return modelTexturePath;
+    }
+
+    public boolean hasModelTexture() {
+        return modelTexturePath != null && !modelTexturePath.isEmpty();
+    }
+
+    public boolean isSkipAutoScale() {
+        return skipAutoScale;
+    }
+
     public boolean isTransparent() {
         return isTransparent;
     }
@@ -116,6 +185,18 @@ public class Block {
 
     public boolean isDirectional() {
         return orientationGroup != null;
+    }
+
+    public String getSlabFamily() {
+        return slabFamily;
+    }
+
+    public SlabOrientation getSlabOrientation() {
+        return slabOrientation;
+    }
+
+    public boolean isSlabPart() {
+        return slabFamily != null;
     }
 
     /**

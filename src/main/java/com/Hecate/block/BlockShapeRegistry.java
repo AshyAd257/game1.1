@@ -12,20 +12,37 @@ import java.util.Map;
  */
 public class BlockShapeRegistry {
 
-    // 未登记的方块ID默认视为满格1x1x1的实心立方体
+    // 未登记的方块ID默认视为满格1x1x1的实心立方体，中心与方块位置重合（无偏移）
     private static final Vector3f DEFAULT_FULL_SIZE = new Vector3f(1f, 1f, 1f);
+    private static final Vector3f DEFAULT_CENTER_OFFSET = Vector3f.ZERO;
 
     // 每个方块ID对应的碰撞盒完整尺寸（宽/高/深，单位=格子，1.0=占满一整格）
     private final Map<String, Vector3f> fullSizes = new HashMap<>();
+    // 每个方块ID对应的碰撞盒中心相对方块位置的偏移（格子单位）。大多数方块（如wood1这种
+    // 关于中心对称的柱子）不需要偏移，默认(0,0,0)；但像半砖这种贴着格子下沿放置、几何范围
+    // 是[-0.5,0.0]而不是对称的[-0.25,0.25]的方块，碰撞盒中心必须跟着往下偏移0.25，否则
+    // 碰撞盒会悬浮在视觉模型上半段，出现"贴图贴地但碰撞体悬空"的错位。
+    private final Map<String, Vector3f> centerOffsets = new HashMap<>();
 
     /**
-     * 登记某个方块ID的碰撞盒完整尺寸
+     * 登记某个方块ID的碰撞盒完整尺寸（碰撞盒中心与方块位置重合，无偏移）
      * @param width  X方向尺寸（格子单位，1.0=占满一整格）
      * @param height Y方向尺寸
      * @param depth  Z方向尺寸
      */
     public void registerShape(String blockId, float width, float height, float depth) {
         fullSizes.put(blockId, new Vector3f(width, height, depth));
+    }
+
+    /**
+     * 登记某个方块ID的碰撞盒完整尺寸+中心偏移，用于几何体本身不是关于方块位置居中对称的
+     * 方块（如半砖：Y方向范围[-0.5,0.0]，中心需要相对方块位置往下偏移0.25）。
+     * @param offsetX/Y/Z 碰撞盒中心相对方块位置的偏移（格子单位）
+     */
+    public void registerShapeWithOffset(String blockId, float width, float height, float depth,
+                                          float offsetX, float offsetY, float offsetZ) {
+        fullSizes.put(blockId, new Vector3f(width, height, depth));
+        centerOffsets.put(blockId, new Vector3f(offsetX, offsetY, offsetZ));
     }
 
     /**
@@ -50,9 +67,18 @@ public class BlockShapeRegistry {
     }
 
     /**
-     * 获取碰撞盒半尺寸（用于以方块中心为基准构造AABB：中心±半尺寸）
+     * 获取碰撞盒半尺寸（用于以"碰撞盒中心"为基准构造AABB：中心±半尺寸；
+     * 中心本身可能相对方块位置有偏移，见{@link #getCenterOffset}）
      */
     public Vector3f getHalfExtents(String blockId) {
         return getFullSize(blockId).mult(0.5f);
+    }
+
+    /**
+     * 获取某方块ID的碰撞盒中心相对方块位置的偏移；未登记过偏移的方块返回(0,0,0)
+     * （即碰撞盒中心与方块位置重合，绝大多数方块都是这种情况）
+     */
+    public Vector3f getCenterOffset(String blockId) {
+        return centerOffsets.getOrDefault(blockId, DEFAULT_CENTER_OFFSET);
     }
 }

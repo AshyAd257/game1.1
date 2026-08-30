@@ -159,8 +159,8 @@ public class PuppetIO {
                 partConfig.setStripFrameHeightPx(bone.getStripFrameHeightPx());
 
                 // 保存Billboard俯仰角平滑过渡阈值（新增）
-                partConfig.setBillboardPitchFullRangeDeg(bone.getBillboardPitchFullRangeDeg());
-                partConfig.setBillboardPitchLockDeg(bone.getBillboardPitchLockDeg());
+                partConfig.setBillboardPitchClampUpDeg(bone.getBillboardPitchClampUpDeg());
+                partConfig.setBillboardPitchClampDownDeg(bone.getBillboardPitchClampDownDeg());
 
                 // 保存旋转条状贴图专用变换数据（新增 - 单一值，不按方向分槎）
                 partConfig.setStripWidth(bone.getStripWidth());
@@ -470,8 +470,8 @@ public class PuppetIO {
                 bone.setStripFrameHeightPx(partConfig.getStripFrameHeightPx());
 
                 // 设置Billboard俯仰角平滑过渡阈值（新增）
-                bone.setBillboardPitchFullRangeDeg(partConfig.getBillboardPitchFullRangeDeg());
-                bone.setBillboardPitchLockDeg(partConfig.getBillboardPitchLockDeg());
+                bone.setBillboardPitchClampUpDeg(partConfig.getBillboardPitchClampUpDeg());
+                bone.setBillboardPitchClampDownDeg(partConfig.getBillboardPitchClampDownDeg());
 
                 // 设置旋转条状贴图专用变换数据（新增 - 单一值，不按方向分槎）
                 bone.setStripWidth(partConfig.getStripWidth());
@@ -784,8 +784,8 @@ public class PuppetIO {
                 bone.setStripFrameHeightPx(partConfig.getStripFrameHeightPx());
 
                 // 设置Billboard俯仰角平滑过渡阈值（新增）
-                bone.setBillboardPitchFullRangeDeg(partConfig.getBillboardPitchFullRangeDeg());
-                bone.setBillboardPitchLockDeg(partConfig.getBillboardPitchLockDeg());
+                bone.setBillboardPitchClampUpDeg(partConfig.getBillboardPitchClampUpDeg());
+                bone.setBillboardPitchClampDownDeg(partConfig.getBillboardPitchClampDownDeg());
 
                 // 设置旋转条状贴图专用变换数据（新增 - 单一值，不按方向分槎）
                 bone.setStripWidth(partConfig.getStripWidth());
@@ -1014,8 +1014,8 @@ public class PuppetIO {
                 bone.setStripFrameHeightPx(partConfig.getStripFrameHeightPx());
 
                 // 设置Billboard俯仰角平滑过渡阈值（新增）
-                bone.setBillboardPitchFullRangeDeg(partConfig.getBillboardPitchFullRangeDeg());
-                bone.setBillboardPitchLockDeg(partConfig.getBillboardPitchLockDeg());
+                bone.setBillboardPitchClampUpDeg(partConfig.getBillboardPitchClampUpDeg());
+                bone.setBillboardPitchClampDownDeg(partConfig.getBillboardPitchClampDownDeg());
 
                 // 设置旋转条状贴图专用变换数据（新增 - 单一值，不按方向分槎）
                 bone.setStripWidth(partConfig.getStripWidth());
@@ -1291,8 +1291,8 @@ public class PuppetIO {
                 bone.setStripFrameHeightPx(partConfig.getStripFrameHeightPx());
 
                 // 设置Billboard俯仰角平滑过渡阈值（新增）
-                bone.setBillboardPitchFullRangeDeg(partConfig.getBillboardPitchFullRangeDeg());
-                bone.setBillboardPitchLockDeg(partConfig.getBillboardPitchLockDeg());
+                bone.setBillboardPitchClampUpDeg(partConfig.getBillboardPitchClampUpDeg());
+                bone.setBillboardPitchClampDownDeg(partConfig.getBillboardPitchClampDownDeg());
 
                 // 设置旋转条状贴图专用变换数据（新增 - 单一值，不按方向分槎）
                 bone.setStripWidth(partConfig.getStripWidth());

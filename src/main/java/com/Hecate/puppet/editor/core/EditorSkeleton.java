@@ -272,8 +272,8 @@ public class EditorSkeleton {
         bone.setStripFrameWidthPx(editorBone.getStripFrameWidthPx());
         bone.setStripFrameHeightPx(editorBone.getStripFrameHeightPx());
         bone.setStripCalibrationOffsetPx(editorBone.getStripCalibrationOffsetPx());
-        bone.setBillboardPitchFullRangeDeg(editorBone.getBillboardPitchFullRangeDeg());
-        bone.setBillboardPitchLockDeg(editorBone.getBillboardPitchLockDeg());
+        bone.setBillboardPitchClampUpDeg(editorBone.getBillboardPitchClampUpDeg());
+        bone.setBillboardPitchClampDownDeg(editorBone.getBillboardPitchClampDownDeg());
         bone.setStripWidth(editorBone.getStripWidth());
         bone.setStripHeight(editorBone.getStripHeight());
         bone.setStripOffset(

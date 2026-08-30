@@ -170,12 +170,16 @@ public class Bone {
     // 取景框高度（像素）
     private int stripFrameHeightPx = 32;
 
-    // Billboard俯仰角范围（度）：|pitch| <= 此值时完全billboard（面向摄像机）
-    private float billboardPitchFullRangeDeg = 60f;
+    // Billboard俯仰夹紧上限（度）：卡片俯仰角 = clamp(摄像机仰角, -下限, +上限)。
+    // 摄像机仰角在此范围内时卡片完全跟随（标准billboard），超过后俯仰角冻结在该上限值，不再继续跟随。
+    // 游戏内实际可达俯仰角约±73°/-9°（受PlayerController的cameraAngleY/cameraDistance/
+    // CAMERA_HEIGHT共同决定）。视觉压扁效果取决于"超出量"而非"是否超出"——差值需拉大到
+    // 40°以上才能看出明显压扁（cos(40°)≈0.77，即~23%高度压缩），默认值故意设得比实际
+    // 可达角度小得多，确保效果肉眼可见
+    private float billboardPitchClampUpDeg = 20f;
 
-    // Billboard俯仰角锁定阈值（度）：|pitch| >= 此值时完全锁定竖直朝向，不再billboard
-    // fullRangeDeg与此值之间做平滑插值过渡
-    private float billboardPitchLockDeg = 80f;
+    // Billboard俯仰夹紧下限（度，正数）：摄像机俯角超过此值时，卡片俯仰角冻结在-此值。
+    private float billboardPitchClampDownDeg = 20f;
 
     // ==================== 旋转条状贴图专用变换数据（单一值，不按方向分槎） ====================
     // 旋转条状贴图部件转身时不切换方向key，所以宽高/偏移/旋转/优先级只需要一份数据，
@@ -632,20 +636,20 @@ public class Bone {
         this.stripHeight = stripFrameHeightPx / STRIP_PIXELS_PER_UNIT;
     }
 
-    public float getBillboardPitchFullRangeDeg() {
-        return billboardPitchFullRangeDeg;
+    public float getBillboardPitchClampUpDeg() {
+        return billboardPitchClampUpDeg;
     }
 
-    public void setBillboardPitchFullRangeDeg(float degrees) {
-        this.billboardPitchFullRangeDeg = degrees;
+    public void setBillboardPitchClampUpDeg(float degrees) {
+        this.billboardPitchClampUpDeg = degrees;
     }
 
-    public float getBillboardPitchLockDeg() {
-        return billboardPitchLockDeg;
+    public float getBillboardPitchClampDownDeg() {
+        return billboardPitchClampDownDeg;
     }
 
-    public void setBillboardPitchLockDeg(float degrees) {
-        this.billboardPitchLockDeg = degrees;
+    public void setBillboardPitchClampDownDeg(float degrees) {
+        this.billboardPitchClampDownDeg = degrees;
     }
 
     // ==================== 旋转条状贴图专用变换数据 Getter & Setter ====================

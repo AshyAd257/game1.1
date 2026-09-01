@@ -1,0 +1,28 @@
+{
+  "partId": "head_default",
+  "name": "Default Head",
+  "partType": "BODY_HEAD",
+  "targetBoneName": "Head",
+  "width": 0.3,
+  "height": 0.4,
+  "attachmentOffset": {
+    "x": 0.0,
+    "y": 0.0,
+    "z": 0.0
+  },
+  "attachmentRotation": {
+    "x": 0.0,
+    "y": 0.0,
+    "z": 0.0
+  },
+  "scale": 1.0,
+  "directionTextures": {
+    "front": "Textures/Body/head_front.png",
+    "back": "Textures/Body/head_back.png",
+    "left": "Textures/Body/head_left.png",
+    "right": "Textures/Body/head_right.png"
+  },
+  "renderPriority": 100,
+  "billboardEnabled": true,
+  "autoDirectionSwitch": true
+}

@@ -1,0 +1,28 @@
+{
+  "partId": "weapon_sword",
+  "name": "Iron Sword",
+  "partType": "WEAPON_MAIN",
+  "targetBoneName": "Hand.R",
+  "width": 0.15,
+  "height": 0.8,
+  "attachmentOffset": {
+    "x": 0.0,
+    "y": -0.2,
+    "z": 0.0
+  },
+  "attachmentRotation": {
+    "x": 0.0,
+    "y": 0.0,
+    "z": -45.0
+  },
+  "scale": 1.0,
+  "directionTextures": {
+    "front": "Textures/Weapons/sword_iron.png",
+    "back": "Textures/Weapons/sword_iron.png",
+    "left": "Textures/Weapons/sword_iron_side.png",
+    "right": "Textures/Weapons/sword_iron_side.png"
+  },
+  "renderPriority": 50,
+  "billboardEnabled": true,
+  "autoDirectionSwitch": true
+}

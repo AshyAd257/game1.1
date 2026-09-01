@@ -1,0 +1,17 @@
+{
+  "skinId": "skin_default",
+  "name": "Default Character",
+  "baseModelPath": "Models/base_human.j3o",
+  "modelScale": 1.0,
+  "partSlots": [
+    {
+      "slotType": "BODY_HEAD",
+      "partId": "head_default"
+    },
+    {
+      "slotType": "WEAPON_MAIN",
+      "partId": "weapon_sword",
+      "customScale": 1.0
+    }
+  ]
+}

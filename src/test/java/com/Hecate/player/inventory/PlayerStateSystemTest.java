@@ -1,11 +1,12 @@
 package com.Hecate.player.inventory;
 
 import com.Hecate.block.BlockRegistry;
+import com.Hecate.item.ItemRegistry;
 import com.Hecate.weapon.WeaponRegistry;
 import com.Hecate.player.effect.EffectRegistry;
-import org.junit.Before;
-import org.junit.Test;
-import static org.junit.Assert.*;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * 玩家状态系统测试
@@ -16,35 +17,66 @@ public class PlayerStateSystemTest {
     private WeaponRegistry weaponRegistry;
     private PlayerStateManager stateManager;
 
-    @Before
+    @BeforeEach
     public void setup() {
         blockRegistry = BlockRegistry.createInstance();
         weaponRegistry = WeaponRegistry.getInstance();
-        stateManager = new PlayerStateManager(blockRegistry, weaponRegistry);
 
-        // 初始化测试用的注册表
-        blockRegistry.initializeDefaultBlocks(null);
+        // 初始化测试用的注册表——必须传真正的BlockTextureManager实例（无参构造即可，
+        // 不需要真实AssetManager）：传字面null会导致BlockTextureDefaults.registerAll内部
+        // manager::defineBlockTexture直接NPE（根因在ItemRegistryAutoRegistrationTest里
+        // 复现并确认过，不是框架bug，是调用方传参错误）。
+        blockRegistry.initializeDefaultBlocks(new com.Hecate.texture.BlockTextureManager());
+
+        // 必须在构造PlayerStateManager之前完成——PlayerStateManager构造函数会调用
+        // PlayerEquipment.resetToDefault()往背包塞入"stone"等默认物品，若ItemRegistry
+        // 查不到对应ItemDef会直接抛异常（与ApplicationContext.initializeModules()里
+        // 的真实启动顺序保持一致，见该方法的注释）。这里用单例ItemRegistry.getInstance()
+        // 而不是createInstance()，因为PlayerStateManager/Inventory内部固定查询单例。
+        ItemRegistry.getInstance().registerFromBlocks(blockRegistry, new com.Hecate.texture.BlockTextureManager());
+
+        stateManager = new PlayerStateManager(blockRegistry, weaponRegistry);
     }
 
     @Test
-    public void testHotbarSlotSelection() {
+    public void testSlotSelection() {
         PlayerEquipment equipment = stateManager.getEquipment();
 
-        // 测试槽位切换
-        equipment.selectHotbarSlot(0);
+        // 测试槛位切换
+        equipment.selectSlot(0);
         assertEquals(0, equipment.getSelectedSlot());
 
-        equipment.selectHotbarSlot(4);
+        equipment.selectSlot(4);
         assertEquals(4, equipment.getSelectedSlot());
+    }
+
+    @Test
+    public void testScrollSlot() {
+        PlayerEquipment equipment = stateManager.getEquipment();
+        equipment.selectSlot(3);
+
+        equipment.scrollSlot(1);
+        assertEquals(4, equipment.getSelectedSlot());
+
+        equipment.scrollSlot(-1);
+        assertEquals(3, equipment.getSelectedSlot());
+    }
+
+    @Test
+    public void testScrollSlotClampsAtBoundary() {
+        PlayerEquipment equipment = stateManager.getEquipment();
+        equipment.selectSlot(0);
+
+        equipment.scrollSlot(-1); // 已经在第0格，往前滚不应该报错或回绕
+        assertEquals(0, equipment.getSelectedSlot());
     }
 
     @Test
     public void testBlockEquipment() {
         PlayerEquipment equipment = stateManager.getEquipment();
 
-        // 设置方块到槽位并选中
-        equipment.setHotbarSlot(0, HeldItem.block("stone"));
-        equipment.selectHotbarSlot(0);
+        // resetToDefault()已经把stone放进了槛位0（见PlayerEquipment.resetToDefault）
+        equipment.selectSlot(0);
 
         assertTrue(equipment.isHoldingBlock());
         assertFalse(equipment.isHoldingWeapon());
@@ -57,9 +89,20 @@ public class PlayerStateSystemTest {
     public void testWeaponEquipment() {
         PlayerEquipment equipment = stateManager.getEquipment();
 
-        // 设置武器到槽位并选中
-        equipment.setHotbarSlot(1, HeldItem.weapon("smg_01"));
-        equipment.selectHotbarSlot(1);
+        // 把steampunk_gun放进槛位1并选中——武器物品需要先在ItemRegistry里有对应的
+        // obtainable武器定义（本测试的registerFromWeapons还没跑，直接用背包底层API
+        // setSlot绕过校验放入即可，测的是isHoldingWeapon()的判定逻辑，不是完整的
+        // 注册流程）
+        stateManager.getBackpack().setSlot(1,
+                new com.Hecate.item.ItemStack("scrap_metal", 1)); // 占位：先验证非武器物品的行为
+        equipment.selectSlot(1);
+        assertFalse(equipment.isHoldingWeapon());
+
+        // 完整验证武器物品：注册steampunk_gun的武器定义后再放入
+        ItemRegistry.getInstance().registerFromWeapons(WeaponRegistry.getInstance());
+        stateManager.getBackpack().setSlot(2,
+                new com.Hecate.item.ItemStack("steampunk_gun", 1));
+        equipment.selectSlot(2);
 
         assertTrue(equipment.isHoldingWeapon());
         assertFalse(equipment.isHoldingBlock());
@@ -70,13 +113,23 @@ public class PlayerStateSystemTest {
     public void testEmptyHand() {
         PlayerEquipment equipment = stateManager.getEquipment();
 
-        // 设置空手
-        equipment.setHotbarSlot(2, HeldItem.empty());
-        equipment.selectHotbarSlot(2);
+        stateManager.getBackpack().clearSlot(5);
+        equipment.selectSlot(5);
 
         assertTrue(equipment.isEmpty());
         assertFalse(equipment.isHoldingWeapon());
         assertFalse(equipment.isHoldingBlock());
+    }
+
+    @Test
+    public void testRemoveFromCurrentSlotConsumesCount() {
+        PlayerEquipment equipment = stateManager.getEquipment();
+        equipment.selectSlot(0); // stone x64（resetToDefault默认值）
+
+        int removed = equipment.removeFromCurrentSlot(1);
+
+        assertEquals(1, removed);
+        assertEquals(63, stateManager.getBackpack().getSlot(0).getCount());
     }
 
     @Test

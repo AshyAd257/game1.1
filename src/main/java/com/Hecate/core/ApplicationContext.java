@@ -80,6 +80,9 @@ public class ApplicationContext {
     // ==================== 怪物系统 ====================
     private com.Hecate.monster.MonsterManager monsterManager;
 
+    // ==================== 物品系统（掉落物） ====================
+    private com.Hecate.item.world.WorldItemManager worldItemManager;
+
     // ==================== 事件系统 ====================
     private final EventBus eventBus = new EventBus();
 
@@ -141,9 +144,19 @@ public class ApplicationContext {
      * <p>依赖：注册表必须已初始化
      */
     public void initializeModules() {
-        // 初始化世界模块（通过构造函数注入 BlockRegistry）
+        // 初始化世界模块（通过构造函数注入 BlockRegistry）。此步骤内部完成
+        // blockRegistry.initializeDefaultBlocks，方块数据在这里就已经齐全。
         worldModule = new WorldModule(app, blockRegistry);
         worldModule.onInitialize();
+
+        // 【物品系统】必须在playerControlModule.onInitialize()之前完成方块的自动注册——
+        // 该方法内部会构造PlayerStateManager，其构造函数会调用
+        // PlayerEquipment.resetToDefault()往背包塞入"stone"等默认物品，若ItemRegistry
+        // 此刻还查不到"stone"对应的ItemDef会直接抛异常。武器的自动注册不受这个顺序
+        // 约束（WeaponRegistry.getInstance()是单例懒加载，调用即完成初始化），
+        // 但为了让"注册表数据齐全→再消费它"这条依赖顺序保持一致，一并放在这里。
+        com.Hecate.item.ItemRegistry.getInstance().registerFromBlocks(blockRegistry, worldModule.getTextureManager());
+        com.Hecate.item.ItemRegistry.getInstance().registerFromWeapons(com.Hecate.weapon.WeaponRegistry.getInstance());
 
         // 初始化玩家控制模块
         playerControlModule = new PlayerControlModule(app, blockRegistry);
@@ -159,6 +172,16 @@ public class ApplicationContext {
         // 后初始化阶段
         worldModule.onPostInitialize();
         playerControlModule.onPostInitialize();
+    }
+
+    /**
+     * 初始化世界掉落物系统。
+     * <p>依赖：ItemRegistry里的自动注册（initializeModules末尾）应已完成，
+     * 这样/spawnitem等调试命令校验物品ID时能查到方块/武器自动生成的ItemDef。
+     */
+    public void initializeWorldItemSystem() {
+        worldItemManager = new com.Hecate.item.world.WorldItemManager(
+                app.getAssetManager(), com.Hecate.item.ItemRegistry.getInstance());
     }
 
     /**
@@ -357,6 +380,16 @@ public class ApplicationContext {
         if (playerControlModule != null && playerControlModule.getPlayerController() != null && monsterManager != null) {
             playerControlModule.getPlayerController().setMonsterManager(monsterManager);
         }
+
+        // 【物品系统】连接掉落物管理器到玩家控制模块（F键拾取、/spawnitem 命令生成掉落物）
+        if (playerControlModule != null && playerControlModule.getPlayerController() != null && worldItemManager != null) {
+            playerControlModule.getPlayerController().setWorldItemManager(worldItemManager);
+        }
+
+        // 【面板系统】连接面板管理器到玩家控制模块（鼠标悬停背包物品图标时显示说明面板）
+        if (playerControlModule != null && playerControlModule.getPlayerController() != null && panelManager != null) {
+            playerControlModule.getPlayerController().setPanelManager(panelManager);
+        }
     }
 
     /**
@@ -512,6 +545,10 @@ public class ApplicationContext {
 
     public com.Hecate.monster.MonsterManager getMonsterManager() {
         return monsterManager;
+    }
+
+    public com.Hecate.item.world.WorldItemManager getWorldItemManager() {
+        return worldItemManager;
     }
 
     public FixedTickScheduler getFixedTickScheduler() {

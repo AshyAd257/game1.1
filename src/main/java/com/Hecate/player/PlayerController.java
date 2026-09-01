@@ -157,6 +157,8 @@ public class PlayerController implements ActionListener, AnalogListener {
     // 按键状态
     private boolean isShiftPressed = false;   // Shift键是否按下
     private boolean isCtrlPressed = false;    // Ctrl键是否按下
+    private boolean isCameraZoomingIn = false;  // +键是否按住（摄像机缩近，原滚轮功能）
+    private boolean isCameraZoomingOut = false; // -键是否按住（摄像机缩远，原滚轮功能）
     private boolean isRightButtonPressed = false; // 右键是否按下
 
     // 地面类型枚举
@@ -228,6 +230,10 @@ public class PlayerController implements ActionListener, AnalogListener {
     private com.Hecate.monster.MonsterManager monsterManager;
     // 当前活动世界的场景节点（随setWorldNode同步更新）
     private Node currentWorldNode;
+
+    // 世界掉落物系统（F键交互拾取）
+    private com.Hecate.item.world.WorldItemManager worldItemManager;
+    private static final float PICKUP_INTERACTION_DISTANCE = 3.0f; // 拾取交互距离（米），与方块交互距离(5米)同量级但略近
 
     // 调试计数器
     private float debugTimer = 0f;
@@ -736,8 +742,12 @@ public class PlayerController implements ActionListener, AnalogListener {
         inputManager.addMapping("MouseLookNeg", new MouseAxisTrigger(MouseInput.AXIS_X, true));
         inputManager.addMapping("MouseLookUp", new MouseAxisTrigger(MouseInput.AXIS_Y, false));
         inputManager.addMapping("MouseLookDown", new MouseAxisTrigger(MouseInput.AXIS_Y, true));
-        inputManager.addMapping("ZoomIn", new MouseAxisTrigger(MouseInput.AXIS_WHEEL, false));
-        inputManager.addMapping("ZoomOut", new MouseAxisTrigger(MouseInput.AXIS_WHEEL, true));
+        // 滚轮改为切换背包选中槛位（不再控制摄像机缩放，见PlayerEquipment.scrollSlot）
+        inputManager.addMapping("ScrollSlotNext", new MouseAxisTrigger(MouseInput.AXIS_WHEEL, false));
+        inputManager.addMapping("ScrollSlotPrev", new MouseAxisTrigger(MouseInput.AXIS_WHEEL, true));
+        // 摄像机缩放改绑+/-键（原本完全未被占用）
+        inputManager.addMapping("CameraZoomIn", new KeyTrigger(KeyInput.KEY_EQUALS));
+        inputManager.addMapping("CameraZoomOut", new KeyTrigger(KeyInput.KEY_MINUS));
         inputManager.addMapping("ResetCamera", new KeyTrigger(KeyInput.KEY_R));
 
         // 背包UI
@@ -749,6 +759,9 @@ public class PlayerController implements ActionListener, AnalogListener {
         // 碰撞箱显示切换（F3键）
         inputManager.addMapping("ToggleCollisionBox", new KeyTrigger(KeyInput.KEY_F3));
 
+        // 拾取地面掉落物（F键，独立于左键挖方块/攻击）
+        inputManager.addMapping("PickupItem", new KeyTrigger(KeyInput.KEY_F));
+
         // 地形挖掘
         inputManager.addMapping("DigTerrain", new com.jme3.input.controls.MouseButtonTrigger(MouseInput.BUTTON_LEFT));
 
@@ -758,9 +771,10 @@ public class PlayerController implements ActionListener, AnalogListener {
         inputManager.addListener(this,
                 "MoveForward", "MoveBackward", "StrafeLeft", "StrafeRight",
                 "RotateLeft", "RotateRight", "Jump", "MouseLook", "MouseLookNeg",
-                "MouseLookUp", "MouseLookDown", "ZoomIn", "ZoomOut", "ResetCamera",
+                "MouseLookUp", "MouseLookDown", "ScrollSlotNext", "ScrollSlotPrev",
+                "CameraZoomIn", "CameraZoomOut", "ResetCamera",
                 "DigTerrain", "ToggleInventory", "NormalMode", "NormalModeAlt", "FireWeapon",
-                "ToggleHiding", "ToggleCollisionBox", "EnterArena");
+                "ToggleHiding", "ToggleCollisionBox", "EnterArena", "PickupItem");
     }
 
     @Override
@@ -876,6 +890,12 @@ public class PlayerController implements ActionListener, AnalogListener {
                     startCameraReset();
                 }
                 break;
+            case "CameraZoomIn":
+                isCameraZoomingIn = isPressed;
+                break;
+            case "CameraZoomOut":
+                isCameraZoomingOut = isPressed;
+                break;
             case "DigTerrain":
                 // 左键行为：委托给战斗控制器或体素交互
                 if (isPressed) {
@@ -934,7 +954,39 @@ public class PlayerController implements ActionListener, AnalogListener {
                     combatController.performGunAttack(fireOrigin, fireDirection);
                 }
                 break;
+            case "PickupItem":
+                if (isPressed) {
+                    tryPickupNearestItem();
+                }
+                break;
         }
+    }
+
+    /**
+     * 拾取交互（F键）：找玩家附近最近的掉落物，命中就放进背包并从世界移除。
+     * 找不到（超出PICKUP_INTERACTION_DISTANCE范围内没有任何掉落物）则什么都不做。
+     */
+    private void tryPickupNearestItem() {
+        if (worldItemManager == null || playerStateManager == null) {
+            return;
+        }
+
+        com.Hecate.item.world.WorldItemEntity entity =
+                worldItemManager.findNearest(playerPosition, PICKUP_INTERACTION_DISTANCE);
+        if (entity == null) {
+            return;
+        }
+
+        com.Hecate.item.ItemStack stack = entity.getItemStack();
+        int remaining = playerStateManager.getBackpack().addItem(stack.getItemId(), stack.getCount());
+        if (remaining >= stack.getCount()) {
+            // 背包已满，一个都放不进去：不移除掉落物，留在地上给玩家清理背包后再来拾取
+            return;
+        }
+        // 部分或全部放入成功：掉落物直接整体消失（不支持"拾取一部分、地上留一部分"，
+        // 与Inventory.addItem本身"部分放入+返回剩余数量"的语义相比，这里选择更简单的
+        // "全有或全没有"体验——剩余数量当前只是被丢弃，不重新生成一个数量更少的掉落物）
+        worldItemManager.remove(entity);
     }
 
     @Override
@@ -969,14 +1021,22 @@ public class PlayerController implements ActionListener, AnalogListener {
                 cameraAngleY -= value * MOUSE_SENSITIVITY * 30f;
                 cameraAngleY = FastMath.clamp(cameraAngleY, -80f, 60f);
                 break;
-            case "ZoomIn":
-                cameraDistance -= value * ZOOM_SPEED;
-                cameraDistance = FastMath.clamp(cameraDistance, CAMERA_MIN_DISTANCE, CAMERA_MAX_DISTANCE);
+            case "ScrollSlotNext":
+                scrollSelectedSlot(1);
                 break;
-            case "ZoomOut":
-                cameraDistance += value * ZOOM_SPEED;
-                cameraDistance = FastMath.clamp(cameraDistance, CAMERA_MIN_DISTANCE, CAMERA_MAX_DISTANCE);
+            case "ScrollSlotPrev":
+                scrollSelectedSlot(-1);
                 break;
+        }
+    }
+
+    /**
+     * 滚轮切换背包选中槛位（往前/往后移动一格）。控制台/背包UI/文本框有焦点、
+     * 摄像机重置中这些情况已经在onAnalog开头统一拦截，这里不需要重复判断。
+     */
+    private void scrollSelectedSlot(int direction) {
+        if (playerStateManager != null) {
+            playerStateManager.getEquipment().scrollSlot(direction);
         }
     }
 
@@ -1034,6 +1094,23 @@ public class PlayerController implements ActionListener, AnalogListener {
         while (diff > 180f) diff -= 360f;
         while (diff < -180f) diff += 360f;
         return a + diff * FastMath.clamp(t, 0f, 1f);
+    }
+
+    /**
+     * 摄像机缩放（+/-键持续按住时每帧连续调整cameraDistance），取代原来滚轮的
+     * 单次事件缩放——按键是持续触发的action而不是滚轮的单次analog事件，所以要
+     * 按tpf连续累加，不能直接套用原ZoomIn/ZoomOut里"value*ZOOM_SPEED"那种
+     * 单次增量写法。
+     */
+    private void updateCameraZoom(float tpf) {
+        if (isCameraZoomingIn) {
+            cameraDistance -= ZOOM_SPEED * tpf;
+            cameraDistance = FastMath.clamp(cameraDistance, CAMERA_MIN_DISTANCE, CAMERA_MAX_DISTANCE);
+        }
+        if (isCameraZoomingOut) {
+            cameraDistance += ZOOM_SPEED * tpf;
+            cameraDistance = FastMath.clamp(cameraDistance, CAMERA_MIN_DISTANCE, CAMERA_MAX_DISTANCE);
+        }
     }
 
     /**
@@ -1149,6 +1226,9 @@ public class PlayerController implements ActionListener, AnalogListener {
         if (inventoryUI != null) {
             inventoryUI.update(tpf);
         }
+
+        // 摄像机缩放（+/-键持续按住时每帧连续缩放，与原滚轮的连续手感一致）
+        updateCameraZoom(tpf);
 
         if (isDead) {
             updateDeathAnimation(tpf);
@@ -1943,6 +2023,14 @@ public class PlayerController implements ActionListener, AnalogListener {
     }
 
     /**
+     * 设置世界掉落物管理器（F键拾取用，同时转发给调试命令处理器供/spawnitem使用）
+     */
+    public void setWorldItemManager(com.Hecate.item.world.WorldItemManager worldItemManager) {
+        this.worldItemManager = worldItemManager;
+        debugCommands.setWorldItemManager(worldItemManager);
+    }
+
+    /**
      * 设置方块交互系统的获取方式（用于 /give 调试命令）
      * 传入Supplier而不是具体实例，确保切换世界（如竞技场）后 /give 操作的是当前激活的世界
      */
@@ -2090,6 +2178,23 @@ public class PlayerController implements ActionListener, AnalogListener {
         // 这里补上/give命令需要的装备系统引用（把方块放入当前选中的快捷栏槽位）
         if (debugCommands != null && playerStateManager != null) {
             debugCommands.setPlayerEquipment(playerStateManager.getEquipment());
+            debugCommands.setBackpack(playerStateManager.getBackpack());
+        }
+
+        // inventoryUI在构造函数中创建（initializeInventoryUI），此时playerStateManager还不存在，
+        // 这里补上背包格子面板需要的数据引用
+        if (inventoryUI != null && playerStateManager != null) {
+            inventoryUI.setBackpack(playerStateManager.getBackpack(), com.Hecate.item.ItemRegistry.getInstance());
+        }
+
+        // combatController在构造函数中创建，此时playerStateManager还不存在，
+        // 这里补上PlayerEquipment的武器装备/卸下监听——背包选中槛位切到带weaponId的
+        // 物品时，PlayerEquipment会自动调用combatController.onWeaponEquipped/
+        // onWeaponUnequipped，不再需要combatController自己持有backpack引用手动同步
+        // （此前equipGun1/unequipGun1里的backpack.addItem/removeItem正是要消灭的
+        // "两个真相源"问题——物品本来就已经在背包里，装备只是"选中哪一格"）。
+        if (combatController != null && playerStateManager != null) {
+            playerStateManager.getEquipment().setWeaponEquipListener(combatController);
         }
     }
 
@@ -2155,18 +2260,11 @@ public class PlayerController implements ActionListener, AnalogListener {
     }
 
     /**
-     * 是否装备着Gun1/Gun2（快捷栏之外的独立武器系统）
+     * 设置面板管理器（转发给InventoryUI，用于鼠标悬停背包物品时显示说明面板）
      */
-    public boolean isHoldingGunWeapon() {
-        return combatController != null && combatController.isHoldingGun();
-    }
-
-    /**
-     * 强制卸下Gun1/Gun2（切换快捷栏槛位时调用，确保二者互斥）
-     */
-    public void forceUnequipGunWeapon() {
-        if (combatController != null) {
-            combatController.unequipAllWeapons();
+    public void setPanelManager(com.Hecate.ui.PanelManager panelManager) {
+        if (inventoryUI != null) {
+            inventoryUI.setPanelManager(panelManager);
         }
     }
 
@@ -2210,12 +2308,78 @@ public class PlayerController implements ActionListener, AnalogListener {
     }
 
     /**
-     * 扔掉当前手持物品（委托给 CombatController）
+     * 扔掉当前手持物品：从背包选中槛位取出物品堆，清空该槛位（若有weaponId，
+     * PlayerEquipment.removeFromCurrentSlot内部会自动触发卸下武器——不需要
+     * 额外调用combatController，装备状态永远精确匹配槛位内容），再在玩家前方
+     * 按抛物线算出落地点生成一个世界掉落物。
+     * <p>抛物线只是"算一次落点"，不需要真的接入Projectile的逐帧更新循环——
+     * 掉落物落地后是静止的，不需要飞行过程的中间帧。
      */
     private void dropCurrentItem() {
-        if (combatController != null) {
-            combatController.dropCurrentItem();
+        if (playerStateManager == null || worldItemManager == null || currentWorldNode == null) {
+            return;
         }
+
+        com.Hecate.item.ItemStack stack = playerStateManager.getEquipment().getCurrentHeldItem();
+        if (stack.isEmpty()) {
+            return;
+        }
+
+        int selectedSlot = playerStateManager.getEquipment().getSelectedSlot();
+        int count = stack.getCount();
+        playerStateManager.getEquipment().removeFromCurrentSlot(count);
+
+        Vector3f landingPos = computeDropLandingPosition();
+        worldItemManager.spawn(currentWorldNode, stack.getItemId(), count, landingPos);
+    }
+
+    // 丢弃抛物线参数：初速度朝正前方偏上一点，重力用与SteampunkGun同量级的手感数值，
+    // 不需要精确物理，只要"抛出去往前落地"的视觉效果合理
+    private static final float DROP_THROW_SPEED = 4.0f;
+    private static final float DROP_THROW_UP_ANGLE = 0.35f; // 弧度，约20度仰角
+    private static final float DROP_GRAVITY = -15.0f;
+    private static final float DROP_MAX_TIME = 3.0f; // 抛物线最长模拟时长（秒），防止极端情况下死循环
+
+    /**
+     * 按抛物线公式（初速度+重力）一次性算出丢弃物品的落地世界坐标：从玩家当前位置、
+     * 沿摄像机水平朝向，以固定仰角和初速度抛出，逐小步模拟直到穿过地形表面为止。
+     * 与{@link com.Hecate.weapon.Projectile}的BALLISTIC弧线是同一套加速度模型
+     * （见Projectile.updateBallistic），但这里不需要生成Projectile实例走每帧更新——
+     * 落地位置在丢弃的这一帧就能一次性算完。
+     */
+    private Vector3f computeDropLandingPosition() {
+        Vector3f forward = camera.getDirection().clone();
+        forward.y = 0;
+        if (forward.lengthSquared() < 0.0001f) {
+            forward.set(0, 0, 1);
+        } else {
+            forward.normalizeLocal();
+        }
+
+        Vector3f velocity = forward.mult(DROP_THROW_SPEED * FastMath.cos(DROP_THROW_UP_ANGLE));
+        velocity.y = DROP_THROW_SPEED * FastMath.sin(DROP_THROW_UP_ANGLE);
+
+        Vector3f position = playerPosition.clone();
+        position.y += 1.0f; // 从玩家胸口高度附近抛出，与其他武器发射起点一致
+
+        float dt = 0.05f;
+        float elapsed = 0f;
+        while (elapsed < DROP_MAX_TIME) {
+            Vector3f nextPosition = position.add(velocity.mult(dt));
+            float terrainHeight = collisionManager != null
+                    ? collisionManager.getTerrainHeightAt(nextPosition.x, nextPosition.z) : Float.NaN;
+
+            if (!Float.isNaN(terrainHeight) && nextPosition.y <= terrainHeight) {
+                return new Vector3f(nextPosition.x, terrainHeight, nextPosition.z);
+            }
+
+            position = nextPosition;
+            velocity.y += DROP_GRAVITY * dt;
+            elapsed += dt;
+        }
+
+        // 模拟超时仍未落地（例如上方悬空太高），直接用最后位置——总比不生成掉落物好
+        return position;
     }
 
     /**

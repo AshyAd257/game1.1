@@ -37,6 +37,11 @@ public class Block {
     // 不支持"叠放合并"，半砖有7个变体且合并逻辑不同，故不复用同一套字段）。
     private final String slabFamily;
     private final SlabOrientation slabOrientation;
+    // 是否可以被玩家实际获得（挖掘/丢弃/拾取/物品栏自动注册）。默认true；
+    // "air"这类技术方块（没有实体、不该出现在物品栏或掉落物里）显式调用setObtainable(false)。
+    // 用可变字段+setter而不是塞进已经有7个重载的构造函数——那样要在每个重载链上都加一层参数，
+    // 改动面远大于收益，而这个标记本身与"如何建模几何体/朝向"无关，加在构造之后完全合理。
+    private boolean obtainable = true;
 
     /**
      * 创建一个新的方块类型（完整版本）
@@ -197,6 +202,18 @@ public class Block {
 
     public boolean isSlabPart() {
         return slabFamily != null;
+    }
+
+    public boolean isObtainable() {
+        return obtainable;
+    }
+
+    /**
+     * 标记该方块是否可以被玩家实际获得（用于排除air等技术方块，不参与物品栏自动注册）。
+     */
+    public Block setObtainable(boolean obtainable) {
+        this.obtainable = obtainable;
+        return this;
     }
 
     /**

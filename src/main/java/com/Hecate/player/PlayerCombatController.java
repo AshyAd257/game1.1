@@ -3,7 +3,6 @@ package com.Hecate.player;
 import com.Hecate.weapon.Weapon;
 import com.Hecate.weapon.BasicShooter;
 import com.jme3.app.SimpleApplication;
-import com.jme3.asset.AssetManager;
 import com.jme3.material.Material;
 import com.jme3.math.ColorRGBA;
 import com.jme3.math.Quaternion;
@@ -16,26 +15,27 @@ import com.jme3.scene.shape.Box;
 /**
  * 玩家战斗控制器
  * 负责武器装备、攻击逻辑、弹药管理，从 PlayerController 中抽离
+ * <p>武器装备/卸下不再由 /gun1、/gun2 等专属命令手写触发——本类实现
+ * {@link com.Hecate.player.inventory.PlayerEquipment.WeaponEquipListener}，
+ * 当玩家在背包里选中/切走某个带weaponId的物品槛位时，
+ * {@link com.Hecate.player.inventory.PlayerEquipment} 会自动调用
+ * {@link #onWeaponEquipped}/{@link #onWeaponUnequipped}。武器实例本身由
+ * {@link com.Hecate.weapon.WeaponFactory} 按id构造，这里只负责把构造好的
+ * {@link Weapon} 接入开火/连发/持有模型这些运行时状态。
  */
-public class PlayerCombatController {
+public class PlayerCombatController implements com.Hecate.player.inventory.PlayerEquipment.WeaponEquipListener {
 
     private final SimpleApplication app;
     private final Camera camera;
     private final PlayerAmmo playerAmmo;
 
-    // 当前武器
+    // 当前武器（背包选中槛位对应的Weapon实例，或空手默认武器BasicShooter）
     private Weapon currentWeapon;
+    private String currentWeaponId; // 对应的物品id，用于避免重复装备同一把武器
 
-    // Gun1武器系统
-    private Node gun1WeaponNode = null;
-    private boolean isGun1Equipped = false;
-
-    // Gun2武器系统（狙击枪）
-    private Node gun2WeaponNode = null;
-    private boolean isGun2Equipped = false;
     private com.Hecate.weapon.ProjectileManager projectileManager;
 
-    // 统一的持有物品系统
+    // 当前手持物品的显示模型（跟随玩家身体的Node，见updateHeldItemPosition）
     private Node currentHeldItemNode = null;
 
     // 持枪状态系统
@@ -46,7 +46,7 @@ public class PlayerCombatController {
     // 玩家位置获取器（用于射击起点）
     private PositionProvider positionProvider;
 
-    // 武器依赖项（用于创建 SteampunkGun 等）
+    // 武器依赖项（构造Weapon实例后逐一注入）
     private com.Hecate.flame.SimpleFlameRenderer flameRenderer;
     private com.Hecate.ink.SparseGridManager gridManager;
     private Node worldNode;
@@ -83,15 +83,18 @@ public class PlayerCombatController {
     }
 
     /**
-     * 设置子弹管理器（用于 Gun1/Gun2）。世界切换等场景会重建ProjectileManager实例，
-     * 此时如果Gun1正装备着，需要把它的spawnListener重新指向新实例，否则它会一直
-     * 往旧的（已clear且不再被update的）ProjectileManager里生成子弹，表现为子弹消失。
+     * 设置子弹管理器。世界切换等场景会重建ProjectileManager实例，此时如果当前武器
+     * 是SteampunkGun，需要把它的spawnListener重新指向新实例，否则它会一直往旧的
+     * （已clear且不再被update的）ProjectileManager里生成子弹，表现为子弹消失。
      */
     public void setProjectileManager(com.Hecate.weapon.ProjectileManager projectileManager) {
         this.projectileManager = projectileManager;
 
         if (currentWeapon instanceof com.Hecate.weapon.SteampunkGun) {
             ((com.Hecate.weapon.SteampunkGun) currentWeapon).setSpawnListener(
+                    projectileManager != null ? projectileManager::spawn : null);
+        } else if (currentWeapon instanceof com.Hecate.weapon.SniperRifle) {
+            ((com.Hecate.weapon.SniperRifle) currentWeapon).setSpawnListener(
                     projectileManager != null ? projectileManager::spawn : null);
         }
     }
@@ -104,14 +107,14 @@ public class PlayerCombatController {
     }
 
     /**
-     * 设置事件总线（Gun1/Gun2装备/卸下时发布事件，供PanelManager等UI系统订阅）
+     * 设置事件总线（武器装备/卸下时发布事件，供PanelManager等UI系统订阅）
      */
     public void setEventBus(com.Hecate.event.EventBus eventBus) {
         this.eventBus = eventBus;
     }
 
     /**
-     * 设置墨水网格管理器（用于 SteampunkGun）
+     * 设置墨水网格管理器（用于 SteampunkGun/SniperRifle）
      */
     public void setGridManager(com.Hecate.ink.SparseGridManager gridManager) {
         this.gridManager = gridManager;
@@ -172,210 +175,117 @@ public class PlayerCombatController {
     }
 
     /**
-     * 装备 Gun1
+     * {@link com.Hecate.player.inventory.PlayerEquipment.WeaponEquipListener} 回调：
+     * 背包选中槛位切到一个带weaponId的物品时触发。统一处理所有武器的装备逻辑——
+     * 依赖注入（gridManager/worldNode/monsterManager/spawnListener等）、持有模型
+     * 挂载、事件发布，此前这些代码在equipGun1/equipGun2里各写一份，现在按weaponId分支
+     * 只在"构造依赖不同"这一点上有差异。
      */
-    public boolean equipGun1() {
-        if (isGun1Equipped) {
-            return false;
+    @Override
+    public void onWeaponEquipped(String weaponId, Weapon weapon) {
+        if (weaponId.equals(currentWeaponId)) {
+            return; // 已经装备着同一把，避免重复走一遍挂载/事件发布
         }
+        unequipCurrentWeapon();
 
-        try {
-            // 卸下其他武器
-            unequipAllWeapons();
+        injectWeaponDependencies(weapon);
+        setCurrentWeapon(weapon);
+        currentWeaponId = weaponId;
+        isHoldingGun = true;
 
-            // 加载 Gun1 模型
-            gun1WeaponNode = (Node) app.getAssetManager().loadModel("weapons/steampunkgun.glb");
-            gun1WeaponNode.setLocalScale(0.3f);
+        attachHeldModel(weaponId);
 
-            // 附加到世界节点，每帧按玩家位置+朝向计算世界坐标（第三人称视角下手持物需要
-            // 跟随玩家本体而不是摄像机——挂在摄像机子节点上会因为离摄像机太近被近裁剪面
-            // 裁掉，且第三人称视角下摄像机本就离玩家很远，不应该用第一人称的挂法）
-            app.getRootNode().attachChild(gun1WeaponNode);
-
-            currentHeldItemNode = gun1WeaponNode;
-            isGun1Equipped = true;
-            isHoldingGun = true;
-
-            // 切换到 Gun1 专用武器（SteampunkGun，方块抛体）
-            com.Hecate.weapon.SteampunkGun steampunkGun = com.Hecate.weapon.SteampunkGun.create();
-
-            // 设置依赖项
-            if (gridManager != null) {
-                steampunkGun.setGridManager(gridManager);
-            }
-            if (worldNode != null) {
-                steampunkGun.setWorldNode(worldNode);
-            }
-            steampunkGun.setPlayerFactionId(playerFactionId);
-            // 子弹的实际飞行/命中/涂墨交给外部的子弹更新循环接管（与Gun2共用同一个ProjectileManager）
-            if (projectileManager != null) {
-                steampunkGun.setSpawnListener(projectileManager::spawn);
-            }
-
-            setCurrentWeapon(steampunkGun);
-
-            if (eventBus != null) {
-                eventBus.publish(new com.Hecate.event.WeaponEquippedEvent(
-                        steampunkGun.getKind(), playerAmmo.getCurrentAmmo(), playerAmmo.getMaxAmmo()));
-            }
-
-            return true;
-        } catch (Exception e) {
-            System.err.println("装备Gun1失败: " + e.getMessage());
-            return false;
+        if (eventBus != null) {
+            eventBus.publish(new com.Hecate.event.WeaponEquippedEvent(
+                    weapon.getKind(), playerAmmo.getCurrentAmmo(), playerAmmo.getMaxAmmo()));
         }
     }
 
     /**
-     * 卸下 Gun1
+     * {@link com.Hecate.player.inventory.PlayerEquipment.WeaponEquipListener} 回调：
+     * 背包选中槛位切到一个没有weaponId的物品（或空格）时触发。
      */
-    public boolean unequipGun1() {
-        if (!isGun1Equipped) {
-            return false;
+    @Override
+    public void onWeaponUnequipped() {
+        if (currentWeaponId == null) {
+            return; // 本来就没装备任何武器，no-op
         }
-
-        if (gun1WeaponNode != null && gun1WeaponNode.getParent() != null) {
-            gun1WeaponNode.removeFromParent();
-        }
-
-        gun1WeaponNode = null;
-        isGun1Equipped = false;
-        isHoldingGun = false;
-        isLeftButtonPressed = false;
-        continuousFireTimer = 0f;
-        currentHeldItemNode = null;
-
-        // 恢复默认武器
-        setCurrentWeapon(BasicShooter.createDefault());
+        unequipCurrentWeapon();
 
         if (eventBus != null) {
             eventBus.publish(new com.Hecate.event.WeaponUnequippedEvent());
         }
-
-        return true;
     }
 
     /**
-     * 装备 Gun2（狙击枪，使用占位方块）
+     * 按weaponId把已构造好的Weapon实例注入运行时依赖（墨水/世界节点/怪物管理器/
+     * 子弹生成监听器）——不同Weapon子类需要的依赖不同，用instanceof分支，
+     * 与equipGun1/equipGun2原先各自手写注入的效果等价。
      */
-    public boolean equipGun2() {
-        if (isGun2Equipped) {
-            return false;
+    private void injectWeaponDependencies(Weapon weapon) {
+        if (weapon instanceof com.Hecate.weapon.SteampunkGun) {
+            com.Hecate.weapon.SteampunkGun gun = (com.Hecate.weapon.SteampunkGun) weapon;
+            if (gridManager != null) gun.setGridManager(gridManager);
+            if (worldNode != null) gun.setWorldNode(worldNode);
+            gun.setPlayerFactionId(playerFactionId);
+            if (projectileManager != null) gun.setSpawnListener(projectileManager::spawn);
+        } else if (weapon instanceof com.Hecate.weapon.SniperRifle) {
+            com.Hecate.weapon.SniperRifle rifle = (com.Hecate.weapon.SniperRifle) weapon;
+            if (gridManager != null) rifle.setGridManager(gridManager);
+            if (worldNode != null) rifle.setWorldNode(worldNode);
+            if (monsterManager != null) rifle.setMonsterManager(monsterManager);
+            rifle.setPlayerFactionId(playerFactionId);
+            // 此前equipGun2()从未调用这一行——Gun2装备后开火实际上从未真正生成过
+            // 子弹（SniperRifle.fireBullet内部判空直接跳过），是独立路径时代遗留的
+            // 功能缺失，这次统一走注入流程后一并修正。
+            if (projectileManager != null) rifle.setSpawnListener(projectileManager::spawn);
         }
+    }
 
-        try {
-            // 卸下其他武器
-            unequipAllWeapons();
-
-            // 创建占位方块模型
+    /**
+     * 挂载武器的手持显示模型。当前只有steampunk_gun有真实模型，其余武器用一个
+     * 深灰色占位方块（与此前equipGun2的占位方块效果一致）——武器种类会持续增加，
+     * 不要求每种都先画好模型才能测试装备/开火逻辑。
+     */
+    private void attachHeldModel(String weaponId) {
+        Node modelNode;
+        if ("steampunk_gun".equals(weaponId)) {
+            modelNode = (Node) app.getAssetManager().loadModel("weapons/steampunkgun.glb");
+            modelNode.setLocalScale(0.3f);
+        } else {
             Box box = new Box(0.1f, 0.05f, 0.4f);
-            Geometry geo = new Geometry("Gun2Placeholder", box);
+            Geometry geo = new Geometry(weaponId + "Placeholder", box);
             Material mat = new Material(app.getAssetManager(), "Common/MatDefs/Misc/Unshaded.j3md");
             mat.setColor("Color", ColorRGBA.DarkGray);
             geo.setMaterial(mat);
-
-            gun2WeaponNode = new Node("Gun2Node");
-            gun2WeaponNode.attachChild(geo);
-
-            // 附加到世界节点，每帧按玩家位置+朝向计算世界坐标（与Gun1同理，见equipGun1注释）
-            app.getRootNode().attachChild(gun2WeaponNode);
-
-            currentHeldItemNode = gun2WeaponNode;
-            isGun2Equipped = true;
-            isHoldingGun = true;
-
-            // 切换到 Gun2 专用武器（SniperRifle）
-            com.Hecate.weapon.WeaponStats sniperStats = new com.Hecate.weapon.WeaponStats.Builder("sniper_rifle", "狙击枪")
-                .ammoCost(5f)
-                .baseDamage(80f)
-                .fireRate(0.5f)
-                .projectileVelocity(50f)
-                .hasCharge(true)
-                .maxChargeTime(2.0f)
-                .chargeMultiplier(2.25f)  // 180/80
-                .maxRange(100f)
-                .build();
-
-            com.Hecate.weapon.ProjectileProfile sniperProfile = new com.Hecate.weapon.ProjectileProfile.Builder("sniper_projectile", "狙击弹")
-                .arcType(com.Hecate.weapon.ProjectileProfile.ArcType.BALLISTIC)
-                .gravity(1.0f)
-                .hitEffect(com.Hecate.weapon.ProjectileProfile.HitEffect.piercing(
-                    80f,    // damage
-                    5.0f,   // inkRadius
-                    0,      // inkTeam
-                    100       // pierceCount - 穿透无上限个目标，但是出于方便就填了100个
-                ))
-                .visualConfig(com.Hecate.weapon.ProjectileProfile.VisualConfig.bullet())
-                .build();
-
-            com.Hecate.weapon.SniperRifle sniperRifle = new com.Hecate.weapon.SniperRifle(sniperStats, sniperProfile);
-
-            // 设置依赖项
-            if (gridManager != null) {
-                sniperRifle.setGridManager(gridManager);
-            }
-            if (worldNode != null) {
-                sniperRifle.setWorldNode(worldNode);
-            }
-            if (monsterManager != null) {
-                sniperRifle.setMonsterManager(monsterManager);
-            }
-            sniperRifle.setPlayerFactionId(playerFactionId);
-
-            setCurrentWeapon(sniperRifle);
-
-            if (eventBus != null) {
-                eventBus.publish(new com.Hecate.event.WeaponEquippedEvent(
-                        sniperRifle.getKind(), playerAmmo.getCurrentAmmo(), playerAmmo.getMaxAmmo()));
-            }
-
-            return true;
-        } catch (Exception e) {
-            System.err.println("装备Gun2失败: " + e.getMessage());
-            return false;
+            modelNode = new Node(weaponId + "Node");
+            modelNode.attachChild(geo);
         }
+
+        // 附加到根节点，每帧按玩家位置+朝向计算世界坐标（第三人称视角下手持物需要
+        // 跟随玩家本体而不是摄像机——挂在摄像机子节点上会因为离摄像机太近被近裁剪面
+        // 裁掉，且第三人称视角下摄像机本就离玩家很远，不应该用第一人称的挂法）
+        app.getRootNode().attachChild(modelNode);
+        currentHeldItemNode = modelNode;
     }
 
     /**
-     * 卸下 Gun2
+     * 卸下当前武器：移除持有模型、重置状态标志、恢复空手默认武器。
+     * 不发布事件——事件发布由调用方（onWeaponEquipped换枪前/onWeaponUnequipped）决定，
+     * 因为"换枪"场景不需要中间发一次WeaponUnequippedEvent再发WeaponEquippedEvent。
      */
-    public boolean unequipGun2() {
-        if (!isGun2Equipped) {
-            return false;
+    private void unequipCurrentWeapon() {
+        if (currentHeldItemNode != null && currentHeldItemNode.getParent() != null) {
+            currentHeldItemNode.removeFromParent();
         }
+        currentHeldItemNode = null;
+        currentWeaponId = null;
 
-        if (gun2WeaponNode != null && gun2WeaponNode.getParent() != null) {
-            gun2WeaponNode.removeFromParent();
-        }
-
-        gun2WeaponNode = null;
-        isGun2Equipped = false;
         isHoldingGun = false;
         isLeftButtonPressed = false;
         continuousFireTimer = 0f;
-        currentHeldItemNode = null;
 
-        // 恢复默认武器
         setCurrentWeapon(BasicShooter.createDefault());
-
-        if (eventBus != null) {
-            eventBus.publish(new com.Hecate.event.WeaponUnequippedEvent());
-        }
-
-        return true;
-    }
-
-    /**
-     * 卸下所有武器（公开：切换快捷栏槛位时，PlayerController需要强制卸下Gun1/Gun2，
-     * 确保"手上拿方块/普通武器"与"手上拿Gun1/Gun2"互斥）
-     */
-    public void unequipAllWeapons() {
-        if (isGun1Equipped) {
-            unequipGun1();
-        }
-        if (isGun2Equipped) {
-            unequipGun2();
-        }
     }
 
     /**
@@ -458,7 +368,7 @@ public class PlayerCombatController {
      * 更新持有物品位置（跟随玩家本体，世界坐标）。
      * <p>第三人称视角下手持物挂在玩家身上而不是摄像机上——摄像机离玩家本来就有
      * DEFAULT_CAMERA_DISTANCE那么远，挂在摄像机子节点上会让物体离摄像机过近，
-     * 被近裁剪面裁掉（见equipGun1/equipGun2的注释）。
+     * 被近裁剪面裁掉（见attachHeldModel的注释）。
      */
     public void updateHeldItemPosition() {
         if (currentHeldItemNode == null || positionProvider == null) {
@@ -534,46 +444,9 @@ public class PlayerCombatController {
     }
 
     /**
-     * 扔掉当前手持物品
-     */
-    public void dropCurrentItem() {
-        boolean wasHoldingGun = isGun1Equipped || isGun2Equipped;
-
-        // 清除武器引用
-        if (currentWeapon != null) {
-            currentWeapon.cancelCharge();
-            currentWeapon = null;
-        }
-
-        // 清除手持物品模型（统一处理所有持有物）
-        if (currentHeldItemNode != null) {
-            currentHeldItemNode.removeFromParent();
-            currentHeldItemNode = null;
-        }
-
-        // 重置所有装备状态标志
-        isGun1Equipped = false;
-        isGun2Equipped = false;
-        gun1WeaponNode = null;
-        gun2WeaponNode = null;
-
-        // 退出持枪状态
-        isHoldingGun = false;
-        isLeftButtonPressed = false;
-        continuousFireTimer = 0f;
-
-        if (wasHoldingGun && eventBus != null) {
-            eventBus.publish(new com.Hecate.event.WeaponUnequippedEvent());
-        }
-    }
-
-    /**
      * 清理资源
      */
     public void cleanup() {
-        unequipAllWeapons();
-        if (currentHeldItemNode != null && currentHeldItemNode.getParent() != null) {
-            currentHeldItemNode.removeFromParent();
-        }
+        unequipCurrentWeapon();
     }
 }

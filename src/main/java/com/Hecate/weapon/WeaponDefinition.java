@@ -38,6 +38,12 @@ public class WeaponDefinition {
     // 视觉配置（UI/渲染相关）
     private final ViewConfig viewConfig;
 
+    // 是否可以被玩家实际获得（物品栏自动注册用）。默认false——大多数已注册的武器定义
+    // （smg_01/flame_thrower）目前还没有对应的Weapon子类实现（见WeaponFactory），
+    // 装备了也打不出去，不该出现在物品栏/掉落物里；已经接上真正开火逻辑的武器
+    // （steampunk_gun/sniper_rifle）在注册时显式调用.obtainable(true)打开。
+    private final boolean obtainable;
+
     /**
      * 开火模式枚举
      */
@@ -75,6 +81,7 @@ public class WeaponDefinition {
         this.behaviors = builder.behaviors;
         this.params = builder.params;
         this.viewConfig = builder.viewConfig;
+        this.obtainable = builder.obtainable;
     }
 
     // Getters
@@ -88,6 +95,7 @@ public class WeaponDefinition {
     public String[] getBehaviors() { return behaviors; }
     public Map<String, Object> getParams() { return params; }
     public ViewConfig getViewConfig() { return viewConfig; }
+    public boolean isObtainable() { return obtainable; }
 
     /**
      * 获取参数（带类型转换）
@@ -122,6 +130,7 @@ public class WeaponDefinition {
         private String[] behaviors = new String[0];
         private Map<String, Object> params = new HashMap<>();
         private ViewConfig viewConfig = new ViewConfig("dot", "rightHand");
+        private boolean obtainable = false;
 
         public Builder(String id, String displayName) {
             this.id = id;
@@ -139,6 +148,7 @@ public class WeaponDefinition {
             viewConfig = new ViewConfig(crosshair, attachPoint);
             return this;
         }
+        public Builder obtainable(boolean val) { obtainable = val; return this; }
 
         public WeaponDefinition build() {
             return new WeaponDefinition(this);

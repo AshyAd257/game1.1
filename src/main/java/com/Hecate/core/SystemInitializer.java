@@ -67,6 +67,9 @@ public class SystemInitializer {
             // 第6步：初始化怪物系统（必须在火焰系统之前，让FlameParticle能拿到MonsterManager引用）
             initializeMonsterSystem(context);
 
+            // 第6b步：初始化世界掉落物系统（依赖第4步末尾完成的ItemRegistry自动注册）
+            initializeWorldItemSystem(context);
+
             // 第7步：初始化火焰系统
             initializeFlameSystem(context);
 
@@ -171,6 +174,21 @@ public class SystemInitializer {
 
         } catch (Exception e) {
             System.err.println("   怪物系统初始化失败，继续执行...");
+            e.printStackTrace();
+        }
+    }
+
+    /**
+     * 第6b步：初始化世界掉落物系统
+     * <p>依赖：第4步（initializeModules）末尾已完成的ItemRegistry自动注册
+     */
+    private static void initializeWorldItemSystem(ApplicationContext context) {
+        try {
+
+            context.initializeWorldItemSystem();
+
+        } catch (Exception e) {
+            System.err.println("   世界掉落物系统初始化失败，继续执行...");
             e.printStackTrace();
         }
     }

@@ -17,7 +17,6 @@ import com.Hecate.block.BlockPlacementOutline;
 import com.Hecate.world.ChunkManager;
 import com.Hecate.player.PlayerController;
 import com.Hecate.player.inventory.PlayerStateManager;
-import com.Hecate.player.inventory.HeldItem;
 import com.Hecate.weapon.WeaponRegistry;
 import com.Hecate.utils.LogUtils;
 
@@ -77,19 +76,12 @@ public class PlayerControlModule extends AbstractGameModule implements ActionLis
         // 初始化玩家控制器
         playerController = new PlayerController(app);
 
-        // 初始化玩家状态管理器（物品栏系统）
+        // 初始化玩家状态管理器（物品栏系统）。PlayerStateManager构造函数内部已经
+        // 完成背包注入+默认物品填充（见PlayerEquipment.resetToDefault），不需要
+        // 在这里重复设置默认槛位——背包就是唯一数据源，不存在"快捷栏"这个独立副本了。
         WeaponRegistry weaponRegistry = WeaponRegistry.getInstance();
         playerStateManager = new PlayerStateManager(blockRegistry, weaponRegistry);
         playerController.setPlayerStateManager(playerStateManager);
-
-        // 初始化快捷栏并添加默认方块（走PlayerEquipment而不是直接操作hotbar，
-        // 确保currentBlock/currentWeapon缓存与槛位内容同步）
-        com.Hecate.player.inventory.PlayerEquipment equipment = playerStateManager.getEquipment();
-        equipment.setHotbarSlot(0, HeldItem.block("stone"));
-        equipment.setHotbarSlot(1, HeldItem.block("dirt"));
-        equipment.setHotbarSlot(2, HeldItem.block("grass"));
-        equipment.setHotbarSlot(3, HeldItem.block("glass"));
-        equipment.selectHotbarSlot(0); // 默认选中第一个槽位
 
         // 设置方块交互输入
         setupBlockInteractionInputs();
@@ -289,25 +281,26 @@ public class PlayerControlModule extends AbstractGameModule implements ActionLis
             // 不能同时触发——放置是瞬时动作（按下时判定一次），恢复是持续状态（跟着按住/松开）
             com.Hecate.player.inventory.PlayerEquipment equipment = playerStateManager.getEquipment();
             if (isPressed && equipment.isHoldingBlock() && blockInteraction != null) {
-                blockInteraction.placeBlock(equipment.getCurrentBlock().getId(), isSlabVerticalMode);
+                boolean placed = blockInteraction.placeBlock(equipment.getCurrentBlock().getId(), isSlabVerticalMode);
+                if (placed) {
+                    // 真实消耗背包数量——放置成功才扣，失败（目标格不是空气等）不扣。
+                    // 扣到0后槛位变空，isHoldingBlock()自然变false，右键交互不需要
+                    // 额外判断"石头用完了怎么办"，Inventory本身的空槛位语义已经覆盖了这一点。
+                    equipment.removeFromCurrentSlot(1);
+                }
             } else if (!equipment.isHoldingBlock() && playerController != null) {
                 playerController.setRightButtonForRecovery(isPressed);
             }
         } else if (name.equals("SlabVerticalModeL") || name.equals("SlabVerticalModeR")) {
             isSlabVerticalMode = isPressed;
         } else if (name.startsWith("SelectSlot") && isPressed) {
-            // 动态处理快捷栏选择（1-9键）：必须经过PlayerEquipment.selectHotbarSlot()而不是
-            // 直接调用hotbar.selectSlot()，否则currentBlock/currentWeapon缓存不会刷新，
-            // 导致isHoldingBlock()等查询读到切换前的旧数据
-
-            // 反方向互斥：若正装备着Gun1/Gun2（快捷栏之外的独立武器系统），切换快捷栏
-            // 槛位前先强制卸枪，确保"手持快捷栏物品"与"手持Gun1/Gun2"始终互斥
-            if (playerController != null && playerController.isHoldingGunWeapon()) {
-                playerController.forceUnequipGunWeapon();
-            }
-
+            // 数字键1-9直跳背包前9格。装备/卸下武器已经收编进PlayerEquipment.selectSlot
+            // 内部（见syncWeaponEquipState），不再需要这里手动调用
+            // isHoldingGunWeapon()/forceUnequipGunWeapon()做互斥——那套是Gun1/Gun2
+            // 独立路径时代的产物，武器现在和其他物品一样只是背包槛位内容，
+            // 切换槛位本身就是唯一的"装备"动作。
             int slotIndex = Integer.parseInt(name.substring("SelectSlot".length()));
-            playerStateManager.getEquipment().selectHotbarSlot(slotIndex);
+            playerStateManager.getEquipment().selectSlot(slotIndex);
         }
     }
 }

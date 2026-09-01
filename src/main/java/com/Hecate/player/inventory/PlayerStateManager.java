@@ -3,17 +3,28 @@ package com.Hecate.player.inventory;
 import com.Hecate.player.effect.PlayerEffectManager;
 import com.Hecate.block.BlockRegistry;
 import com.Hecate.weapon.WeaponRegistry;
+import com.Hecate.item.Inventory;
+import com.Hecate.item.ItemRegistry;
 
 /**
  * 玩家状态管理器
- * 整合装备系统和效果系统，提供统一的玩家状态访问接口
+ * 整合装备系统、效果系统、背包系统，提供统一的玩家状态访问接口
  */
 public class PlayerStateManager {
+    // 背包格数：4x4=16格，与backpack.png背景贴图的4x4格布局一一对应
+    // （暂定固定值，不受装备影响——装备格数联动留给未来的据点/装备系统）
+    private static final int BACKPACK_COLUMNS = 4;
+    private static final int BACKPACK_SIZE = 16;
+
     private final PlayerEquipment equipment;
     private final PlayerEffectManager effectManager;
+    private final Inventory backpack;
 
     public PlayerStateManager(BlockRegistry blockRegistry, WeaponRegistry weaponRegistry) {
+        this.backpack = new Inventory(BACKPACK_SIZE, BACKPACK_COLUMNS, ItemRegistry.getInstance());
         this.equipment = new PlayerEquipment(blockRegistry, weaponRegistry);
+        this.equipment.setBackpack(this.backpack);
+        this.equipment.resetToDefault();
         this.effectManager = new PlayerEffectManager();
     }
 
@@ -37,6 +48,13 @@ public class PlayerStateManager {
      */
     public PlayerEffectManager getEffectManager() {
         return effectManager;
+    }
+
+    /**
+     * 获取玩家背包（通用格子容器，物品/战利品存放处，与快捷栏的方块/武器引用是两套独立的东西）
+     */
+    public Inventory getBackpack() {
+        return backpack;
     }
 
     /**

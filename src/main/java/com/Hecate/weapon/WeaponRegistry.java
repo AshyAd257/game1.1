@@ -105,7 +105,11 @@ public class WeaponRegistry {
                 .build();
         registerWeapon(flameThrower);
 
-        // 3. 蒸汽朋克枪（霰弹枪）
+        // 3. 蒸汽朋克枪（霰弹枪）——已通过WeaponFactory接上SteampunkGun.create()真正的开火逻辑，
+        // 装备后左键能正常打出子弹，故标记为obtainable(true)。这里的Builder参数
+        // （fireRate/shotsPerFire等behaviors/param）目前仍是未被读取的死配置——真正生效的数值
+        // 在SteampunkGun.create()内部另有一份（见该方法注释），两者暂时并存但不一致，
+        // 这不属于本次"纯加数据"改动的范围，仅做obtainable标记，不修正数值不一致问题。
         WeaponDefinition steampunkGun = new WeaponDefinition.Builder(
                 "steampunk_gun", "蒸汽朋克枪")
                 .fireMode(WeaponDefinition.FireMode.SINGLE)
@@ -117,8 +121,25 @@ public class WeaponRegistry {
                 .param("shotsPerFire", 8)        // 每次8发散弹
                 .param("spreadAngle", 60.0f)     // 60度扇形
                 .viewConfig("circle", "rightHand")
+                .obtainable(true)
                 .build();
         registerWeapon(steampunkGun);
+
+        // 4. 狙击枪（Gun2）——此前只存在于SniperRifle.create()里的手写数值，WeaponRegistry
+        // 从未注册过它的定义。补上这条注册，让"steampunk_gun同款"的obtainable自动注册路径
+        // 也能覆盖到它；子弹配置直接引用steampunk_gun同款的pellet_scatter仅作占位
+        // （SniperRifle.create()内部有自己独立的sniper_bullet ProjectileProfile，
+        // 不通过这里的projectileProfile字段读取，同样是已知的死配置，不在本次修正范围）。
+        WeaponDefinition sniperRifle = new WeaponDefinition.Builder(
+                "sniper_rifle", "狙击枪")
+                .fireMode(WeaponDefinition.FireMode.CHARGE)
+                .ammoMax(100)
+                .ammoPerShot(10.0f)
+                .projectileProfile("pellet_scatter")
+                .viewConfig("dot", "rightHand")
+                .obtainable(true)
+                .build();
+        registerWeapon(sniperRifle);
     }
 
     /**

@@ -133,6 +133,11 @@ public class Main extends SimpleApplication {
         setDisplayStatView(false);
         setDisplayFps(false);
 
+        // 初始化Lemur GUI系统（背包等通用格子容器UI基于Lemur构建，需要在任何Lemur组件
+        // 创建之前完成初始化——必须在ApplicationContext/SystemInitializer之前，
+        // 因为PlayerControlModule.onInitialize()会立即创建依赖Lemur的InventoryUI）
+        com.simsilica.lemur.GuiGlobals.initialize(this);
+
         // 创建应用上下文（依赖注入容器）
         context = new ApplicationContext(this);
 

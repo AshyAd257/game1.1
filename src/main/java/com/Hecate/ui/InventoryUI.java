@@ -48,6 +48,21 @@ public class InventoryUI implements ActionListener {
     private static final float SEARCH_BOX_WIDTH = 51.75f; // 搜索框宽度（134.25-82.5）
     private static final float SEARCH_BOX_HEIGHT = 9f;    // 搜索框高度
 
+    // 背包格子面板（Lemur版本，通用格子容器UI的接入点）。背包数据(PlayerStateManager.getBackpack())
+    // 在PlayerController构造完成之后才可用（见PlayerController.setPlayerStateManager），
+    // 所以这里不能在构造函数里直接创建，只能提供一个setter延后接入。
+    private com.Hecate.ui.inventory.InventoryGridPanel backpackGridPanel;
+    // 4列 = backpack.png的4x4格布局；单格显示尺寸12px*4(与背包主界面贴图同一套缩放倍数scale=4.0，
+    // 见createInventoryUI)=48px，让格子交互层与backpack.png背景贴图的格子线精确重合
+    private static final int BACKPACK_COLUMNS = 4;
+    private static final float BACKPACK_SLOT_SIZE = 48f;
+    private static final String BACKPACK_BACKGROUND_TEXTURE = "textures/ui/backpack.png";
+    private static final String BACKPACK_HIGHLIGHT_TEXTURE = "textures/ui/blockhighlight.png";
+
+    // 面板管理器（鼠标悬停背包物品图标时用来显示/隐藏说明面板）。可能在setBackpack()
+    // 调用之前或之后设置，setBackpack()里若backpackGridPanel已存在会重新注入。
+    private PanelManager panelManager;
+
     private boolean isVisible = false;  // 默认隐藏
 
     // 当前显示的界面类型
@@ -718,6 +733,10 @@ public class InventoryUI implements ActionListener {
      */
     public void toggle() {
         isVisible = !isVisible;
+        if (isVisible && backpackGridPanel != null) {
+            // 背包可能在隐藏期间被/giveitem等命令修改过，显示前刷新一次保证不显示旧内容
+            backpackGridPanel.refreshAll();
+        }
         updateVisibility();
         updateMouseCursor();
     }
@@ -727,6 +746,9 @@ public class InventoryUI implements ActionListener {
      */
     public void show() {
         isVisible = true;
+        if (backpackGridPanel != null) {
+            backpackGridPanel.refreshAll();
+        }
         updateVisibility();
         updateMouseCursor();
     }
@@ -743,6 +765,14 @@ public class InventoryUI implements ActionListener {
     private void updateVisibility() {
         if (inventoryBackground != null) {
             inventoryBackground.setCullHint(isVisible ?
+                    com.jme3.scene.Spatial.CullHint.Never :
+                    com.jme3.scene.Spatial.CullHint.Always);
+        }
+
+        // 背包格子面板只在背包界面显示
+        if (backpackGridPanel != null) {
+            boolean showBackpackGrid = isVisible && currentInterface == InterfaceType.INVENTORY;
+            backpackGridPanel.getContainer().setCullHint(showBackpackGrid ?
                     com.jme3.scene.Spatial.CullHint.Never :
                     com.jme3.scene.Spatial.CullHint.Always);
         }
@@ -839,6 +869,69 @@ public class InventoryUI implements ActionListener {
     }
 
     /**
+     * 接入背包数据（通用格子容器UI），创建对应的Lemur格子面板并挂载到背包界面上。
+     * 只在背包界面（INTERFACE_TYPE.INVENTORY）显示，制造/生命界面时隐藏。
+     */
+    public void setBackpack(com.Hecate.item.Inventory backpack, com.Hecate.item.ItemRegistry itemRegistry) {
+        if (backpackGridPanel != null) {
+            backpackGridPanel.getContainer().removeFromParent();
+        }
+        backpackGridPanel = new com.Hecate.ui.inventory.InventoryGridPanel(
+                backpack, itemRegistry, app.getAssetManager(), app.getGuiNode(), BACKPACK_COLUMNS, BACKPACK_SLOT_SIZE,
+                BACKPACK_BACKGROUND_TEXTURE, BACKPACK_HIGHLIGHT_TEXTURE);
+        app.getGuiNode().attachChild(backpackGridPanel.getContainer());
+        wireItemHoverListener();
+        positionBackpackGridPanel();
+        updateVisibility();
+    }
+
+    /**
+     * 设置面板管理器（鼠标悬停背包物品图标时显示/隐藏说明面板）。可能在setBackpack()
+     * 调用之前或之后设置，两种顺序都要能正确接上。
+     */
+    public void setPanelManager(com.Hecate.ui.PanelManager panelManager) {
+        this.panelManager = panelManager;
+        wireItemHoverListener();
+    }
+
+    private void wireItemHoverListener() {
+        if (backpackGridPanel == null) {
+            return;
+        }
+        if (panelManager == null) {
+            backpackGridPanel.setItemHoverListener(null);
+            return;
+        }
+        backpackGridPanel.setItemHoverListener(new com.Hecate.ui.inventory.InventoryGridPanel.ItemHoverListener() {
+            @Override
+            public void onItemHovered(com.Hecate.item.ItemDef def, float screenX, float screenY) {
+                panelManager.showIntroduceWordPanel(def.getName(), screenX, screenY);
+            }
+
+            @Override
+            public void onItemUnhovered() {
+                panelManager.hideIntroduceWordPanel();
+            }
+        });
+    }
+
+    /**
+     * 将背包格子面板定位在背包背景贴图的中心（背包界面本身的贴图目前只是一张静态背景，
+     * 没有预留格子区域坐标，先居中显示，后续贴图有专门的格子区域后再调整偏移）。
+     */
+    private void positionBackpackGridPanel() {
+        if (backpackGridPanel == null) {
+            return;
+        }
+        int screenWidth = app.getCamera().getWidth();
+        int screenHeight = app.getCamera().getHeight();
+        com.jme3.math.Vector3f panelSize = backpackGridPanel.getContainer().getPreferredSize();
+        float panelX = (screenWidth - panelSize.x) / 2f;
+        float panelY = (screenHeight + panelSize.y) / 2f;
+        backpackGridPanel.getContainer().setLocalTranslation(panelX, panelY, 1010);
+    }
+
+    /**
      * 检查搜索框是否有焦点（正在输入）
      */
     public boolean isTextFieldFocused() {
@@ -852,6 +945,10 @@ public class InventoryUI implements ActionListener {
     public void update(float tpf) {
         if (searchTextField != null) {
             searchTextField.update(tpf);
+        }
+        // 背包拖拽中时，幽灵图标需要每帧跟随鼠标——非拖拽状态下InventoryGridPanel.update是no-op
+        if (backpackGridPanel != null) {
+            backpackGridPanel.update(app.getInputManager().getCursorPosition());
         }
     }
 
@@ -900,6 +997,9 @@ public class InventoryUI implements ActionListener {
         }
         if (searchTextField != null) {
             searchTextField.cleanup();
+        }
+        if (backpackGridPanel != null && backpackGridPanel.getContainer().getParent() != null) {
+            backpackGridPanel.getContainer().removeFromParent();
         }
         app.getInputManager().deleteMapping("InventoryClick");
         app.getInputManager().removeListener(this);

@@ -204,7 +204,7 @@ public class BlockRegistry {
     public void initializeDefaultBlocks(BlockTextureManager textureManager) {
         BlockTextureDefaults.registerAll(textureManager);
 
-        registerBlock(new Block("air", "空气", false, 0.0f, true));
+        registerBlock(new Block("air", "空气", false, 0.0f, true).setObtainable(false));
         registerBlock(new Block("dirt", "泥土1", true, 0.5f, false));
         registerBlock(new Block("dirt2", "泥土2", true, 0.5f, false));
         registerBlock(new Block("dirt3", "泥土3", true, 0.5f, false));
@@ -232,7 +232,7 @@ public class BlockRegistry {
         LogUtils.warning(BlockRegistry.class, "Please migrate to BlockTextureManager.");
 
         registerBlock(new Block("air", "空气", false, 0.0f,
-                new BlockTexture("air", "textures/blocks/air.png", true)));
+                new BlockTexture("air", "textures/blocks/air.png", true)).setObtainable(false));
 
         registerBlock(new Block("dirt", "泥土", true, 0.5f,
                 new BlockTexture("dirt", "textures/blocks/dirt.png", false)));

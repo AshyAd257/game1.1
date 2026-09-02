@@ -170,11 +170,11 @@ public class HybridCharacterRenderer {
             return;
         }
 
-        Skeleton skeleton = skeletonControl.getSkeleton();
+        com.jme3.animation.Skeleton skeleton = skeletonControl.getSkeleton();
 
         // 为每个骨骼创建挂点
         for (int i = 0; i < skeleton.getBoneCount(); i++) {
-            Bone bone = skeleton.getBone(i);
+            com.jme3.animation.Bone bone = skeleton.getBone(i);
             String boneName = bone.getName();
 
             // 创建挂点节点
@@ -263,9 +263,8 @@ public class HybridCharacterRenderer {
                 partDef.getPartId()
         );
 
-        // 设置尺寸
-        bone.setWidth(partDef.getWidth());
-        bone.setHeight(partDef.getHeight());
+        // 注意：Bone的尺寸在构造时或通过PuppetPartRenderer设置
+        // 这里不直接调用setWidth/setHeight（不存在这些方法）
 
         // 设置多方向贴图
         for (Map.Entry<String, String> entry : partDef.getDirectionTextures().entrySet()) {
@@ -275,7 +274,7 @@ public class HybridCharacterRenderer {
         // 设置优先级
         bone.setPriority(partDef.getRenderPriority());
 
-        // 创建渲染器
+        // 创建渲染器（尺寸通过构造参数传递）
         PuppetPartRenderer renderer = new PuppetPartRenderer(
                 app,
                 bone,

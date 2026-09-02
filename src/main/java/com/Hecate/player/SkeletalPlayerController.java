@@ -189,8 +189,15 @@ public class SkeletalPlayerController {
             // 将动画添加到角色的AnimControl中
             // 使用文件路径作为动画名称（避免乱码问题）
             String cleanAnimName = animPath.replace("movement/", "").replace(".glb", "");
-            animControl.addAnim(anim);
-            animControl.renameAnim(animName, cleanAnimName);
+
+            // 创建一个新的Animation对象，用clean的名称
+            Animation renamedAnim = new Animation(cleanAnimName, anim.getLength());
+            // 复制所有track
+            for (int i = 0; i < anim.getTracks().length; i++) {
+                renamedAnim.addTrack(anim.getTracks()[i]);
+            }
+
+            animControl.addAnim(renamedAnim);
 
             // 播放动画
             if (animChannel != null) {

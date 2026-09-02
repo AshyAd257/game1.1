@@ -206,9 +206,12 @@ public class PlayerController implements ActionListener, AnalogListener {
     private DirectionalSpriteRenderer spriteRenderer;
     private SpriteScaleManager spriteScaleManager;
 
-    // Puppet 动画系统
-    private boolean usePuppetMode = true;  // 默认使用 puppet 模式
-    private PuppetPlayerController puppetPlayerController;
+    // Puppet 动画系统（已废弃，替换为3D骨骼模型）
+    // private boolean usePuppetMode = true;
+    // private PuppetPlayerController puppetPlayerController;
+
+    // 3D骨骼模型系统（新）
+    private SkeletalPlayerController skeletalPlayerController;
 
     // 墨水网格系统
     private com.Hecate.ink.SparseGridManager gridManager;
@@ -264,13 +267,8 @@ public class PlayerController implements ActionListener, AnalogListener {
         // 初始化2D精灵系统（但不启用）
         initializeSpriteSystem();
 
-        // 初始化 Puppet 系统
-        if (usePuppetMode) {
-            initializePuppetSystem();
-        } else {
-            // 只有在不使用 puppet 时才启用精灵模式
-            enableSpriteMode();
-        }
+        // 初始化 3D 骨骼模型系统（替换旧的Puppet系统）
+        initializeSkeletalSystem();
 
         // 更新摄像机
         updateCameraPosition();
@@ -429,20 +427,16 @@ public class PlayerController implements ActionListener, AnalogListener {
     }
 
     /**
-     * 初始化 Puppet 动画系统
+     * 初始化 3D 骨骼模型系统
      */
-    private void initializePuppetSystem() {
+    private void initializeSkeletalSystem() {
         try {
-            puppetPlayerController = new PuppetPlayerController(app, playerPosition.clone());
-            // 设置玩家阵营
-            puppetPlayerController.setPlayerFactionId(playerFactionId);
+            skeletalPlayerController = new SkeletalPlayerController(app, playerPosition.clone());
+            System.out.println("[PlayerController] Skeletal player model initialized");
 
         } catch (Exception e) {
-
+            System.err.println("[PlayerController] Failed to initialize skeletal model: " + e.getMessage());
             e.printStackTrace();
-            // 失败时回退到精灵模式
-            usePuppetMode = false;
-            enableSpriteMode();
         }
     }
 
@@ -942,9 +936,10 @@ public class PlayerController implements ActionListener, AnalogListener {
             case "NormalModeAlt":
                 // 【新增】按住Ctrl切换到普通模式，松开回到圆盘模式
                 isCtrlPressed = isPressed;
-                if (puppetPlayerController != null) {
-                    puppetPlayerController.setNormalMode(isPressed);
-                }
+                // TODO: 如果需要，在 SkeletalPlayerController 中实现 setNormalMode
+                // if (skeletalPlayerController != null) {
+                //     skeletalPlayerController.setNormalMode(isPressed);
+                // }
                 break;
             case "FireWeapon":
                 if (isPressed) {
@@ -1193,9 +1188,9 @@ public class PlayerController implements ActionListener, AnalogListener {
         // 更新玩家碰撞盒
         updatePlayerBox();
 
-        // 同步Puppet位置
-        if (puppetPlayerController != null) {
-            puppetPlayerController.setPosition(playerPosition.clone());
+        // 同步角色模型位置
+        if (skeletalPlayerController != null) {
+            skeletalPlayerController.setPosition(playerPosition.clone());
         }
 
         LogUtils.debug(PlayerController.class, "玩家已传送到: " + targetPosition);
@@ -1368,18 +1363,19 @@ public class PlayerController implements ActionListener, AnalogListener {
                 // - 敌方减速：始终生效
                 // - 友方加速：根据hasSpeedState状态（三选二规则）
                 float inkSpeedMultiplier = 1.0f;
-                if (usePuppetMode && puppetPlayerController != null) {
-                    float rawMultiplier = puppetPlayerController.getSpeedMultiplier();
-
-                    if (rawMultiplier < 1.0f) {
-                        // 敌方减速：始终生效
-                        inkSpeedMultiplier = rawMultiplier;
-                    } else if (rawMultiplier > 1.0f && hasSpeedState) {
-                        // 友方加速：根据三选二规则的hasSpeedState状态
-                        inkSpeedMultiplier = rawMultiplier;
-                    }
-                    // else: 保持1.0f（普通地面或无加速状态）
-                }
+                // TODO: 墨水系统速度倍数，暂时禁用
+                // if (skeletalPlayerController != null) {
+                //     float rawMultiplier = skeletalPlayerController.getSpeedMultiplier();
+                //
+                //     if (rawMultiplier < 1.0f) {
+                //         // 敌方减速：始终生效
+                //         inkSpeedMultiplier = rawMultiplier;
+                //     } else if (rawMultiplier > 1.0f && hasSpeedState) {
+                //         // 友方加速：根据三选二规则的hasSpeedState状态
+                //         inkSpeedMultiplier = rawMultiplier;
+                //     }
+                //     // else: 保持1.0f（普通地面或无加速状态）
+                // }
 
                 // 基础速度始终是步行速度：己方墨水加速完全由inkSpeedMultiplier（1.6/2.0倍）
                 // 体现，不再叠加FAST_MOVE_SPEED换挡——此前两者同时生效会导致重复叠加
@@ -1503,10 +1499,8 @@ public class PlayerController implements ActionListener, AnalogListener {
             updateSpriteSystem(tpf);
         }
 
-        // 更新 Puppet 系统
-        if (usePuppetMode && puppetPlayerController != null) {
-            updatePuppetSystem(tpf);
-        }
+        // 更新 3D 骨骼模型系统
+        updateSkeletalSystem(tpf);
 
         updateScreenShake(tpf);
         updateCameraPosition();
@@ -1679,35 +1673,32 @@ public class PlayerController implements ActionListener, AnalogListener {
     }
 
     /**
-     * 更新 Puppet 动画系统
+     * 更新 3D 骨骼模型系统
      */
-    private void updatePuppetSystem(float tpf) {
-        // 更新 puppet 位置
-        puppetPlayerController.setPosition(playerPosition);
+    private void updateSkeletalSystem(float tpf) {
+        if (skeletalPlayerController == null) {
+            return;
+        }
 
-        // 更新 puppet 旋转（根据玩家朝向）
-        float oldPuppetRotation = puppetPlayerController.getRotation();
-        puppetPlayerController.setRotation(playerFacing);
+        // 更新角色位置
+        skeletalPlayerController.setPosition(playerPosition);
 
-        // 每60帧输出一次旋转同步信息
-        // (已禁用日志输出)
+        // 更新角色旋转（根据玩家朝向）
+        skeletalPlayerController.setYaw(playerFacing);
 
-        // 根据移动状态播放动画
-        // 使用 isMoving 标志而不是 velocity，因为 velocity 可能在碰撞后被重置
-        puppetPlayerController.setWalking(isMoving);
-
-        // Debug: 每60帧输出一次状态
-        frameCount++;
-        // (已禁用日志输出)
+        // 根据移动状态设置动画
+        skeletalPlayerController.setWalking(isMoving);
 
         // 跳跃动画
         if (isJumping && !wasJumping) {
-            puppetPlayerController.jump();
+            skeletalPlayerController.setJumping(true);
+        } else if (!isJumping && wasJumping) {
+            skeletalPlayerController.setJumping(false);
         }
         wasJumping = isJumping;
 
-        // 更新 puppet 系统
-        puppetPlayerController.update(tpf);
+        // 更新骨骼模型系统
+        skeletalPlayerController.update(tpf);
     }
 
     private boolean wasJumping = false;
@@ -1972,9 +1963,10 @@ public class PlayerController implements ActionListener, AnalogListener {
     public void setWorldNode(Node worldNode) {
         this.currentWorldNode = worldNode;
 
-        if (puppetPlayerController != null) {
-            puppetPlayerController.setWorldNode(worldNode);
-        }
+        // TODO: 如果需要墨水绘制功能，在 SkeletalPlayerController 中实现
+        // if (skeletalPlayerController != null) {
+        //     skeletalPlayerController.setWorldNode(worldNode);
+        // }
 
         // 同步调试命令的世界节点
         if (debugCommands != null) {
@@ -2135,9 +2127,10 @@ public class PlayerController implements ActionListener, AnalogListener {
         // 传递给战斗控制器
         combatController.setGridManager(gridManager);
 
-        if (puppetPlayerController != null) {
-            puppetPlayerController.setGridManager(gridManager);
-        }
+        // TODO: 墨水系统相关，暂不需要
+        // if (skeletalPlayerController != null) {
+        //     skeletalPlayerController.setGridManager(gridManager);
+        // }
         refreshProjectileManager();
     }
 
@@ -2153,18 +2146,20 @@ public class PlayerController implements ActionListener, AnalogListener {
                 : com.Hecate.ink.FactionRegistry.DARK_DEFAULT;
         combatController.setPlayerFactionId(factionId);
 
-        if (puppetPlayerController != null) {
-            puppetPlayerController.setPlayerTeam(team);
-        }
+        // TODO: 墨水系统相关，暂不需要
+        // if (skeletalPlayerController != null) {
+        //     skeletalPlayerController.setPlayerTeam(team);
+        // }
     }
 
     /**
      * 获取玩家队伍
      */
     public int getPlayerTeam() {
-        if (puppetPlayerController != null) {
-            return puppetPlayerController.getPlayerTeam();
-        }
+        // TODO: 墨水系统相关，暂时返回默认值
+        // if (skeletalPlayerController != null) {
+        //     return skeletalPlayerController.getPlayerTeam();
+        // }
         return 1; // 默认B队（暗属性）
     }
 
@@ -2210,17 +2205,27 @@ public class PlayerController implements ActionListener, AnalogListener {
      * 获取玩家阵营ID（用于墨水系统）
      */
     public int getPlayerFactionId() {
-        if (puppetPlayerController != null) {
-            return puppetPlayerController.getPlayerFactionId();
-        }
+        // TODO: 墨水系统相关，暂时返回默认值
+        // if (skeletalPlayerController != null) {
+        //     return skeletalPlayerController.getPlayerFactionId();
+        // }
         return com.Hecate.ink.FactionRegistry.DARK_DEFAULT; // 默认暗属性阵营
     }
 
     /**
-     * 获取 PuppetPlayerController（用于外部访问）
+     * 获取 SkeletalPlayerController（用于外部访问）
      */
+    public SkeletalPlayerController getSkeletalPlayerController() {
+        return skeletalPlayerController;
+    }
+
+    /**
+     * 获取 PuppetPlayerController（已废弃，返回null）
+     * @deprecated 使用 getSkeletalPlayerController() 代替
+     */
+    @Deprecated
     public PuppetPlayerController getPuppetPlayerController() {
-        return puppetPlayerController;
+        return null;
     }
 
     /**

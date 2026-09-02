@@ -5,8 +5,10 @@ import com.jme3.app.SimpleApplication;
 import com.jme3.asset.AssetManager;
 import com.jme3.math.Vector3f;
 import com.jme3.math.Quaternion;
+import com.jme3.math.FastMath;
 import com.jme3.scene.Node;
 import com.jme3.scene.Spatial;
+import com.jme3.scene.Geometry;
 import com.jme3.material.Material;
 import com.jme3.texture.Texture;
 
@@ -37,7 +39,7 @@ public class SkeletalPlayerController {
 
     // 资源路径
     private static final String MODEL_PATH = "mesh/armlegmesh.glb";
-    private static final String TEXTURE_PATH = "textures/armlegs/armlegs.png";
+    private static final String TEXTURE_PATH = "Textures/armlegs/armlegs.png"; // 注意大小写
 
     // 动画路径
     private static final String ANIM_BREATHE = "movement/breathe.glb";
@@ -47,8 +49,9 @@ public class SkeletalPlayerController {
     private static final String ANIM_HOLD_GUN_JUMP = "movement/holdgunjump.glb";
 
     // 缩放和偏移
-    private static final float MODEL_SCALE = 0.5f;  // 模型缩放
+    private static final float MODEL_SCALE = 0.1f;  // 缩小5倍（0.5 -> 0.1）
     private static final float MODEL_Y_OFFSET = 0.0f; // Y轴偏移
+    private static final float MODEL_INITIAL_ROTATION = FastMath.PI; // 初始旋转180度，让模型背对相机
 
     // 当前动画名称
     private String currentAnimation = null;
@@ -72,8 +75,15 @@ public class SkeletalPlayerController {
             characterNode.setLocalTranslation(position);
             characterNode.setLocalScale(MODEL_SCALE);
 
+            // 设置初始旋转（让模型背对相机，适合第三人称视角）
+            Quaternion initialRotation = new Quaternion();
+            initialRotation.fromAngleAxis(MODEL_INITIAL_ROTATION, Vector3f.UNIT_Y);
+            characterNode.setLocalRotation(initialRotation);
+
             // 加载基础模型（mesh + skeleton）
             characterModel = assetManager.loadModel(MODEL_PATH);
+
+            System.out.println("[SkeletalPlayer] Model loaded: " + MODEL_PATH);
 
             // 应用贴图
             applyTexture(characterModel, TEXTURE_PATH);
@@ -119,36 +129,51 @@ public class SkeletalPlayerController {
      */
     private void applyTexture(Spatial model, String texturePath) {
         try {
+            System.out.println("[SkeletalPlayer] Loading texture from: " + texturePath);
             Texture texture = assetManager.loadTexture(texturePath);
             texture.setMagFilter(Texture.MagFilter.Nearest);
             texture.setMinFilter(Texture.MinFilter.NearestNoMipMaps);
 
-            // 递归应用贴图到所有几何体
-            model.depthFirstTraversal(spatial -> {
-                if (spatial instanceof com.jme3.scene.Geometry) {
-                    com.jme3.scene.Geometry geom = (com.jme3.scene.Geometry) spatial;
-                    Material mat = geom.getMaterial();
+            System.out.println("[SkeletalPlayer] Texture loaded successfully");
 
-                    // 如果没有材质，创建一个
-                    if (mat == null) {
-                        mat = new Material(assetManager, "Common/MatDefs/Light/Lighting.j3md");
-                        geom.setMaterial(mat);
-                    }
+            // 递归遍历所有几何体
+            int geometryCount = 0;
+            applyTextureRecursive(model, texture);
 
-                    // 设置漫反射贴图
-                    mat.setTexture("DiffuseMap", texture);
-
-                    // 设置材质颜色为白色（让贴图原色显示）
-                    mat.setBoolean("UseMaterialColors", true);
-                    mat.setColor("Diffuse", com.jme3.math.ColorRGBA.White);
-                    mat.setColor("Ambient", com.jme3.math.ColorRGBA.White);
-                }
-            });
-
-            System.out.println("[SkeletalPlayer] Texture applied: " + texturePath);
+            System.out.println("[SkeletalPlayer] Texture application completed");
 
         } catch (Exception e) {
-            System.err.println("[SkeletalPlayer] Failed to apply texture: " + e.getMessage());
+            System.err.println("[SkeletalPlayer] Failed to load/apply texture: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
+    /**
+     * 递归应用贴图到节点下所有几何体
+     */
+    private void applyTextureRecursive(Spatial spatial, Texture texture) {
+        if (spatial instanceof Geometry) {
+            Geometry geom = (Geometry) spatial;
+
+            // 创建或获取材质
+            Material mat = new Material(assetManager, "Common/MatDefs/Light/Lighting.j3md");
+
+            // 设置贴图
+            mat.setTexture("DiffuseMap", texture);
+
+            // 设置材质颜色
+            mat.setBoolean("UseMaterialColors", true);
+            mat.setColor("Diffuse", com.jme3.math.ColorRGBA.White);
+            mat.setColor("Ambient", com.jme3.math.ColorRGBA.White);
+
+            geom.setMaterial(mat);
+            System.out.println("[SkeletalPlayer] Applied texture to geometry: " + geom.getName());
+
+        } else if (spatial instanceof Node) {
+            Node node = (Node) spatial;
+            for (Spatial child : node.getChildren()) {
+                applyTextureRecursive(child, texture);
+            }
         }
     }
 
@@ -159,6 +184,8 @@ public class SkeletalPlayerController {
      */
     private void loadAndPlayAnimation(String animPath, boolean loop) {
         try {
+            System.out.println("[SkeletalPlayer] Attempting to load animation from: " + animPath);
+
             // 加载动画文件（包含动画数据的glb）
             Spatial animModel = assetManager.loadModel(animPath);
             AnimControl animAnimControl = animModel.getControl(AnimControl.class);
@@ -176,7 +203,7 @@ public class SkeletalPlayerController {
             }
 
             String animName = animNames.iterator().next();
-            System.out.println("[SkeletalPlayer] Loading animation '" + animName + "' from " + animPath);
+            System.out.println("[SkeletalPlayer] Found animation: '" + animName + "' in " + animPath);
 
             // 获取动画数据
             Animation anim = animAnimControl.getAnim(animName);

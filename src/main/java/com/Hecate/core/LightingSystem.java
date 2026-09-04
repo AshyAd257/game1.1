@@ -52,13 +52,13 @@ public class LightingSystem {
 
     // 光照参数配置
     private static final float DEFAULT_AMBIENT_INTENSITY = 0.3f;
-    private static final ColorRGBA DEFAULT_AMBIENT_COLOR = new ColorRGBA(0.3f, 0.3f, 0.3f, 1.0f);
+    private static final ColorRGBA DEFAULT_AMBIENT_COLOR = new ColorRGBA(0.5f, 0.5f, 0.52f, 1.0f);
     private static final ColorRGBA DEFAULT_SUN_COLOR = new ColorRGBA(1.5f, 1.4f, 1.2f, 1.0f);
     private static final Vector3f DEFAULT_SUN_DIRECTION = new Vector3f(-1f, -1.5f, -1f).normalizeLocal();
 
     // 阴影参数配置
     private static final int SHADOWMAP_SIZE = 2048;
-    private static final float SHADOW_INTENSITY = 0.9f;
+    private static final float SHADOW_INTENSITY = 0.55f;
     private static final float SHADOW_Z_EXTEND = 200f;
     private static final float SHADOW_Z_FADE_LENGTH = 20f;
 

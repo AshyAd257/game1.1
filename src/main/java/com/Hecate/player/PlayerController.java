@@ -198,6 +198,11 @@ public class PlayerController implements ActionListener, AnalogListener {
     private boolean isResettingCamera = false;
     private float resetProgress = 0f;
 
+    // 摄像机角度平滑过渡（按WASD自动对齐/按R重置时都会用到）
+    private boolean isAligningCamera = false;
+    private float targetCameraBaseAngle = 0f;
+    private static final float CAMERA_AUTO_ALIGN_SPEED = 6f; // 指数平滑速度，越大过渡越快（不是瞬间闪现）
+
     // 2D精灵系统
     private boolean useSpriteMode = false;
     private Node spriteNode;
@@ -242,6 +247,15 @@ public class PlayerController implements ActionListener, AnalogListener {
     private float debugTimer = 0f;
     private boolean wasTopView = false;
     private int frameCount = 0; // 帧计数器，用于控制debug输出频率
+
+    // 旋转偏移测试
+    private int rotationOffsetIndex = 1; // 当前使用的偏移索引（默认1 = -90度）
+    private static final float[] ROTATION_OFFSETS = {
+        0f,                      // 0度
+        -FastMath.HALF_PI,      // -90度
+        FastMath.PI,            // 180度
+        FastMath.HALF_PI        // 90度
+    };
 
     /**
      * 构造函数
@@ -678,9 +692,9 @@ public class PlayerController implements ActionListener, AnalogListener {
         float totalAngleX = cameraBaseAngle + (cameraAngleX * FastMath.DEG_TO_RAD);
 
         return new Vector3f(
-                -FastMath.sin(totalAngleX),
+                FastMath.sin(totalAngleX),
                 0,
-                -FastMath.cos(totalAngleX)
+                FastMath.cos(totalAngleX)
         );
     }
 
@@ -769,6 +783,13 @@ public class PlayerController implements ActionListener, AnalogListener {
                 "CameraZoomIn", "CameraZoomOut", "ResetCamera",
                 "DigTerrain", "ToggleInventory", "NormalMode", "NormalModeAlt", "FireWeapon",
                 "ToggleHiding", "ToggleCollisionBox", "EnterArena", "PickupItem");
+
+        // 隐藏系统鼠标光标，切换到相对移动模式。默认可见状态下，OS光标移动到屏幕
+        // 边缘后就不会再产生新的位移增量，导致鼠标转镜头"转到一定角度突然转不动"
+        // （卡住的角度还和光标初始位置有关，所以有时一圈半、有时半圈，表现不一致）。
+        // 隐藏后引擎使用相对输入，增量不再受屏幕边界限制，可以无限旋转。
+        // 背包/控制台/Buff选择这些需要可见光标的界面会在打开时自行调用setCursorVisible(true)。
+        inputManager.setCursorVisible(false);
     }
 
     @Override
@@ -802,6 +823,14 @@ public class PlayerController implements ActionListener, AnalogListener {
         switch (name) {
             case "MoveForward":
                 if (isPressed) {
+                    // 只在"从完全没按任何移动键，到按下第一个移动键"这一瞬间触发
+                    // 摄像机自动对齐，不能看cameraAutoAligned/isAligningCamera这类
+                    // "对齐动画是否还在播"的状态——那种写法在按住W走路途中稍微动一下
+                    // 鼠标（几乎不可避免）就会被鼠标事件清掉，导致此时再按A/D会被
+                    // 误判成"新的一次按键"重新触发对齐，表现为斜着走镜头突然甩一下。
+                    if (!isAnyMoveKeyPressed()) {
+                        startCameraAutoAlign();
+                    }
                     // 检测双击（用于疾跑）
                     float currentTime = app.getTimer().getTimeInSeconds();
                     if (currentTime - lastKeyPressTime[0] < DOUBLE_TAP_THRESHOLD) {
@@ -813,6 +842,9 @@ public class PlayerController implements ActionListener, AnalogListener {
                 break;
             case "MoveBackward":
                 if (isPressed) {
+                    if (!isAnyMoveKeyPressed()) {
+                        startCameraAutoAlign();
+                    }
                     float currentTime = app.getTimer().getTimeInSeconds();
                     if (currentTime - lastKeyPressTime[2] < DOUBLE_TAP_THRESHOLD) {
                         onDoubleTapDetected();
@@ -823,6 +855,9 @@ public class PlayerController implements ActionListener, AnalogListener {
                 break;
             case "StrafeLeft":
                 if (isPressed) {
+                    if (!isAnyMoveKeyPressed()) {
+                        startCameraAutoAlign();
+                    }
                     float currentTime = app.getTimer().getTimeInSeconds();
                     if (currentTime - lastKeyPressTime[1] < DOUBLE_TAP_THRESHOLD) {
                         onDoubleTapDetected();
@@ -833,6 +868,9 @@ public class PlayerController implements ActionListener, AnalogListener {
                 break;
             case "StrafeRight":
                 if (isPressed) {
+                    if (!isAnyMoveKeyPressed()) {
+                        startCameraAutoAlign();
+                    }
                     float currentTime = app.getTimer().getTimeInSeconds();
                     if (currentTime - lastKeyPressTime[3] < DOUBLE_TAP_THRESHOLD) {
                         onDoubleTapDetected();
@@ -1004,9 +1042,17 @@ public class PlayerController implements ActionListener, AnalogListener {
         switch (name) {
             case "MouseLook":
                 cameraAngleX += value * MOUSE_SENSITIVITY * 50f;
+                cameraAngleX = wrapAngleDeg(cameraAngleX);
+                // 鼠标移动时打断正在播放的自动对齐/重置过渡动画，把镜头交还给玩家。
+                // 注意：这不影响下一次触发对齐的判断——判断依据是isAnyMoveKeyPressed()
+                // （见onAction），不是这个正在播放的动画状态，所以走路途中稍微
+                // 动一下鼠标不会导致后续按其他移动键重新触发对齐。
+                isAligningCamera = false;
                 break;
             case "MouseLookNeg":
                 cameraAngleX -= value * MOUSE_SENSITIVITY * 50f;
+                cameraAngleX = wrapAngleDeg(cameraAngleX);
+                isAligningCamera = false;
                 break;
             case "MouseLookUp":
                 cameraAngleY += value * MOUSE_SENSITIVITY * 30f;
@@ -1036,18 +1082,29 @@ public class PlayerController implements ActionListener, AnalogListener {
     }
 
     /**
-     * 开始摄像机重置 - 重置到玩家当前朝向的正后方
+     * 是否有任意一个移动键（W/S/A/D）正在按住。用于判断"这次按键是从静止状态
+     * 开始走路，还是已经在走路途中新增/切换方向"——只有前一种情况才应该触发
+     * 摄像机自动对齐，否则斜着走（同时按住两个方向键）会在第二个键按下时
+     * 被误判成"新的一次移动"而重新对齐镜头。
+     */
+    private boolean isAnyMoveKeyPressed() {
+        return moveDirection[0] || moveDirection[1] || moveDirection[2] || moveDirection[3];
+    }
+
+    /**
+     * 开始摄像机自动对齐 - 从静止开始按WASD时将摄像机平滑移动到角色背后（不再瞬间闪现）
+     */
+    private void startCameraAutoAlign() {
+        targetCameraBaseAngle = normalizeAngleRad(playerFacing + FastMath.PI);
+        isAligningCamera = true;
+    }
+
+    /**
+     * 开始摄像机重置 - 按R键重置到默认位置和距离（角度平滑过渡，距离另外平滑插值）
      */
     private void startCameraReset() {
-        // 立刻重置摄像机到玩家当前朝向的正后方
-        // 玩家朝向 + 180度 = 玩家背后
-        cameraBaseAngle = playerFacing + FastMath.PI;
-        cameraAngleX = DEFAULT_CAMERA_ANGLE_X;  // 无偏移
-        cameraAngleY = DEFAULT_CAMERA_ANGLE_Y;  // 水平视角
-
-        // 标准化角度
-        while (cameraBaseAngle >= FastMath.TWO_PI) cameraBaseAngle -= FastMath.TWO_PI;
-        while (cameraBaseAngle < 0) cameraBaseAngle += FastMath.TWO_PI;
+        targetCameraBaseAngle = normalizeAngleRad(playerFacing + FastMath.PI);
+        isAligningCamera = true;
 
         // 保留距离的平滑重置
         isResettingCamera = true;
@@ -1055,7 +1112,7 @@ public class PlayerController implements ActionListener, AnalogListener {
     }
 
     /**
-     * 更新摄像机重置动画（仅重置距离，角度已瞬间重置）
+     * 更新摄像机重置动画（仅重置距离，角度由updateCameraAutoAlign平滑过渡）
      */
     private void updateCameraReset(float tpf) {
         if (!isResettingCamera) {
@@ -1070,9 +1127,40 @@ public class PlayerController implements ActionListener, AnalogListener {
             LogUtils.debug(PlayerController.class, "摄像机距离重置完成");
         }
 
-        // 只平滑插值距离，角度已经在startCameraReset中瞬间重置了
+        // 只平滑插值距离，角度由updateCameraAutoAlign单独平滑过渡
         cameraDistance = lerp(cameraDistance, DEFAULT_CAMERA_DISTANCE, resetProgress);
     }
+
+    /**
+     * 平滑地将摄像机角度过渡到角色背后（targetCameraBaseAngle），
+     * 同时让偏移角度回到默认值。按WASD自动对齐、按R重置都会触发。
+     * 使用指数衰减插值，避免瞬间闪现的突兀感，也不会像固定时长插值那样在
+     * 快速连续触发时出现卡顿或跳变。
+     */
+    private void updateCameraAutoAlign(float tpf) {
+        if (!isAligningCamera) {
+            return;
+        }
+
+        float t = 1f - FastMath.exp(-CAMERA_AUTO_ALIGN_SPEED * tpf);
+
+        float diff = shortestAngleDiffRad(cameraBaseAngle, targetCameraBaseAngle);
+        cameraBaseAngle = normalizeAngleRad(cameraBaseAngle + diff * t);
+
+        cameraAngleX += (DEFAULT_CAMERA_ANGLE_X - cameraAngleX) * t;
+        cameraAngleY += (DEFAULT_CAMERA_ANGLE_Y - cameraAngleY) * t;
+
+        // 足够接近目标时结束过渡，避免指数衰减永远差一点点
+        if (Math.abs(diff) < 0.001f
+                && Math.abs(cameraAngleX - DEFAULT_CAMERA_ANGLE_X) < 0.01f
+                && Math.abs(cameraAngleY - DEFAULT_CAMERA_ANGLE_Y) < 0.01f) {
+            cameraBaseAngle = targetCameraBaseAngle;
+            cameraAngleX = DEFAULT_CAMERA_ANGLE_X;
+            cameraAngleY = DEFAULT_CAMERA_ANGLE_Y;
+            isAligningCamera = false;
+        }
+    }
+
 
     /**
      * 线性插值
@@ -1089,6 +1177,43 @@ public class PlayerController implements ActionListener, AnalogListener {
         while (diff > 180f) diff -= 360f;
         while (diff < -180f) diff += 360f;
         return a + diff * FastMath.clamp(t, 0f, 1f);
+    }
+
+    /**
+     * 把角度（度）归一化到[-180, 180)。仅用于防止cameraAngleX长时间游玩后无限增长
+     * 导致float精度下降——取模环绕不会造成视觉跳变（sin/cos按周期运算），
+     * 不会限制旋转圈数。
+     */
+    private float wrapAngleDeg(float angleDeg) {
+        angleDeg = angleDeg % 360f;
+        if (angleDeg >= 180f) {
+            angleDeg -= 360f;
+        } else if (angleDeg < -180f) {
+            angleDeg += 360f;
+        }
+        return angleDeg;
+    }
+
+    /**
+     * 把角度（弧度）归一化到[0, 2π)
+     */
+    private float normalizeAngleRad(float angleRad) {
+        while (angleRad >= FastMath.TWO_PI) angleRad -= FastMath.TWO_PI;
+        while (angleRad < 0) angleRad += FastMath.TWO_PI;
+        return angleRad;
+    }
+
+    /**
+     * 计算从a到b的最短夹角差（弧度，范围(-π, π]），用于平滑过渡角度时不绕远路
+     */
+    private float shortestAngleDiffRad(float a, float b) {
+        float diff = (b - a) % FastMath.TWO_PI;
+        if (diff > FastMath.PI) {
+            diff -= FastMath.TWO_PI;
+        } else if (diff < -FastMath.PI) {
+            diff += FastMath.TWO_PI;
+        }
+        return diff;
     }
 
     /**
@@ -1115,6 +1240,9 @@ public class PlayerController implements ActionListener, AnalogListener {
         // 更新摄像机重置进度
         updateCameraReset(app.getTimer().getTimePerFrame());
 
+        // 平滑过渡摄像机角度到角色背后（按WASD自动对齐/按R重置时触发）
+        updateCameraAutoAlign(app.getTimer().getTimePerFrame());
+
         // 使用独立的cameraBaseAngle，不受Q/E旋转影响
         float totalAngleX = cameraBaseAngle + (cameraAngleX * FastMath.DEG_TO_RAD);
         float angleY = cameraAngleY * FastMath.DEG_TO_RAD;
@@ -1122,8 +1250,11 @@ public class PlayerController implements ActionListener, AnalogListener {
         float horizontalDistance = cameraDistance * FastMath.cos(angleY);
         float verticalDistance = cameraDistance * FastMath.sin(angleY);
 
-        float camX = playerPosition.x + FastMath.sin(totalAngleX) * horizontalDistance;
-        float camZ = playerPosition.z + FastMath.cos(totalAngleX) * horizontalDistance;
+        // 修复：摄像机位置计算
+        // totalAngleX = 0 时，摄像机应该在 +Z 方向（北）
+        // totalAngleX = PI 时，摄像机应该在 -Z 方向（南，角色背后）
+        float camX = playerPosition.x - FastMath.sin(totalAngleX) * horizontalDistance;
+        float camZ = playerPosition.z - FastMath.cos(totalAngleX) * horizontalDistance;
         float camY = playerPosition.y + CAMERA_HEIGHT + verticalDistance;
 
         Vector3f cameraPosition = new Vector3f(camX, camY, camZ);
@@ -1221,6 +1352,13 @@ public class PlayerController implements ActionListener, AnalogListener {
         if (inventoryUI != null) {
             inventoryUI.update(tpf);
         }
+
+        // 每帧强制同步光标可见性。窗口失去/重新获得焦点时(alt-tab等)，
+        // 底层GLFW会把光标状态重置为可见，单次setCursorVisible(false)调用
+        // （只在setupInput()里执行过一次）无法覆盖后续的重置，导致"光标偶尔
+        // 冒出来"。这里按当前是否有需要可见光标的界面打开，每帧显式同步一次，
+        // 就不会被外部事件悄悄改回默认状态。
+        updateCursorVisibility();
 
         // 摄像机缩放（+/-键持续按住时每帧连续缩放，与原滚轮的连续手感一致）
         updateCameraZoom(tpf);
@@ -1358,6 +1496,18 @@ public class PlayerController implements ActionListener, AnalogListener {
             if (isMoving) {
                 movement.normalizeLocal();
 
+                // 调试输出：显示移动向量和摄像机角度
+                if (frameCount % 60 == 0) { // 每秒输出一次
+                    float totalAngleX = cameraBaseAngle + (cameraAngleX * FastMath.DEG_TO_RAD);
+                    System.out.println("==========================================");
+                    System.out.println("移动调试信息:");
+                    System.out.println("按键: W=" + moveDirection[0] + " S=" + moveDirection[1] + " A=" + moveDirection[2] + " D=" + moveDirection[3]);
+                    System.out.println("摄像机角度: " + (totalAngleX * FastMath.RAD_TO_DEG) + "°");
+                    System.out.println("移动向量: x=" + String.format("%.2f", movement.x) + " z=" + String.format("%.2f", movement.z));
+                    System.out.println("playerFacing (旧): " + (playerFacing * FastMath.RAD_TO_DEG) + "°");
+                    System.out.println("==========================================");
+                }
+
                 // 【墨水系统】应用基于地面状态的速度倍率
                 // 规则：
                 // - 敌方减速：始终生效
@@ -1400,7 +1550,16 @@ public class PlayerController implements ActionListener, AnalogListener {
                     playerPosition.addLocal(movement);
                 }
 
-                lastMovementDirection.set(movement.clone().normalizeLocal());
+                Vector3f normalizedMovement = movement.clone().normalizeLocal();
+                lastMovementDirection.set(normalizedMovement);
+
+                // 【修复】模型朝向始终跟随摄像机水平朝向，不跟随移动方向。
+                // 之前playerFacing = atan2(移动方向)，导致单独按A/D时移动向量指向侧方，
+                // 模型会"转身"去面朝侧面——看起来像原地旋转而不是横向走步（strafe）。
+                // 现在移动向量只影响位移（见上面right/forward的叠加），朝向和摄像机
+                // 保持一致，按A/D时模型侧身平移、脸始终朝前，符合"往旁边走"的预期。
+                float cameraForwardAngle = cameraBaseAngle + (cameraAngleX * FastMath.DEG_TO_RAD);
+                playerFacing = normalizeAngleRad(cameraForwardAngle);
             }
         }
 
@@ -2270,6 +2429,21 @@ public class PlayerController implements ActionListener, AnalogListener {
     public void setPanelManager(com.Hecate.ui.PanelManager panelManager) {
         if (inventoryUI != null) {
             inventoryUI.setPanelManager(panelManager);
+        }
+    }
+
+    /**
+     * 每帧同步系统鼠标光标可见性。只有背包UI需要可见光标去点击/拖拽物品，
+     * 其他覆盖层（GameConsole、BuffSelectUI）都是纯键盘操作，不需要光标。
+     * 之所以要每帧调用而不是只在背包toggle时调用一次：窗口失焦/重新聚焦
+     * （比如alt-tab、点击任务栏）会让底层GLFW把光标状态改回可见，如果只在
+     * toggle时设置一次，之后就会被这类外部事件悄悄覆盖掉，表现为光标偶尔
+     * 无缘无故冒出来。每帧强制同步一次就不会被覆盖。
+     */
+    private void updateCursorVisibility() {
+        boolean shouldBeVisible = inventoryUI != null && inventoryUI.isVisible();
+        if (inputManager.isCursorVisible() != shouldBeVisible) {
+            inputManager.setCursorVisible(shouldBeVisible);
         }
     }
 

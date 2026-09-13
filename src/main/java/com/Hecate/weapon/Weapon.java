@@ -23,6 +23,11 @@ public abstract class Weapon {
     protected float currentChargeTime = 0f;  // 当前蓄力时间
     protected boolean isCharging = false;    // 是否正在蓄力
 
+    // ========== 新增：射弹模式系统 ==========
+    protected ProjectileMode projectileMode = ProjectileMode.DARK; // 默认黑暗模式
+    protected float modeSwitchCooldown = 0f;                       // 模式切换冷却时间
+    protected static final float MODE_SWITCH_COOLDOWN_TIME = 3.0f; // 3秒切换冷却
+
     /**
      * 构造函数（不指定种类，兼容现有远程武器子类）
      */
@@ -57,6 +62,35 @@ public abstract class Weapon {
                 currentChargeTime = stats.getMaxChargeTime();
             }
         }
+
+        // 更新模式切换冷却
+        if (modeSwitchCooldown > 0f) {
+            modeSwitchCooldown -= tpf;
+            if (modeSwitchCooldown < 0f) {
+                modeSwitchCooldown = 0f;
+            }
+        }
+    }
+
+    /**
+     * 切换射弹模式（光明 ↔ 黑暗）
+     * @return true 如果成功切换
+     */
+    public boolean switchProjectileMode() {
+        if (modeSwitchCooldown > 0f) {
+            return false; // 冷却中
+        }
+
+        projectileMode = projectileMode.toggle();
+        modeSwitchCooldown = MODE_SWITCH_COOLDOWN_TIME;
+        return true;
+    }
+
+    /**
+     * 强制设置射弹模式（无冷却限制）
+     */
+    public void setProjectileMode(ProjectileMode mode) {
+        this.projectileMode = mode;
     }
 
     /**
@@ -181,5 +215,18 @@ public abstract class Weapon {
     public boolean isCharging() { return isCharging; }
     public float getChargeProgress() {
         return stats.hasCharge() ? (currentChargeTime / stats.getMaxChargeTime()) : 0f;
+    }
+
+    // ========== 新增：射弹模式 Getters ==========
+    public ProjectileMode getProjectileMode() {
+        return projectileMode;
+    }
+
+    public float getModeSwitchCooldown() {
+        return modeSwitchCooldown;
+    }
+
+    public boolean canSwitchMode() {
+        return modeSwitchCooldown <= 0f;
     }
 }

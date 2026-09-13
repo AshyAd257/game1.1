@@ -390,7 +390,16 @@ public class CollisionManager {
                 // 移除边界查询日志 - 太多且无用
             }
 
-            Chunk chunk = chunkManager.getChunk(chunkPos);
+            // 用getOrLoadChunk而不是getChunk：主世界的区块由WorldModule按玩家位置
+            // 异步、限速加载（每0.2秒最多8个区块/帧），落地检测在每帧60Hz执行——
+            // 玩家快速移动/跳跃穿越区块边界时，脚下这个区块很可能还没进入
+            // loadedChunks，此时getChunk会返回null导致误判"查无地形"。而落地判定一旦
+            // 命中过一次真实地形（hasLandedOnTerrain=true），之后任何NaN都会被当成
+            // "真的在虚空里"，导致isJumping永远清不掉、跳跃动画卡死。这里改为按需
+            // 同步加载，确保只要区块本应存在（主世界generateTerrainOnLoad=true）就
+            // 一定能查到，而不会被"还没加载"误判为真空——真正的虚空（区块内材质为
+            // NONE，如竞技场边缘）仍然会在下面的检查里正确返回NaN。
+            Chunk chunk = chunkManager.getOrLoadChunk(chunkPos);
             if (chunk == null || !chunk.hasTerrainData()) {
                 chunkMissCounter++;
 

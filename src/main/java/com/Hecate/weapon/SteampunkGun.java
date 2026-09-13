@@ -1,5 +1,6 @@
 package com.Hecate.weapon;
 
+import com.Hecate.element.ElementType;
 import com.Hecate.ink.SparseGridManager;
 import com.jme3.math.FastMath;
 import com.jme3.math.Vector3f;
@@ -19,7 +20,13 @@ public class SteampunkGun extends Weapon {
     // 依赖项（子弹的实际飞行/碰撞/涂墨由外部的子弹更新循环驱动，这里只负责生成Projectile）
     private SparseGridManager gridManager;      // 墨水系统
     private Node worldNode;                     // 世界节点
-    private int playerFactionId = com.Hecate.ink.FactionRegistry.DARK_DEFAULT;  // 玩家阵营ID
+
+    // ========== 新系统：元素类型（取代 factionId） ==========
+    private ElementType playerElement = ElementType.GRASS; // 玩家的元素类型
+
+    // ========== 旧系统兼容字段 ==========
+    @Deprecated
+    private int playerFactionId = com.Hecate.ink.FactionRegistry.DARK_DEFAULT;  // 玩家阵营ID（废弃）
 
     // 每次开火产生的子弹交给外部监听器处理（PlayerController里的子弹更新循环）
     private ProjectileSpawnListener spawnListener;
@@ -47,16 +54,46 @@ public class SteampunkGun extends Weapon {
     }
 
     /**
-     * 设置玩家阵营ID
+     * 设置玩家元素类型（新接口）
      */
-    public void setPlayerFactionId(int factionId) {
-        this.playerFactionId = factionId;
+    public void setPlayerElement(ElementType element) {
+        this.playerElement = element;
+        // 同步到旧字段（兼容性）
+        updateLegacyFactionId();
     }
 
+    /**
+     * 设置玩家阵营ID（旧接口，保留兼容）
+     * @deprecated 使用 setPlayerElement(ElementType) 代替
+     */
+    @Deprecated
+    public void setPlayerFactionId(int factionId) {
+        this.playerFactionId = factionId;
+        // 简单映射到新系统
+        if (factionId == com.Hecate.ink.FactionRegistry.LIGHT_DEFAULT) {
+            this.playerElement = ElementType.FIRE;
+        } else {
+            this.playerElement = ElementType.WATER;
+        }
+    }
+
+    /**
+     * 向后兼容的 team 设置
+     * @deprecated 使用 setPlayerElement(ElementType) 代替
+     */
     @Deprecated
     public void setPlayerTeam(int team) {
-        // 向后兼容：将 team 映射到 factionId
-        this.playerFactionId = (team == 0)
+        setPlayerFactionId((team == 0)
+            ? com.Hecate.ink.FactionRegistry.LIGHT_DEFAULT
+            : com.Hecate.ink.FactionRegistry.DARK_DEFAULT);
+    }
+
+    /**
+     * 同步元素类型到旧的 factionId（兼容性）
+     */
+    private void updateLegacyFactionId() {
+        // 简化映射：根据当前射弹模式决定 factionId
+        this.playerFactionId = (projectileMode == ProjectileMode.LIGHT)
             ? com.Hecate.ink.FactionRegistry.LIGHT_DEFAULT
             : com.Hecate.ink.FactionRegistry.DARK_DEFAULT;
     }
@@ -72,6 +109,10 @@ public class SteampunkGun extends Weapon {
     protected void fire(Vector3f origin, Vector3f direction) {
         Vector3f finalDirection = applySpread(direction.clone());
 
+        // 更新旧字段（兼容性）
+        updateLegacyFactionId();
+
+        // 创建命中效果（传递元素和模式信息）
         ProjectileProfile.HitEffect hitEffect = ProjectileProfile.HitEffect.simple(
                 stats.getBaseDamage(), stats.getInkRadius(), playerFactionId);
 
@@ -93,7 +134,12 @@ public class SteampunkGun extends Weapon {
                 .visualConfig(projectileProfile.getVisualConfig())
                 .build();
 
+        // 创建子弹，传递元素和射弹模式
         Projectile projectile = new Projectile(shotProfile, origin, finalDirection, 1.0f, playerFactionId);
+
+        // ========== 新增：设置元素和射弹模式 ==========
+        projectile.setElement(playerElement);
+        projectile.setProjectileMode(projectileMode);
 
         if (spawnListener != null) {
             spawnListener.onProjectileSpawned(projectile);

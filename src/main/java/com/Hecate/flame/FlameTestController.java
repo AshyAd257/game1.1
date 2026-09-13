@@ -167,45 +167,8 @@ public class FlameTestController implements ActionListener {
             return calculateVelocity3D(handPos, targetPos);
         }
 
-        String spriteDirection = playerController.getCurrentSpriteDirection();
-
-        if ("back".equals(spriteDirection)) {
-            // 背对镜头：朝准星目标点发
-            return calculateVelocity3D(handPos, targetPos);
-        } else {
-            // 其他情况：朝玩家模型正面方向发射，使用准星距离
-
-            // 计算准星目标的实际距离
-            float targetDistance = handPos.distance(targetPos);
-
-            // 获取摄像机方向（水平）
-            Vector3f cameraDir = camera.getDirection().clone();
-            cameraDir.y = 0;
-            cameraDir.normalizeLocal();
-
-            Vector3f shootDirection;
-            if ("front".equals(spriteDirection)) {
-                shootDirection = cameraDir.negate();
-
-            } else if ("left".equals(spriteDirection)) {
-                shootDirection = new Vector3f(cameraDir.z, 0, -cameraDir.x);
-
-            } else if ("right".equals(spriteDirection)) {
-                shootDirection = new Vector3f(-cameraDir.z, 0, cameraDir.x);
-
-            } else {
-                shootDirection = cameraDir.clone();
-
-            }
-
-            // 使用准星距离在玩家正面方向上创建虚拟目标点
-            Vector3f virtualTarget = handPos.add(shootDirection.mult(targetDistance));
-
-            // 确保虚拟目标点的Y坐标和准星目标点一致（保持同样的高度差）
-            virtualTarget.y = targetPos.y;
-
-            return calculateVelocity3D(handPos, virtualTarget);
-        }
+        // 3D模型系统：直接朝准星目标发射
+        return calculateVelocity3D(handPos, targetPos);
     }
 
     /**

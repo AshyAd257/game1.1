@@ -53,7 +53,10 @@ public class PlayerController implements ActionListener, AnalogListener {
     private static final float PLAYER_WIDTH = 0.67f;  // 宽度缩短为原来的2/3
     private static final float PLAYER_HEIGHT = 1.5f;
     private static final float GROUND_LEVEL = 2.75f;
+    private static final float SPRITE_HEIGHT_OFFSET = -0.1f; // 精灵底部稍微上浮，避免Z-fighting
+    private static final float CAMERA_LOOK_AT_OFFSET = 1.0f;
     private static final float CORPSE_HEIGHT = 1.6f;
+    private static final float TOP_VIEW_ANGLE_THRESHOLD = 25f;
 
     // 移动参数
     private static final float WALK_SPEED = 3.25f;  // 普通步行速度
@@ -65,15 +68,23 @@ public class PlayerController implements ActionListener, AnalogListener {
     // 速度倍数（用于/speed指令）
     private float speedMultiplier = 1.0f;
 
-    // 新的摄像机系统
-    private com.Hecate.camera.ThirdPersonCamera thirdPersonCamera;
-    private com.Hecate.camera.CameraInputHandler cameraInputHandler;
+    // 摄像机参数
+    private static final float CAMERA_HEIGHT = 6.0f;
+    private static final float DEFAULT_CAMERA_DISTANCE = 8.0f;
+    private static final float DEFAULT_CAMERA_ANGLE_X = 0f;
+    private static final float DEFAULT_CAMERA_ANGLE_Y = -20f;
+    private static final float CAMERA_MIN_DISTANCE = 2.0f;
+    private static final float CAMERA_MAX_DISTANCE = 15.0f;
+    private static final float ZOOM_SPEED = 3.0f;
+    private static final float MOUSE_SENSITIVITY = 5.0f;
+    private static final float RESET_SPEED = 5.0f;
 
-    // 摄像机自动归位状态
-    private boolean isCameraAligned = true;  // 初始状态已对齐，允许自由移动
-    private static final float CAMERA_ALIGN_SPEED = 15f;  // 归位速度（提高速度使其"一瞬间"完成）
+    // 独立的摄像机基准朝向（不受Q/E影响）
+    // 初始值为PI（180度），让摄像机在玩家背后
+    private float cameraBaseAngle = FastMath.PI;
 
     // 动画参数
+    private static final float FACING_SMOOTH_SPEED = 8.0f;
     private static final float AUTO_REVIVE_TIME = 5.0f;
     private static final float DEATH_ANIMATION_DURATION = 0.5f;
 
@@ -90,6 +101,7 @@ public class PlayerController implements ActionListener, AnalogListener {
 
     private float playerFacing = 0f;
     private Vector3f lastMovementDirection = new Vector3f();
+    private String currentSpriteDirection = "back"; // 当前精灵显示方向
 
     private boolean[] moveDirection = new boolean[6]; // W, S, A, D, Q, E
     private boolean isJumping = false;
@@ -145,8 +157,8 @@ public class PlayerController implements ActionListener, AnalogListener {
     // 按键状态
     private boolean isShiftPressed = false;   // Shift键是否按下
     private boolean isCtrlPressed = false;    // Ctrl键是否按下
-    private boolean isCameraZoomingIn = false;  // +键是否按住（摄像机缩近）
-    private boolean isCameraZoomingOut = false; // -键是否按住（摄像机缩远）
+    private boolean isCameraZoomingIn = false;  // +键是否按住（摄像机缩近，原滚轮功能）
+    private boolean isCameraZoomingOut = false; // -键是否按住（摄像机缩远，原滚轮功能）
     private boolean isRightButtonPressed = false; // 右键是否按下
 
     // 地面类型枚举
@@ -179,7 +191,31 @@ public class PlayerController implements ActionListener, AnalogListener {
     private float shakeIntensity = 0.3f;
     private Vector3f originalCameraLocation;
 
-    // 3D骨骼模型系统
+    // 摄像机控制
+    private float cameraDistance = DEFAULT_CAMERA_DISTANCE;
+    private float cameraAngleX = DEFAULT_CAMERA_ANGLE_X;
+    private float cameraAngleY = DEFAULT_CAMERA_ANGLE_Y;
+    private boolean isResettingCamera = false;
+    private float resetProgress = 0f;
+
+    // 摄像机角度平滑过渡（按WASD自动对齐/按R重置时都会用到）
+    private boolean isAligningCamera = false;
+    private float targetCameraBaseAngle = 0f;
+    private static final float CAMERA_AUTO_ALIGN_SPEED = 6f; // 指数平滑速度，越大过渡越快（不是瞬间闪现）
+
+    // 2D精灵系统
+    private boolean useSpriteMode = false;
+    private Node spriteNode;
+    private PlayerSpriteManager spriteManager;
+    private SpriteAnimationSystem spriteAnimationSystem;
+    private DirectionalSpriteRenderer spriteRenderer;
+    private SpriteScaleManager spriteScaleManager;
+
+    // Puppet 动画系统（已废弃，替换为3D骨骼模型）
+    // private boolean usePuppetMode = true;
+    // private PuppetPlayerController puppetPlayerController;
+
+    // 3D骨骼模型系统（新）
     private SkeletalPlayerController skeletalPlayerController;
 
     // 墨水网格系统
@@ -205,7 +241,21 @@ public class PlayerController implements ActionListener, AnalogListener {
 
     // 世界掉落物系统（F键交互拾取）
     private com.Hecate.item.world.WorldItemManager worldItemManager;
-    private static final float PICKUP_INTERACTION_DISTANCE = 3.0f; // 拾取交互距离（米）
+    private static final float PICKUP_INTERACTION_DISTANCE = 3.0f; // 拾取交互距离（米），与方块交互距离(5米)同量级但略近
+
+    // 调试计数器
+    private float debugTimer = 0f;
+    private boolean wasTopView = false;
+    private int frameCount = 0; // 帧计数器，用于控制debug输出频率
+
+    // 旋转偏移测试
+    private int rotationOffsetIndex = 1; // 当前使用的偏移索引（默认1 = -90度）
+    private static final float[] ROTATION_OFFSETS = {
+        0f,                      // 0度
+        -FastMath.HALF_PI,      // -90度
+        FastMath.PI,            // 180度
+        FastMath.HALF_PI        // 90度
+    };
 
     /**
      * 构造函数
@@ -214,10 +264,6 @@ public class PlayerController implements ActionListener, AnalogListener {
         this.app = app;
         this.camera = app.getCamera();
         this.inputManager = app.getInputManager();
-
-        // 初始化新的摄像机系统
-        thirdPersonCamera = new com.Hecate.camera.ThirdPersonCamera(camera);
-        cameraInputHandler = new com.Hecate.camera.CameraInputHandler(thirdPersonCamera);
 
         // 初始化血量系统
         initializeHealthSystem();
@@ -232,8 +278,14 @@ public class PlayerController implements ActionListener, AnalogListener {
         // 设置输入控制
         setupInput();
 
-        // 初始化 3D 骨骼模型系统
+        // 初始化2D精灵系统（但不启用）
+        initializeSpriteSystem();
+
+        // 初始化 3D 骨骼模型系统（替换旧的Puppet系统）
         initializeSkeletalSystem();
+
+        // 更新摄像机
+        updateCameraPosition();
 
         // 初始化游戏控制台
         initializeGameConsole();
@@ -376,6 +428,19 @@ public class PlayerController implements ActionListener, AnalogListener {
     }
 
     /**
+     * 启用精灵模式
+     */
+    private void enableSpriteMode() {
+        useSpriteMode = true;
+        if (spriteScaleManager != null) {
+            spriteScaleManager.setSpriteMode(true);
+        }
+        if (spriteNode != null) {
+            spriteNode.setCullHint(Node.CullHint.Never);
+        }
+    }
+
+    /**
      * 初始化 3D 骨骼模型系统
      */
     private void initializeSkeletalSystem() {
@@ -419,8 +484,15 @@ public class PlayerController implements ActionListener, AnalogListener {
         // 开始屏幕振动
         startScreenShake(0.5f, 0.3f);
 
-        // 创建死亡效果（使用3D模型系统）
-        createDeadSprite();
+        // 隐藏精灵
+        if (spriteNode != null) {
+            spriteNode.setCullHint(Node.CullHint.Always);
+        }
+
+        // 创建死亡效果
+        if (useSpriteMode) {
+            createDeadSprite();
+        }
     }
 
     /**
@@ -530,6 +602,11 @@ public class PlayerController implements ActionListener, AnalogListener {
         velocity.set(0, 0, 0);
         isJumping = false;
         isOnGround = true;
+
+        // 恢复2D精灵显示
+        if (spriteNode != null) {
+            spriteNode.setCullHint(Node.CullHint.Never);
+        }
     }
 
     /**
@@ -608,7 +685,30 @@ public class PlayerController implements ActionListener, AnalogListener {
     }
 
     /**
-     * 获取玩家右方向向量
+     * 获取摄像机朝向方向（水平投影）- 用于WASD移动
+     */
+    private Vector3f getCameraFacingDirection() {
+        // 使用独立的cameraBaseAngle
+        float totalAngleX = cameraBaseAngle + (cameraAngleX * FastMath.DEG_TO_RAD);
+
+        return new Vector3f(
+                FastMath.sin(totalAngleX),
+                0,
+                FastMath.cos(totalAngleX)
+        );
+    }
+
+    /**
+     * 获取摄像机右方向向量
+     */
+    private Vector3f getCameraRightDirection() {
+        Vector3f forward = getCameraFacingDirection();
+        return forward.cross(Vector3f.UNIT_Y).normalizeLocal();
+    }
+
+    /**
+     * 获取玩家正面的右方向向量（用于WASD移动——移动方向相对角色正面，
+     * 不再相对摄像机视角，见update()里的移动向量计算）
      */
     private Vector3f getPlayerRightDirection() {
         Vector3f forward = getPlayerFacingDirection();
@@ -732,9 +832,14 @@ public class PlayerController implements ActionListener, AnalogListener {
         switch (name) {
             case "MoveForward":
                 if (isPressed) {
-                    // 按下移动键时触发摄像机归位
-                    isCameraAligned = false;
-
+                    // 只在"从完全没按任何移动键，到按下第一个移动键"这一瞬间触发
+                    // 摄像机自动对齐，不能看cameraAutoAligned/isAligningCamera这类
+                    // "对齐动画是否还在播"的状态——那种写法在按住W走路途中稍微动一下
+                    // 鼠标（几乎不可避免）就会被鼠标事件清掉，导致此时再按A/D会被
+                    // 误判成"新的一次按键"重新触发对齐，表现为斜着走镜头突然甩一下。
+                    if (!isAnyMoveKeyPressed()) {
+                        startCameraAutoAlign();
+                    }
                     // 检测双击（用于疾跑）
                     float currentTime = app.getTimer().getTimeInSeconds();
                     if (currentTime - lastKeyPressTime[0] < DOUBLE_TAP_THRESHOLD) {
@@ -746,8 +851,9 @@ public class PlayerController implements ActionListener, AnalogListener {
                 break;
             case "MoveBackward":
                 if (isPressed) {
-                    isCameraAligned = false;
-
+                    if (!isAnyMoveKeyPressed()) {
+                        startCameraAutoAlign();
+                    }
                     float currentTime = app.getTimer().getTimeInSeconds();
                     if (currentTime - lastKeyPressTime[2] < DOUBLE_TAP_THRESHOLD) {
                         onDoubleTapDetected();
@@ -758,8 +864,9 @@ public class PlayerController implements ActionListener, AnalogListener {
                 break;
             case "StrafeLeft":
                 if (isPressed) {
-                    isCameraAligned = false;
-
+                    if (!isAnyMoveKeyPressed()) {
+                        startCameraAutoAlign();
+                    }
                     float currentTime = app.getTimer().getTimeInSeconds();
                     if (currentTime - lastKeyPressTime[1] < DOUBLE_TAP_THRESHOLD) {
                         onDoubleTapDetected();
@@ -770,8 +877,9 @@ public class PlayerController implements ActionListener, AnalogListener {
                 break;
             case "StrafeRight":
                 if (isPressed) {
-                    isCameraAligned = false;
-
+                    if (!isAnyMoveKeyPressed()) {
+                        startCameraAutoAlign();
+                    }
                     float currentTime = app.getTimer().getTimeInSeconds();
                     if (currentTime - lastKeyPressTime[3] < DOUBLE_TAP_THRESHOLD) {
                         onDoubleTapDetected();
@@ -803,11 +911,7 @@ public class PlayerController implements ActionListener, AnalogListener {
                 break;
             case "ResetCamera":
                 if (isPressed) {
-                    // R键触发归位和重置距离
-                    isCameraAligned = false;
-                    if (cameraInputHandler != null) {
-                        cameraInputHandler.handleReset();
-                    }
+                    startCameraReset();
                 }
                 break;
             case "CameraZoomIn":
@@ -922,52 +1026,46 @@ public class PlayerController implements ActionListener, AnalogListener {
             return;
         }
 
-        // 调试：打印鼠标输入
-        if (name.contains("MouseLook")) {
-            System.out.println("鼠标输入: " + name + ", value=" + value + ", isMoving=" + isMoving + ", isCameraAligned=" + isCameraAligned);
+        // 如果正在重置摄像机，忽略鼠标输入
+        if (isResettingCamera) {
+            return;
         }
 
         switch (name) {
-            case "MouseLook":
+            case "MouseLook": {
+                float deltaDeg = value * MOUSE_SENSITIVITY * 50f;
+                cameraAngleX += deltaDeg;
+                cameraAngleX = wrapAngleDeg(cameraAngleX);
+                // 鼠标移动时打断正在播放的自动对齐/重置过渡动画，把镜头交还给玩家。
+                // 注意：这不影响下一次触发对齐的判断——判断依据是isAnyMoveKeyPressed()
+                // （见onAction），不是这个正在播放的动画状态，所以走路途中稍微
+                // 动一下鼠标不会导致后续按其他移动键重新触发对齐。
+                isAligningCamera = false;
+                // 移动中鼠标横向增量同步叠加到playerFacing——让角色朝向跟着镜头一起
+                // 细腻转动（而不是整体赋值成镜头当前角度，那样会产生跳变，见1556行
+                // 附近的说明）。静止时不touch playerFacing，保持自由环绕镜头的体验。
                 if (isMoving) {
-                    // 移动中：鼠标控制角色转身 + 摄像机同步
-                    // 使用正确的灵敏度计算（匹配 CameraInputHandler）
-                    float deltaYaw = value * 5.0f * 50f * 0.017453292f;
-                    playerFacing = normalizeAngleRad(playerFacing + deltaYaw);
-                    // 摄像机同步跟随
-                    if (isCameraAligned && thirdPersonCamera != null) {
-                        thirdPersonCamera.rotate(deltaYaw, 0);
-                    }
-                } else {
-                    // 静止时：鼠标只控制摄像机环绕，不改变角色朝向
-                    if (cameraInputHandler != null) {
-                        cameraInputHandler.handleMouseHorizontal(value);
-                    }
+                    playerFacing = normalizeAngleRad(playerFacing + deltaDeg * FastMath.DEG_TO_RAD);
                 }
                 break;
-            case "MouseLookNeg":
+            }
+            case "MouseLookNeg": {
+                float deltaDeg = value * MOUSE_SENSITIVITY * 50f;
+                cameraAngleX -= deltaDeg;
+                cameraAngleX = wrapAngleDeg(cameraAngleX);
+                isAligningCamera = false;
                 if (isMoving) {
-                    float deltaYaw = value * 5.0f * 50f * 0.017453292f;
-                    playerFacing = normalizeAngleRad(playerFacing - deltaYaw);
-                    if (isCameraAligned && thirdPersonCamera != null) {
-                        thirdPersonCamera.rotate(-deltaYaw, 0);
-                    }
-                } else {
-                    if (cameraInputHandler != null) {
-                        cameraInputHandler.handleMouseHorizontal(-value);
-                    }
+                    playerFacing = normalizeAngleRad(playerFacing - deltaDeg * FastMath.DEG_TO_RAD);
                 }
                 break;
+            }
             case "MouseLookUp":
-                // 垂直旋转不影响角色朝向，且始终允许
-                if (cameraInputHandler != null) {
-                    cameraInputHandler.handleMouseVertical(value);
-                }
+                cameraAngleY += value * MOUSE_SENSITIVITY * 30f;
+                cameraAngleY = FastMath.clamp(cameraAngleY, -80f, 60f);
                 break;
             case "MouseLookDown":
-                if (cameraInputHandler != null) {
-                    cameraInputHandler.handleMouseVertical(-value);
-                }
+                cameraAngleY -= value * MOUSE_SENSITIVITY * 30f;
+                cameraAngleY = FastMath.clamp(cameraAngleY, -80f, 60f);
                 break;
             case "ScrollSlotNext":
                 scrollSelectedSlot(1);
@@ -979,7 +1077,8 @@ public class PlayerController implements ActionListener, AnalogListener {
     }
 
     /**
-     * 滚轮切换背包选中槛位（往前/往后移动一格）
+     * 滚轮切换背包选中槛位（往前/往后移动一格）。控制台/背包UI/文本框有焦点、
+     * 摄像机重置中这些情况已经在onAnalog开头统一拦截，这里不需要重复判断。
      */
     private void scrollSelectedSlot(int direction) {
         if (playerStateManager != null) {
@@ -988,15 +1087,198 @@ public class PlayerController implements ActionListener, AnalogListener {
     }
 
     /**
-     * 摄像机缩放（+/-键持续按住时每帧连续调整距离）
+     * 是否有任意一个移动键（W/S/A/D）正在按住。用于判断"这次按键是从静止状态
+     * 开始走路，还是已经在走路途中新增/切换方向"——只有前一种情况才应该触发
+     * 摄像机自动对齐，否则斜着走（同时按住两个方向键）会在第二个键按下时
+     * 被误判成"新的一次移动"而重新对齐镜头。
+     */
+    private boolean isAnyMoveKeyPressed() {
+        return moveDirection[0] || moveDirection[1] || moveDirection[2] || moveDirection[3];
+    }
+
+    /**
+     * 开始摄像机自动对齐 - 从静止开始按WASD时将摄像机平滑移动到角色背后（不再瞬间闪现）
+     */
+    private void startCameraAutoAlign() {
+        targetCameraBaseAngle = normalizeAngleRad(playerFacing + FastMath.PI);
+        isAligningCamera = true;
+    }
+
+    /**
+     * 开始摄像机重置 - 按R键重置到默认位置和距离（角度平滑过渡，距离另外平滑插值）
+     */
+    private void startCameraReset() {
+        targetCameraBaseAngle = normalizeAngleRad(playerFacing + FastMath.PI);
+        isAligningCamera = true;
+
+        // 保留距离的平滑重置
+        isResettingCamera = true;
+        resetProgress = 0f;
+    }
+
+    /**
+     * 更新摄像机重置动画（仅重置距离，角度由updateCameraAutoAlign平滑过渡）
+     */
+    private void updateCameraReset(float tpf) {
+        if (!isResettingCamera) {
+            return;
+        }
+
+        resetProgress += RESET_SPEED * tpf;
+
+        if (resetProgress >= 1.0f) {
+            resetProgress = 1.0f;
+            isResettingCamera = false;
+            LogUtils.debug(PlayerController.class, "摄像机距离重置完成");
+        }
+
+        // 只平滑插值距离，角度由updateCameraAutoAlign单独平滑过渡
+        cameraDistance = lerp(cameraDistance, DEFAULT_CAMERA_DISTANCE, resetProgress);
+    }
+
+    /**
+     * 平滑地将摄像机角度过渡到角色背后（targetCameraBaseAngle），
+     * 同时让偏移角度回到默认值。按WASD自动对齐、按R重置都会触发。
+     * 使用指数衰减插值，避免瞬间闪现的突兀感，也不会像固定时长插值那样在
+     * 快速连续触发时出现卡顿或跳变。
+     */
+    private void updateCameraAutoAlign(float tpf) {
+        if (!isAligningCamera) {
+            return;
+        }
+
+        float t = 1f - FastMath.exp(-CAMERA_AUTO_ALIGN_SPEED * tpf);
+
+        float diff = shortestAngleDiffRad(cameraBaseAngle, targetCameraBaseAngle);
+        cameraBaseAngle = normalizeAngleRad(cameraBaseAngle + diff * t);
+
+        cameraAngleX += (DEFAULT_CAMERA_ANGLE_X - cameraAngleX) * t;
+        cameraAngleY += (DEFAULT_CAMERA_ANGLE_Y - cameraAngleY) * t;
+
+        // 足够接近目标时结束过渡，避免指数衰减永远差一点点
+        if (Math.abs(diff) < 0.001f
+                && Math.abs(cameraAngleX - DEFAULT_CAMERA_ANGLE_X) < 0.01f
+                && Math.abs(cameraAngleY - DEFAULT_CAMERA_ANGLE_Y) < 0.01f) {
+            cameraBaseAngle = targetCameraBaseAngle;
+            cameraAngleX = DEFAULT_CAMERA_ANGLE_X;
+            cameraAngleY = DEFAULT_CAMERA_ANGLE_Y;
+            isAligningCamera = false;
+        }
+    }
+
+
+    /**
+     * 线性插值
+     */
+    private float lerp(float a, float b, float t) {
+        return a + (b - a) * FastMath.clamp(t, 0f, 1f);
+    }
+
+    /**
+     * 角度插值（处理360度环绕）
+     */
+    private float lerpAngle(float a, float b, float t) {
+        float diff = b - a;
+        while (diff > 180f) diff -= 360f;
+        while (diff < -180f) diff += 360f;
+        return a + diff * FastMath.clamp(t, 0f, 1f);
+    }
+
+    /**
+     * 把角度（度）归一化到[-180, 180)。仅用于防止cameraAngleX长时间游玩后无限增长
+     * 导致float精度下降——取模环绕不会造成视觉跳变（sin/cos按周期运算），
+     * 不会限制旋转圈数。
+     */
+    private float wrapAngleDeg(float angleDeg) {
+        angleDeg = angleDeg % 360f;
+        if (angleDeg >= 180f) {
+            angleDeg -= 360f;
+        } else if (angleDeg < -180f) {
+            angleDeg += 360f;
+        }
+        return angleDeg;
+    }
+
+    /**
+     * 把角度（弧度）归一化到[0, 2π)
+     */
+    private float normalizeAngleRad(float angleRad) {
+        while (angleRad >= FastMath.TWO_PI) angleRad -= FastMath.TWO_PI;
+        while (angleRad < 0) angleRad += FastMath.TWO_PI;
+        return angleRad;
+    }
+
+    /**
+     * 计算从a到b的最短夹角差（弧度，范围(-π, π]），用于平滑过渡角度时不绕远路
+     */
+    private float shortestAngleDiffRad(float a, float b) {
+        float diff = (b - a) % FastMath.TWO_PI;
+        if (diff > FastMath.PI) {
+            diff -= FastMath.TWO_PI;
+        } else if (diff < -FastMath.PI) {
+            diff += FastMath.TWO_PI;
+        }
+        return diff;
+    }
+
+    /**
+     * 摄像机缩放（+/-键持续按住时每帧连续调整cameraDistance），取代原来滚轮的
+     * 单次事件缩放——按键是持续触发的action而不是滚轮的单次analog事件，所以要
+     * 按tpf连续累加，不能直接套用原ZoomIn/ZoomOut里"value*ZOOM_SPEED"那种
+     * 单次增量写法。
      */
     private void updateCameraZoom(float tpf) {
-        if (isCameraZoomingIn && cameraInputHandler != null) {
-            cameraInputHandler.handleZoomIn(tpf);
+        if (isCameraZoomingIn) {
+            cameraDistance -= ZOOM_SPEED * tpf;
+            cameraDistance = FastMath.clamp(cameraDistance, CAMERA_MIN_DISTANCE, CAMERA_MAX_DISTANCE);
         }
-        if (isCameraZoomingOut && cameraInputHandler != null) {
-            cameraInputHandler.handleZoomOut(tpf);
+        if (isCameraZoomingOut) {
+            cameraDistance += ZOOM_SPEED * tpf;
+            cameraDistance = FastMath.clamp(cameraDistance, CAMERA_MIN_DISTANCE, CAMERA_MAX_DISTANCE);
         }
+    }
+
+    /**
+     * 更新摄像机位置
+     */
+    private void updateCameraPosition() {
+        // 更新摄像机重置进度
+        updateCameraReset(app.getTimer().getTimePerFrame());
+
+        // 平滑过渡摄像机角度到角色背后（按WASD自动对齐/按R重置时触发）
+        updateCameraAutoAlign(app.getTimer().getTimePerFrame());
+
+        // 使用独立的cameraBaseAngle，不受Q/E旋转影响
+        float totalAngleX = cameraBaseAngle + (cameraAngleX * FastMath.DEG_TO_RAD);
+        float angleY = cameraAngleY * FastMath.DEG_TO_RAD;
+
+        float horizontalDistance = cameraDistance * FastMath.cos(angleY);
+        float verticalDistance = cameraDistance * FastMath.sin(angleY);
+
+        // 修复：摄像机位置计算
+        // totalAngleX = 0 时，摄像机应该在 +Z 方向（北）
+        // totalAngleX = PI 时，摄像机应该在 -Z 方向（南，角色背后）
+        float camX = playerPosition.x - FastMath.sin(totalAngleX) * horizontalDistance;
+        float camZ = playerPosition.z - FastMath.cos(totalAngleX) * horizontalDistance;
+        float camY = playerPosition.y + CAMERA_HEIGHT + verticalDistance;
+
+        Vector3f cameraPosition = new Vector3f(camX, camY, camZ);
+
+        Vector3f shakeOffset = getShakeOffset();
+        cameraPosition.addLocal(shakeOffset);
+
+        camera.setLocation(cameraPosition);
+
+        // 【修复】让相机看向玩家右侧的点，使人物出现在屏幕左侧
+        // 计算相机的右方向向量
+        Vector3f cameraRight = getCameraRightDirection();
+
+        // lookAt目标点：玩家位置 + 向右偏移 + 向上偏移到头部
+        Vector3f lookAtTarget = playerPosition.clone();
+        lookAtTarget.y += CAMERA_LOOK_AT_OFFSET + 0.7f;  // 额外向上偏移0.5单位到头部位置
+        lookAtTarget.addLocal(cameraRight.mult(0.525f));  // 向右偏移
+        Vector3f direction = lookAtTarget.subtract(cameraPosition).normalizeLocal();
+        camera.lookAtDirection(direction, Vector3f.UNIT_Y);
     }
 
     /**
@@ -1054,6 +1336,8 @@ public class PlayerController implements ActionListener, AnalogListener {
      * 主更新循环
      */
     public void update(float tpf) {
+        frameCount++; // 递增帧计数器
+
         if (bloodDripOverlay == null) {
             app.enqueue(() -> {
                 if (bloodDripOverlay == null) {
@@ -1074,10 +1358,14 @@ public class PlayerController implements ActionListener, AnalogListener {
             inventoryUI.update(tpf);
         }
 
-        // 每帧强制同步光标可见性
+        // 每帧强制同步光标可见性。窗口失去/重新获得焦点时(alt-tab等)，
+        // 底层GLFW会把光标状态重置为可见，单次setCursorVisible(false)调用
+        // （只在setupInput()里执行过一次）无法覆盖后续的重置，导致"光标偶尔
+        // 冒出来"。这里按当前是否有需要可见光标的界面打开，每帧显式同步一次，
+        // 就不会被外部事件悄悄改回默认状态。
         updateCursorVisibility();
 
-        // 摄像机缩放（+/-键持续按住时每帧连续缩放）
+        // 摄像机缩放（+/-键持续按住时每帧连续缩放，与原滚轮的连续手感一致）
         updateCameraZoom(tpf);
 
         if (isDead) {
@@ -1099,14 +1387,15 @@ public class PlayerController implements ActionListener, AnalogListener {
             }
 
             updateScreenShake(tpf);
-            updateCamera();
+            updateCameraPosition();
             return;
         }
 
-        // Buff选择界面弹出期间：锁定移动/武器/恢复等逐帧逻辑
+        // Buff选择界面弹出期间：锁定移动/武器/恢复等逐帧逻辑，只保留相机/振动，
+        // 避免画面完全静止显得卡死，但玩家无法借这段时间移动或攻击。
         if (inputLocked) {
             updateScreenShake(tpf);
-            updateCamera();
+            updateCameraPosition();
             return;
         }
 
@@ -1187,7 +1476,9 @@ public class PlayerController implements ActionListener, AnalogListener {
             // 隐藏 + 恢复模式：无法移动
             isMoving = false;
         } else {
-            // 基于角色朝向计算移动方向（不是摄像机）
+            // 基于角色正面朝向计算移动向量（不再是摄像机视角）：W=正面方向，
+            // A=正面左侧，以此类推。playerFacing只在移动中被鼠标增量细腻更新
+            // （见onAnalog），移动本身不会覆盖朝向，避免瞬间跳变。
             Vector3f forward = getPlayerFacingDirection();
             Vector3f right = getPlayerRightDirection();
             Vector3f movement = new Vector3f();
@@ -1210,10 +1501,38 @@ public class PlayerController implements ActionListener, AnalogListener {
             if (isMoving) {
                 movement.normalizeLocal();
 
-                // 【墨水系统】应用基于地面状态的速度倍率
-                float inkSpeedMultiplier = 1.0f;
+                // 调试输出：显示移动向量和角色朝向
+                if (frameCount % 60 == 0) { // 每秒输出一次
+                    System.out.println("==========================================");
+                    System.out.println("移动调试信息:");
+                    System.out.println("按键: W=" + moveDirection[0] + " S=" + moveDirection[1] + " A=" + moveDirection[2] + " D=" + moveDirection[3]);
+                    System.out.println("移动向量: x=" + String.format("%.2f", movement.x) + " z=" + String.format("%.2f", movement.z));
+                    System.out.println("playerFacing: " + (playerFacing * FastMath.RAD_TO_DEG) + "°");
+                    System.out.println("==========================================");
+                }
 
-                // 基础速度
+                // 【墨水系统】应用基于地面状态的速度倍率
+                // 规则：
+                // - 敌方减速：始终生效
+                // - 友方加速：根据hasSpeedState状态（三选二规则）
+                float inkSpeedMultiplier = 1.0f;
+                // TODO: 墨水系统速度倍数，暂时禁用
+                // if (skeletalPlayerController != null) {
+                //     float rawMultiplier = skeletalPlayerController.getSpeedMultiplier();
+                //
+                //     if (rawMultiplier < 1.0f) {
+                //         // 敌方减速：始终生效
+                //         inkSpeedMultiplier = rawMultiplier;
+                //     } else if (rawMultiplier > 1.0f && hasSpeedState) {
+                //         // 友方加速：根据三选二规则的hasSpeedState状态
+                //         inkSpeedMultiplier = rawMultiplier;
+                //     }
+                //     // else: 保持1.0f（普通地面或无加速状态）
+                // }
+
+                // 基础速度始终是步行速度：己方墨水加速完全由inkSpeedMultiplier（1.6/2.0倍）
+                // 体现，不再叠加FAST_MOVE_SPEED换挡——此前两者同时生效会导致重复叠加
+                // （7 * 1.6 = 11.2，相当于步行速度的3.4倍，远超GridCell里设计的1.6倍）
                 float baseSpeed = WALK_SPEED;
 
                 // 应用疾跑速度倍率
@@ -1221,7 +1540,9 @@ public class PlayerController implements ActionListener, AnalogListener {
 
                 movement.multLocal(baseSpeed * speedMultiplier * inkSpeedMultiplier * sprintMultiplier * tpf);
 
-                // 体素方块碰撞检测（水平方向）
+                // 体素方块碰撞检测（水平方向）：用移动前的碰撞盒对水平位移做修正，
+                // 避免玩家直接穿过stone/dirt/wood1等体素方块。updatePlayerBox()
+                // 此时反映的是移动前的位置，正好符合checkCollision需要的"当前碰撞盒"语义。
                 if (collisionManager != null) {
                     updatePlayerBox();
                     Vector3f horizontalMovement = new Vector3f(movement.x, 0, movement.z);
@@ -1232,9 +1553,13 @@ public class PlayerController implements ActionListener, AnalogListener {
                     playerPosition.addLocal(movement);
                 }
 
-                // 更新最后移动方向
                 Vector3f normalizedMovement = movement.clone().normalizeLocal();
                 lastMovementDirection.set(normalizedMovement);
+
+                // playerFacing不在这里被赋值：移动方向已经由上面的forward/right
+                // （基于playerFacing本身）决定，朝向只通过onAnalog里的鼠标横向
+                // 增量细腻更新，移动本身不会整体覆盖朝向——避免了"按移动键瞬间
+                // 转向镜头当前角度"的跳变。
             }
         }
 
@@ -1329,49 +1654,181 @@ public class PlayerController implements ActionListener, AnalogListener {
             }
         }
 
+        if (useSpriteMode && spriteAnimationSystem != null && spriteRenderer != null) {
+            updateSpriteSystem(tpf);
+        }
+
         // 更新 3D 骨骼模型系统
         updateSkeletalSystem(tpf);
 
         updateScreenShake(tpf);
-        updateCamera();
+        updateCameraPosition();
+
     }
 
     /**
-     * 更新摄像机位置和朝向
+     * 更新手持武器模型位置（Gun1/Gun2共用），使武器跟随玩家，出现在玩家面前
      */
-    private void updateCamera() {
-        if (thirdPersonCamera == null) {
-            return;
-        }
+    private void updateHeldWeaponPosition(Node weaponNode) {
+        // 获取摄像机朝向（玩家面向的方向）
+        Vector3f forward = getCameraFacingDirection();
+        Vector3f right = getCameraRightDirection();
 
-        // 设置跟随目标
-        thirdPersonCamera.setTarget(playerPosition);
+        // 计算武器位置：玩家位置 + 前方偏移 + 右侧偏移 + 高度偏移
+        Vector3f weaponPos = playerPosition.clone();
 
-        // 如果需要归位到角色背后（"一瞬间"完成）
-        if (!isCameraAligned) {
-            // 计算角色背后的目标yaw（角色面朝向 + 180度）
-            float targetYaw = normalizeAngleRad(playerFacing + FastMath.PI);
+        // 使用水平方向的前向向量（减少垂直移动）
+        Vector3f horizontalForward = forward.clone();
+        horizontalForward.y = 0;  // 移除垂直分量
+        horizontalForward.normalizeLocal();
 
-            // 直接设置到目标角度（瞬间完成，不需要插值）
-            thirdPersonCamera.setYaw(targetYaw);
+        // 前方距离（武器在玩家前方0.8个单位，只在水平方向）
+        weaponPos.addLocal(horizontalForward.mult(0.8f));
 
-            // 标记为已对齐，解锁摄像机
-            isCameraAligned = true;
-        }
+        // 右侧偏移（武器在玩家右侧0.3个单位，模拟右手持枪）
+        weaponPos.addLocal(right.mult(0.3f));
 
-        // 更新摄像机位置
-        thirdPersonCamera.update();
+        // 固定高度偏移（武器在玩家视线高度，稍微下方）
+        // 添加微小的垂直跟随（减少到原来的20%）
+        weaponPos.y += 0.6f + (forward.y * 0f);
+
+        weaponNode.setLocalTranslation(weaponPos);
+
+        // 设置武器旋转，使其朝向与玩家相同
+        // 使用水平朝向计算旋转
+        Quaternion rotation = new Quaternion();
+        rotation.lookAt(horizontalForward, Vector3f.UNIT_Y);
+        weaponNode.setLocalRotation(rotation);
     }
 
     /**
-     * 把角度（弧度）归一化到[0, 2π)
+     * 更新2D精灵系统
      */
-    private float normalizeAngleRad(float angleRad) {
-        angleRad = angleRad % FastMath.TWO_PI;
-        if (angleRad < 0) {
-            angleRad += FastMath.TWO_PI;
+    private void updateSpriteSystem(float tpf) {
+        Vector3f cameraDir = camera.getDirection().clone();
+        boolean isTopView = cameraAngleY > TOP_VIEW_ANGLE_THRESHOLD;
+
+        // 定期显示当前相机角度（已禁用，减少日志输出）
+        // debugTimer += tpf;
+        // if (debugTimer >= 2.0f) {
+        //     String status;
+        //     if (isTopView) {
+        //         status = "✓ 俯视模式已激活";
+        //     } else if (cameraAngleY > TOP_VIEW_ANGLE_THRESHOLD - 5f) {
+        //         status = "接近阈值，继续向上移动鼠标";
+        //     } else if (cameraAngleY > 0) {
+        //         status = "相机朝上，需要角度 > " + TOP_VIEW_ANGLE_THRESHOLD + "°";
+        //     } else {
+        //         status = "相机朝下，需要向上移动鼠标";
+        //     }
+        //     LogUtils.info(PlayerController.class, String.format("相机角度: %.1f° (阈值: %.1f°) - %s",
+        //         cameraAngleY, TOP_VIEW_ANGLE_THRESHOLD, status));
+        //     debugTimer = 0f;
+        // }
+
+        // 模式切换（静默处理）
+        if (isTopView != wasTopView) {
+            wasTopView = isTopView;
         }
-        return angleRad;
+
+        String direction;
+        if (isTopView) {
+            direction = "top";
+        } else {
+            // 计算摄像机相对于玩家朝向的角度
+            cameraDir.y = 0;
+            cameraDir.normalizeLocal();
+
+            // 摄像机的世界角度
+            float cameraWorldAngle = FastMath.atan2(cameraDir.x, cameraDir.z);
+
+            // 玩家朝向角度（Q/E控制）
+            float playerWorldAngle = playerFacing;
+
+            // 计算相对角度（摄像机相对于玩家的角度）
+            float relativeAngle = cameraWorldAngle - playerWorldAngle;
+
+            // 标准化到0-360度
+            float relativeDegrees = relativeAngle * FastMath.RAD_TO_DEG;
+            while (relativeDegrees < 0) relativeDegrees += 360;
+            while (relativeDegrees >= 360) relativeDegrees -= 360;
+
+            // 根据相对角度决定精灵显示方向
+            // 0° = 摄像机在玩家正前方（背面） → back
+            // 180° = 摄像机在玩家正后方（正面） → front
+            // 90° = 摄像机在玩家右侧（左侧面） → left
+            // 270° = 摄像机在玩家左侧（右侧面） → right
+            if (relativeDegrees >= 315 || relativeDegrees < 45) {
+                direction = "back";  // 玩家背对摄像机
+            } else if (relativeDegrees >= 45 && relativeDegrees < 135) {
+                direction = "left";  // 玩家左侧面向摄像机
+            } else if (relativeDegrees >= 135 && relativeDegrees < 225) {
+                direction = "front"; // 玩家面对摄像机
+            } else {
+                direction = "right"; // 玩家右侧面向摄像机
+            }
+        }
+
+        // 保存当前精灵方向（用于火球发射等功能）
+        currentSpriteDirection = direction;
+
+        String action;
+        if (isTopView) {
+            action = isMoving ? "run" : "idle";
+        } else {
+            if (!isOnGround && velocity.y > 0) {
+                action = "jump";
+            } else if (isMoving) {
+                action = "run";
+            } else {
+                action = "idle";
+            }
+        }
+
+        String animationName = direction + "_" + action;
+
+        // 移除了重复的动画日志，在实际播放时已经有日志了
+
+        if (!spriteAnimationSystem.hasAnimation(animationName)) {
+            LogUtils.warning(PlayerController.class, "动画不存在: " + animationName);
+            if (isTopView && action.equals("jump")) {
+                animationName = "top_idle";
+                LogUtils.debug(PlayerController.class, "使用备用动画: " + animationName);
+            }
+        }
+
+        if (spriteAnimationSystem.hasAnimation(animationName)) {
+            if (!animationName.equals(spriteAnimationSystem.getCurrentAnimationName())) {
+                spriteAnimationSystem.playAnimation(animationName);
+                LogUtils.debug(PlayerController.class, "播放动画: " + animationName);
+            }
+        } else {
+            LogUtils.warning(PlayerController.class, "最终动画也不存在: " + animationName);
+        }
+
+        AnimationState spriteState = AnimationState.IDLE;
+        if (isMoving) spriteState = AnimationState.WALKING;
+        if (isJumping) spriteState = AnimationState.JUMPING;
+
+        spriteAnimationSystem.update(tpf, spriteState);
+
+        AnimationFrame currentFrame = spriteAnimationSystem.getCurrentFrame();
+        if (currentFrame != null) {
+            spriteRenderer.setCurrentFrame(currentFrame);
+
+            Vector3f spritePos = playerPosition.clone();
+            spritePos.y += SPRITE_HEIGHT_OFFSET;
+
+            // 在俯视模式下，精灵应该平放并面向摄像机
+            if (isTopView) {
+                spriteRenderer.setTopViewMode(true, camera);
+            } else {
+                spriteRenderer.setTopViewMode(false, null);
+            }
+
+            Vector3f spriteFacing = Vector3f.UNIT_Z;
+            spriteRenderer.update(tpf, spritePos, spriteFacing);
+        }
     }
 
     /**
@@ -1450,6 +1907,55 @@ public class PlayerController implements ActionListener, AnalogListener {
 
     }
 
+    /**
+     * 初始化2D精灵系统（不自动启用）
+     */
+    private void initializeSpriteSystem() {
+        spriteScaleManager = SpriteScaleManager.getInstance();
+
+        spriteNode = new Node("PlayerSprite");
+        spriteNode.setCullHint(Node.CullHint.Always);  // 默认隐藏
+        app.getRootNode().attachChild(spriteNode);
+
+        spriteManager = new PlayerSpriteManager(app);
+        spriteManager.loadStandardPlayerAnimations();
+
+        spriteAnimationSystem = new SpriteAnimationSystem();
+        spriteRenderer = new DirectionalSpriteRenderer(app, spriteNode);
+
+        setupSpriteAnimations();
+
+        // 不再自动启用精灵模式，由 enableSpriteMode() 方法控制
+    }
+
+    /**
+     * 设置精灵动画
+     */
+    private void setupSpriteAnimations() {
+        int totalAnimations = 0;
+        for (String animName : spriteManager.getLoadedAnimationNames()) {
+            List<AnimationFrame> frames = spriteManager.getAnimationSequence(animName);
+            if (frames != null && !frames.isEmpty()) {
+                spriteAnimationSystem.addAnimationFromFrames(animName, frames, true);
+
+                totalAnimations++;
+            }
+        }
+
+        // 检查top动画是否存在
+        if (spriteAnimationSystem.hasAnimation("top_idle")) {
+        } else {
+        }
+
+        if (spriteAnimationSystem.hasAnimation("top_run")) {
+        } else {
+        }
+
+        if (spriteAnimationSystem.hasAnimation("front_idle")) {
+            spriteAnimationSystem.playAnimation("front_idle");
+        }
+    }
+
     public Vector3f getPlayerPosition() {
         return playerPosition.clone();
     }
@@ -1514,12 +2020,11 @@ public class PlayerController implements ActionListener, AnalogListener {
     }
 
     public float getCameraDistance() {
-        return thirdPersonCamera != null ? thirdPersonCamera.getDistance() : 8.0f;
+        return cameraDistance;
     }
 
     public boolean isResettingCamera() {
-        // 新系统不需要重置状态追踪
-        return false;
+        return isResettingCamera;
     }
 
     public PlayerHealth getPlayerHealth() {
@@ -1601,6 +2106,14 @@ public class PlayerController implements ActionListener, AnalogListener {
      */
     public void setSpeedMultiplier(float multiplier) {
         this.speedMultiplier = Math.max(0.1f, multiplier); // 最小0.1倍，防止设置为0或负数
+    }
+
+    /**
+     * 获取当前精灵显示方向
+     * @return "back", "front", "left", "right" 或 "top"
+     */
+    public String getCurrentSpriteDirection() {
+        return currentSpriteDirection;
     }
 
     /**

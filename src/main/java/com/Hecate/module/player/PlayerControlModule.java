@@ -195,9 +195,13 @@ public class PlayerControlModule extends AbstractGameModule implements ActionLis
             app.getInputManager().addMapping(mappingName, new KeyTrigger(KeyInput.KEY_1 + i));
         }
 
+        // 射弹模式切换（V键）
+        app.getInputManager().addMapping("SwitchProjectileMode", new KeyTrigger(KeyInput.KEY_V));
+
         // 注册监听器
         app.getInputManager().addListener(this,
                 "BreakBlock", "PlaceBlock", "SlabVerticalModeL", "SlabVerticalModeR",
+                "SwitchProjectileMode",
                 "SelectSlot0", "SelectSlot1", "SelectSlot2", "SelectSlot3",
                 "SelectSlot4", "SelectSlot5", "SelectSlot6", "SelectSlot7", "SelectSlot8");
     }
@@ -248,6 +252,7 @@ public class PlayerControlModule extends AbstractGameModule implements ActionLis
         app.getInputManager().deleteMapping("PlaceBlock");
         app.getInputManager().deleteMapping("SlabVerticalModeL");
         app.getInputManager().deleteMapping("SlabVerticalModeR");
+        app.getInputManager().deleteMapping("SwitchProjectileMode");
         app.getInputManager().deleteMapping("SelectStone");
         app.getInputManager().deleteMapping("SelectDirt");
         app.getInputManager().deleteMapping("SelectGrass");
@@ -293,6 +298,20 @@ public class PlayerControlModule extends AbstractGameModule implements ActionLis
             }
         } else if (name.equals("SlabVerticalModeL") || name.equals("SlabVerticalModeR")) {
             isSlabVerticalMode = isPressed;
+        } else if (name.equals("SwitchProjectileMode") && isPressed) {
+            // V键切换射弹模式（光明 ↔ 黑暗）
+            if (playerController != null) {
+                com.Hecate.weapon.Weapon currentWeapon = playerController.getCurrentWeapon();
+                if (currentWeapon != null) {
+                    boolean switched = currentWeapon.switchProjectileMode();
+                    if (switched) {
+                        LogUtils.info(getClass(), "射弹模式切换为: " + currentWeapon.getProjectileMode().getDisplayName());
+                    } else {
+                        float cooldown = currentWeapon.getModeSwitchCooldown();
+                        LogUtils.info(getClass(), "模式切换冷却中，剩余: " + String.format("%.1f", cooldown) + "秒");
+                    }
+                }
+            }
         } else if (name.startsWith("SelectSlot") && isPressed) {
             // 数字键1-9直跳背包前9格。装备/卸下武器已经收编进PlayerEquipment.selectSlot
             // 内部（见syncWeaponEquipState），不再需要这里手动调用

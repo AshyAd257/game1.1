@@ -1,5 +1,6 @@
 package com.Hecate.weapon;
 
+import com.Hecate.element.ElementType;
 import com.Hecate.ink.SparseGridManager;
 import com.Hecate.monster.MonsterManager;
 import com.jme3.math.Vector3f;
@@ -26,6 +27,12 @@ public class SniperRifle extends Weapon {
     private SparseGridManager gridManager;
     private MonsterManager monsterManager;
     private Node worldNode;
+
+    // ========== 新系统：元素类型（取代 factionId） ==========
+    private ElementType playerElement = ElementType.GRASS; // 玩家的元素类型
+
+    // ========== 旧系统兼容字段 ==========
+    @Deprecated
     private int playerFactionId = com.Hecate.ink.FactionRegistry.DARK_DEFAULT;  // 玩家阵营ID
 
     // 每次开火产生的子弹交给外部监听器处理（PlayerController里的子弹更新循环）
@@ -48,8 +55,38 @@ public class SniperRifle extends Weapon {
         this.worldNode = worldNode;
     }
 
+    /**
+     * 设置玩家元素类型（新接口）
+     */
+    public void setPlayerElement(ElementType element) {
+        this.playerElement = element;
+        // 同步到旧字段（兼容性）
+        updateLegacyFactionId();
+    }
+
+    /**
+     * 设置玩家阵营ID（旧接口，保留兼容）
+     * @deprecated 使用 setPlayerElement(ElementType) 代替
+     */
+    @Deprecated
     public void setPlayerFactionId(int factionId) {
         this.playerFactionId = factionId;
+        // 简单映射到新系统
+        if (factionId == com.Hecate.ink.FactionRegistry.LIGHT_DEFAULT) {
+            this.playerElement = ElementType.FIRE;
+        } else {
+            this.playerElement = ElementType.WATER;
+        }
+    }
+
+    /**
+     * 同步元素类型到旧的 factionId（兼容性）
+     */
+    private void updateLegacyFactionId() {
+        // 简化映射：根据当前射弹模式决定 factionId
+        this.playerFactionId = (projectileMode == ProjectileMode.LIGHT)
+            ? com.Hecate.ink.FactionRegistry.LIGHT_DEFAULT
+            : com.Hecate.ink.FactionRegistry.DARK_DEFAULT;
     }
 
     @Deprecated
@@ -88,6 +125,9 @@ public class SniperRifle extends Weapon {
     private void fireBullet(Vector3f origin, Vector3f direction, float chargeRatio) {
         float damage = MIN_DAMAGE + (MAX_DAMAGE - MIN_DAMAGE) * chargeRatio;
 
+        // 更新旧字段（兼容性）
+        updateLegacyFactionId();
+
         ProjectileProfile.HitEffect scaledHitEffect = ProjectileProfile.HitEffect.piercing(
                 damage,
                 projectileProfile.getHitEffect().inkRadius,
@@ -109,6 +149,10 @@ public class SniperRifle extends Weapon {
                 .build();
 
         Projectile projectile = new Projectile(shotProfile, origin, direction, 1.0f, playerFactionId);
+
+        // ========== 新增：设置元素和射弹模式 ==========
+        projectile.setElement(playerElement);
+        projectile.setProjectileMode(projectileMode);
 
         if (spawnListener != null) {
             spawnListener.onProjectileSpawned(projectile);

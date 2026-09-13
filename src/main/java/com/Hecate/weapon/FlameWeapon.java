@@ -179,35 +179,8 @@ public class FlameWeapon extends Weapon {
             return calculateVelocity3D(handPos, targetPos);
         }
 
-        String spriteDirection = playerController.getCurrentSpriteDirection();
-
-        if ("back".equals(spriteDirection)) {
-            // 背对镜头：朝准星目标发射
-            return calculateVelocity3D(handPos, targetPos);
-        } else {
-            // 其他情况：朝玩家正面方向发射
-            float targetDistance = handPos.distance(targetPos);
-
-            Vector3f cameraDir = camera.getDirection().clone();
-            cameraDir.y = 0;
-            cameraDir.normalizeLocal();
-
-            Vector3f shootDirection;
-            if ("front".equals(spriteDirection)) {
-                shootDirection = cameraDir.negate();
-            } else if ("left".equals(spriteDirection)) {
-                shootDirection = new Vector3f(cameraDir.z, 0, -cameraDir.x);
-            } else if ("right".equals(spriteDirection)) {
-                shootDirection = new Vector3f(-cameraDir.z, 0, cameraDir.x);
-            } else {
-                shootDirection = cameraDir.clone();
-            }
-
-            Vector3f virtualTarget = handPos.add(shootDirection.mult(targetDistance));
-            virtualTarget.y = targetPos.y;
-
-            return calculateVelocity3D(handPos, virtualTarget);
-        }
+        // 3D模型系统：直接朝准星目标发射
+        return calculateVelocity3D(handPos, targetPos);
     }
 
     /**

@@ -3,6 +3,7 @@ package com.Hecate.player;
 import com.jme3.anim.AnimClip;
 import com.jme3.anim.AnimComposer;
 import com.jme3.anim.AnimTrack;
+import com.jme3.anim.tween.action.Action;
 import com.jme3.anim.Armature;
 import com.jme3.anim.Joint;
 import com.jme3.anim.SkinningControl;
@@ -53,6 +54,12 @@ public class SkeletalPlayerController {
     private float yaw = 0f;               // 角色朝向（弧度）
     private boolean isWalking = false;
     private boolean isJumping = false;
+    private boolean jumpFrozen = false;   // 跳跃动作是否已被钉在最后一帧（悬空/下落阶段不再循环播放）
+
+    // 提前于片段末尾这么多秒定住动作：AnimLayer在time>=length时会把time重置为0
+    // （见playAnimation()的说明——clip没有真正的"播一次就停"模式），必须让冻结时刻
+    // 的time严格小于length，才不会被引擎自己的循环逻辑抢先归零。
+    private static final float JUMP_FREEZE_EPSILON = 0.05f;
 
     // 资源路径
     private static final String MODEL_PATH = "mesh/armlegmesh.glb";
@@ -325,8 +332,8 @@ public class SkeletalPlayerController {
         if (spatial instanceof Geometry) {
             Geometry geom = (Geometry) spatial;
 
-            // 修复UV坐标（OpenGL的V轴与Blender相反）
-            fixUVCoordinates(geom);
+            // 修复UV坐标，并将每个UV岛从图集边界向内收缩半个纹素。
+            fixUVCoordinates(geom, texture);
 
             // 低模方块拼接的模型，法线在拼接处不连续（部分三角形的存储法线和实际
             // 几何朝向对不上），用受光照影响的材质（Lighting.j3md）会在特定视角下
@@ -353,11 +360,12 @@ public class SkeletalPlayerController {
     }
 
     /**
-     * 修复UV坐标（翻转V轴）
-     * Blender使用的UV坐标系与OpenGL/jME不同，需要翻转V轴
+     * 保留已经验证正确的V轴翻转，并把每个独立UV岛收缩半个纹素，避免Nearest采样踩到相邻岛。
      */
-    private void fixUVCoordinates(Geometry geom) {
-        if (geom.getMesh() == null) return;
+    private void fixUVCoordinates(Geometry geom, Texture texture) {
+        if (geom.getMesh() == null || texture.getImage() == null) {
+            return;
+        }
 
         VertexBuffer uvBuffer = geom.getMesh().getBuffer(VertexBuffer.Type.TexCoord);
         if (uvBuffer == null) {
@@ -367,22 +375,120 @@ public class SkeletalPlayerController {
 
         FloatBuffer uvData = (FloatBuffer) uvBuffer.getData();
         uvData.rewind();
-
-        // 创建新的UV数据缓冲区
-        FloatBuffer newUvData = BufferUtils.createFloatBuffer(uvData.capacity());
-
-        // 翻转V坐标（1.0 - v）
-        while (uvData.hasRemaining()) {
-            float u = uvData.get();
-            float v = uvData.get();
-            newUvData.put(u);
-            newUvData.put(1.0f - v);  // 翻转V轴
+        float[] uv = new float[uvData.remaining()];
+        uvData.get(uv);
+        for (int i = 1; i < uv.length; i += 2) {
+            uv[i] = 1f - uv[i];
         }
 
-        newUvData.flip();
-        uvBuffer.updateData(newUvData);
+        insetUvIslands(geom, uv, texture.getImage().getWidth(), texture.getImage().getHeight());
+        uvBuffer.updateData(BufferUtils.createFloatBuffer(uv));
+        System.out.println("[SkeletalPlayer] UV coordinates flipped and inset for: " + geom.getName());
+    }
 
-        System.out.println("[SkeletalPlayer] UV coordinates flipped for: " + geom.getName());
+    /**
+     * 按网格拓扑（共享顶点索引）把三角形分组成独立UV岛，再把每个岛的UV边界向内收缩
+     * 半个纹素（0.5/贴图分辨率）。
+     *
+     * 为什么需要这一步：glTF导出量化、CPU侧的V轴翻转都会在UV数值上引入极小的浮点
+     * 误差。UV岛边界如果正好落在贴图图集里两个部位的分界线上，配合Nearest过滤，
+     * 采样点只要越界0.5个像素以内就会直接读到隔壁部位的颜色——表现为局部贴图错位/
+     * 花色错乱，而不是整体贴图跑偏。收缩不改变UV朝向或映射关系，只是让每个岛的
+     * 边界离分界线留半个像素的安全余量，跟贴图分界线本身完全无关，不需要改
+     * Blender里的UV布局。
+     */
+    private void insetUvIslands(Geometry geom, float[] uv, int texWidth, int texHeight) {
+        if (texWidth <= 0 || texHeight <= 0) {
+            return;
+        }
+
+        com.jme3.scene.mesh.IndexBuffer indexBuffer = geom.getMesh().getIndexBuffer();
+        if (indexBuffer == null) {
+            return;
+        }
+
+        int vertexCount = uv.length / 2;
+        int[] parent = new int[vertexCount];
+        for (int i = 0; i < vertexCount; i++) {
+            parent[i] = i;
+        }
+
+        int triangleCount = indexBuffer.size() / 3;
+        for (int t = 0; t < triangleCount; t++) {
+            int a = indexBuffer.get(t * 3);
+            int b = indexBuffer.get(t * 3 + 1);
+            int c = indexBuffer.get(t * 3 + 2);
+            union(parent, a, b);
+            union(parent, a, c);
+        }
+
+        // 按岛收集UV顶点索引
+        java.util.Map<Integer, List<Integer>> islands = new java.util.HashMap<>();
+        for (int i = 0; i < vertexCount; i++) {
+            islands.computeIfAbsent(find(parent, i), k -> new ArrayList<>()).add(i);
+        }
+
+        float insetU = 0.5f / texWidth;
+        float insetV = 0.5f / texHeight;
+
+        for (List<Integer> island : islands.values()) {
+            float minU = Float.MAX_VALUE, maxU = -Float.MAX_VALUE;
+            float minV = Float.MAX_VALUE, maxV = -Float.MAX_VALUE;
+            for (int idx : island) {
+                float u = uv[idx * 2];
+                float v = uv[idx * 2 + 1];
+                minU = Math.min(minU, u);
+                maxU = Math.max(maxU, u);
+                minV = Math.min(minV, v);
+                maxV = Math.max(maxV, v);
+            }
+
+            // 岛本身比收缩量还窄/矮时不收缩，避免反转UV朝向
+            float islandU = maxU - minU;
+            float islandV = maxV - minV;
+            float actualInsetU = (islandU > insetU * 2f) ? insetU : 0f;
+            float actualInsetV = (islandV > insetV * 2f) ? insetV : 0f;
+            if (actualInsetU == 0f && actualInsetV == 0f) {
+                continue;
+            }
+
+            for (int idx : island) {
+                float u = uv[idx * 2];
+                float v = uv[idx * 2 + 1];
+                uv[idx * 2] = lerpTowardCenter(u, minU, maxU, actualInsetU);
+                uv[idx * 2 + 1] = lerpTowardCenter(v, minV, maxV, actualInsetV);
+            }
+        }
+    }
+
+    /** 把边界上的顶点(u==min或u==max)向岛中心收缩inset；岛内部顶点保持不变。 */
+    private float lerpTowardCenter(float value, float min, float max, float inset) {
+        if (inset <= 0f || max - min <= 0f) {
+            return value;
+        }
+        if (value <= min + 1e-6f) {
+            return min + inset;
+        }
+        if (value >= max - 1e-6f) {
+            return max - inset;
+        }
+        return value;
+    }
+
+    private int find(int[] parent, int i) {
+        while (parent[i] != i) {
+            parent[i] = parent[parent[i]];
+            i = parent[i];
+        }
+        return i;
+    }
+
+    private void union(int[] parent, int a, int b) {
+        int rootA = find(parent, a);
+        int rootB = find(parent, b);
+        if (rootA != rootB) {
+            parent[rootA] = rootB;
+        }
     }
 
     /**
@@ -403,9 +509,47 @@ public class SkeletalPlayerController {
         if (animName.equals(currentAnimation)) {
             return;
         }
-        animComposer.setCurrentAction(animName);
+        Action action = animComposer.setCurrentAction(animName);
+        // AnimComposer.action()按名字缓存Action对象——如果这是上次跳跃时被
+        // updateJumpFreeze()冻结（speed=0）过的同一个跳跃clip，缓存的Action实例
+        // 会带着speed=0复用过来，导致再次起跳时动作看起来"没有播放"。这里每次
+        // 切换动画都强制恢复正常播放速度，冻结状态只应在updateJumpFreeze()里
+        // 主动触发，不应该跨越两次不同的跳跃残留。
+        action.setSpeed(1.0);
         currentAnimation = animName;
+        jumpFrozen = false;
         System.out.println("[SkeletalPlayer] Playing animation: " + animName + " (loop=" + loop + ")");
+    }
+
+    /**
+     * 跳跃动作播放到接近末尾时冻结在最后一帧，而不是像AnimComposer默认行为那样
+     * 从头循环播放。跳跃全程（起跳上升+下落）isJumping都是true、目标动画一直是
+     * ANIM_IDLE_JUMP不变，playAnimation()因为"同名不重复触发"的判断只在起跳瞬间
+     * 播放一次，之后只能靠这里逐帧检查当前播放进度，在接近片段末尾时把该Action
+     * 的播放速度置0——因为AnimComposer的clip在到达末尾时会被AnimLayer自动归零
+     * 重播（没有真正的"播一次就停"语义），必须靠外部的speed=0主动打断这个循环，
+     * 才能让角色停在跳跃姿势的最后一瞬间，直到落地后playAnimation()切到其他
+     * 动画、并在下次起跳时把speed恢复为1。
+     */
+    private void updateJumpFreeze() {
+        if (!isJumping || jumpFrozen || animComposer == null) {
+            return;
+        }
+        String jumpAnimName = cleanAnimName(ANIM_IDLE_JUMP);
+        if (!jumpAnimName.equals(currentAnimation)) {
+            return;
+        }
+        Action action = animComposer.getCurrentAction();
+        if (action == null) {
+            return;
+        }
+        double length = action.getLength();
+        double time = animComposer.getTime();
+        if (length > JUMP_FREEZE_EPSILON && time >= length - JUMP_FREEZE_EPSILON) {
+            animComposer.setTime(length - JUMP_FREEZE_EPSILON);
+            action.setSpeed(0.0);
+            jumpFrozen = true;
+        }
     }
 
     /**
@@ -433,6 +577,7 @@ public class SkeletalPlayerController {
 
         // 根据状态切换动画
         updateAnimation();
+        updateJumpFreeze();
         frameCount++;
     }
 

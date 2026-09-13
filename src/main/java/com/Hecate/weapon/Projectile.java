@@ -1,5 +1,6 @@
 package com.Hecate.weapon;
 
+import com.Hecate.element.ElementType;
 import com.jme3.math.Vector3f;
 import com.Hecate.event.EventBus;
 import com.Hecate.event.PaintEvent;
@@ -46,6 +47,10 @@ public class Projectile {
     // 发射信息（用于命中效果）
     private final float chargeMult;     // 蓄力倍率（影响伤害/射程）
     private final int teamId;           // 发射者队伍
+
+    // ========== 新增：元素和射弹模式 ==========
+    private ElementType element = ElementType.GRASS;          // 元素类型（默认草元素）
+    private ProjectileMode projectileMode = ProjectileMode.DARK; // 射弹模式（默认黑暗）
 
     // 事件监听器
     private final List<ProjectileEventListener> listeners;
@@ -293,6 +298,23 @@ public class Projectile {
     public boolean isAlive() { return alive; }
     public float getChargeMult() { return chargeMult; }
     public int getTeamId() { return teamId; }
+
+    // ========== 新增：元素和射弹模式的 Getter/Setter ==========
+    public ElementType getElement() {
+        return element;
+    }
+
+    public void setElement(ElementType element) {
+        this.element = element;
+    }
+
+    public ProjectileMode getProjectileMode() {
+        return projectileMode;
+    }
+
+    public void setProjectileMode(ProjectileMode mode) {
+        this.projectileMode = mode;
+    }
     public int getRemainingPierces() { return remainingPierces; }
 
     /**

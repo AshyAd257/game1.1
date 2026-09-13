@@ -240,6 +240,68 @@ public class SparseGridManager {
         }
     }
 
+    // ========== 新系统接口（支持元素和射弹模式） ==========
+
+    /**
+     * 射弹命中地块（新接口）
+     * @param gridX 网格X坐标
+     * @param gridZ 网格Z坐标
+     * @param mode 射弹模式（光明/黑暗）
+     * @param element 元素类型
+     * @return 是否触发了状态变化
+     */
+    public boolean onProjectileHit(int gridX, int gridZ, com.Hecate.weapon.ProjectileMode mode, com.Hecate.element.ElementType element) {
+        int regionX = gridToRegion(gridX);
+        int regionZ = gridToRegion(gridZ);
+        GridRegion region = getOrCreateRegion(regionX, regionZ);
+
+        int localX = gridToLocal(gridX);
+        int localZ = gridToLocal(gridZ);
+
+        GridCell cell = region.getCell(localX, localZ);
+        if (cell == null) {
+            return false; // 不应该发生（GridRegion初始化时已创建所有cell）
+        }
+
+        boolean stateChanged = cell.onProjectileHit(mode, element, currentTime);
+
+        if (stateChanged && !dirtyRegions.contains(region)) {
+            dirtyRegions.offer(region);
+        }
+
+        return stateChanged;
+    }
+
+    /**
+     * 射弹命中地块（圆形区域，新接口）
+     * @param worldPos 世界坐标
+     * @param radius 半径（世界单位）
+     * @param mode 射弹模式（光明/黑暗）
+     * @param element 元素类型
+     * @return 改变状态的地块数量
+     */
+    public int onProjectileHitCircle(Vector3f worldPos, float radius, com.Hecate.weapon.ProjectileMode mode, com.Hecate.element.ElementType element) {
+        Vector2f centerGrid = worldToGrid(worldPos);
+        int centerX = (int)centerGrid.x;
+        int centerZ = (int)centerGrid.y;
+
+        int gridRadius = (int)Math.ceil(radius / GRID_SIZE);
+        int changedCount = 0;
+
+        for (int dx = -gridRadius; dx <= gridRadius; dx++) {
+            for (int dz = -gridRadius; dz <= gridRadius; dz++) {
+                float dist = (float)Math.sqrt(dx * dx + dz * dz) * GRID_SIZE;
+                if (dist <= radius) {
+                    if (onProjectileHit(centerX + dx, centerZ + dz, mode, element)) {
+                        changedCount++;
+                    }
+                }
+            }
+        }
+
+        return changedCount;
+    }
+
     /**
      * 点燃（单个格子）
      */

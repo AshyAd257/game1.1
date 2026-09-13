@@ -89,16 +89,22 @@ public class ProjectileManager {
 
             ap.visual.setLocalTranslation(newPos);
 
-            // 沿途涂墨：不走Projectile内部的PaintEvent/EventBus（那条链没有任何订阅者），
-            // 直接复用FlameParticle落地涂墨时用的同一个SparseGridManager.inkCircle方法，
-            // 按profile配置的间隔在这里自行计时。
+            // 沿途涂墨：优先使用新系统（元素+模式），回退到旧系统（teamId）
             if (projectile.getProfile().isPaintAlongPath() && gridManager != null) {
                 ap.pathPaintTimer += tpf;
                 float interval = projectile.getProfile().getPathPaintInterval();
                 if (interval > 0f && ap.pathPaintTimer >= interval) {
                     ap.pathPaintTimer = 0f;
                     float radius = projectile.getProfile().getHitEffect().inkRadius;
-                    gridManager.inkCircle(newPos, radius, projectile.getTeamId());
+
+                    // 新系统：使用元素和射弹模式
+                    if (projectile.getElement() != null && projectile.getProjectileMode() != null) {
+                        gridManager.onProjectileHitCircle(newPos, radius,
+                            projectile.getProjectileMode(), projectile.getElement());
+                    } else {
+                        // 旧系统回退：使用teamId
+                        gridManager.inkCircle(newPos, radius, projectile.getTeamId());
+                    }
                 }
             }
 
@@ -125,7 +131,15 @@ public class ProjectileManager {
                     ap.visual.setLocalTranslation(groundHit);
                     if (projectile.getProfile().getExpireEffect().dropToGround && gridManager != null) {
                         float radius = projectile.getProfile().getHitEffect().inkRadius;
-                        gridManager.inkCircle(groundHit, radius, projectile.getTeamId());
+
+                        // 新系统：使用元素和射弹模式
+                        if (projectile.getElement() != null && projectile.getProjectileMode() != null) {
+                            gridManager.onProjectileHitCircle(groundHit, radius,
+                                projectile.getProjectileMode(), projectile.getElement());
+                        } else {
+                            // 旧系统回退：使用teamId
+                            gridManager.inkCircle(groundHit, radius, projectile.getTeamId());
+                        }
                     }
                     detach(ap);
                     it.remove();

@@ -17,8 +17,14 @@ import com.jme3.math.Quaternion;
 import com.jme3.scene.Node;
 
 /**
- * 基于 Puppet 动画系统的玩家控制器
- * 使用骨骼动画替代精灵序列帧
+ * 【纯2D puppet角色渲染】独立的、完整的2D木偶玩家控制器。
+ * 不含任何3D模型，角色的全部可见部分（头/脖子/躯干等）都是puppet(.puppet配置)驱动的
+ * 2D贴图部件，通过 PuppetRenderer/AnimationPlayer 播放骨骼动画。
+ *
+ * 由 {@link com.Hecate.module.player.PlayerControlModule} 创建并驱动，与
+ * {@link PlayerController} 内部的 {@link SkeletalPlayerController}（3D四肢+2D部件混合渲染）
+ * 是两套完全独立、同时运行的角色显示层——目前谁的视觉效果生效，取决于两者的
+ * 渲染顺序/位置是否重叠。不要假设两者只有一个在跑，改动前先确认当前到底想用哪一套。
  */
 public class PuppetPlayerController {
 
@@ -61,12 +67,14 @@ public class PuppetPlayerController {
     private boolean isNormalMode = false;  // false=圆盘模式（默认），true=普通模式（按住Ctrl）
 
     // 动画文件路径（使用classpath资源）
-    private static final String PUPPET_PATH = "puppets/successv5.puppet";
+    private static final String PUPPET_PATH = "puppets/defaultChara1/defaultChara1.puppet";
     private static final String WALK_ANIM_PATH = "puppets/walknew.anim";
     private static final String JUMP_ANIM_PATH = "puppets/jump.anim";
 
     // Puppet 渲染偏移（防止穿模）
-    private static final float PUPPET_Y_OFFSET = 0.8f;  // 向上偏移，防止沉入地面
+    // 与 puppetNode 缩放成比例（原基准：缩放0.3f对应偏移0.8f，比例系数≈2.667），
+    // 缩放放大后偏移量需要同比放大，否则部件会相对地面整体下沉
+    private static final float PUPPET_Y_OFFSET = 3.73f;  // 向上偏移，防止沉入地面
     private static final float PUPPET_SCREEN_OFFSET = -0.8f; // 屏幕空间偏移（相对于相机左侧）
 
     public PuppetPlayerController(SimpleApplication app, Vector3f startPosition) {
@@ -96,8 +104,8 @@ public class PuppetPlayerController {
             puppetNode = new Node("PuppetPlayer");
             puppetNode.setLocalTranslation(position);
 
-            // 缩小puppet到合适的大小（原始大小太大了）
-            puppetNode.setLocalScale(0.3f);  // 缩小到30%
+            // puppet相对3D模型放大
+            puppetNode.setLocalScale(1.4f);
 
             puppetNode.attachChild(puppetRenderer.getPuppetNode());
             rootNode.attachChild(puppetNode);

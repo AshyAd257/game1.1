@@ -285,7 +285,7 @@ public class AnimationPlayer {
                 puppetRenderer.update(0);
             }
         } catch (Exception e) {
-            System.err.println("[AnimationPlayer] 动画应用失败: " + e.getMessage());
+
             e.printStackTrace();
         }
     }
@@ -420,7 +420,7 @@ public class AnimationPlayer {
                 puppetRenderer.update(0);
             }
         } catch (Exception e) {
-            System.err.println("[AnimationPlayer] 分层动画应用失败: " + e.getMessage());
+
             e.printStackTrace();
         }
     }

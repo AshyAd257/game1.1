@@ -75,6 +75,18 @@ public class Main extends SimpleApplication {
      * @param args 命令行参数
      */
     public static void main(String[] args) {
+        // ==================== 初始化日志系统（防止重复输出） ====================
+        com.Hecate.util.LogInitializer.initialize(java.util.logging.Level.WARNING, true);
+
+        // 静默JME3的常见警告（例如GLTF动画插值警告）
+        com.Hecate.util.LogInitializer.silenceCommonJME3Warnings();
+
+        // 可选：完全静默特定日志
+        com.Hecate.util.LogInitializer.setLogLevel("com.jme3.input.InputManager", java.util.logging.Level.SEVERE);
+        com.Hecate.util.LogInitializer.setLogLevel("com.jme3.anim.SkinningControl", java.util.logging.Level.SEVERE);
+
+        System.out.println("[Main] 日志系统已配置，重复消息将被过滤");
+
         Main app = new Main();
 
         // 创建应用程序设置

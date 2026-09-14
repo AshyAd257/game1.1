@@ -30,8 +30,15 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * 基于3D骨骼模型的玩家控制器
- * 加载从Blender导出的glTF/glb模型和动画
+ * 【3D四肢 + 2D puppet部件混合渲染】加载 mesh/armlegmesh.glb（3D四肢骨骼模型+动画），
+ * 并通过 {@link PuppetBoneAttachmentManager} 把2D puppet部件（头/脖子/躯干等）
+ * 挂载到该模型的骨骼（Joint）上，让2D部件跟随3D骨骼动画一起移动/旋转。
+ *
+ * 由 {@link PlayerController} 持有并驱动（见 initializeSkeletalSystem/updateSkeletalSystem），
+ * 而 {@link PlayerController} 又是被 {@link com.Hecate.module.player.PlayerControlModule} 创建的。
+ * 同一个 PlayerControlModule 里还并行跑着另一套完全独立的 {@link PuppetPlayerController}
+ * （纯2D、无3D模型），两套渲染当前同时存在，不要假设删掉某一套是安全的——
+ * 删除前必须先确认游戏里实际显示、生效的是哪一套。
  */
 public class SkeletalPlayerController {
 
@@ -49,6 +56,9 @@ public class SkeletalPlayerController {
     private AnimComposer animComposer;    // 动画播放器（新API）
     private SkinningControl skinningControl; // 骨骼蒙皮控制器（新API）
 
+    // Puppet 骨骼绑定系统（2D部件挂载到3D骨骼上）
+    private PuppetBoneAttachmentManager puppetAttachmentManager;
+
     // 位置和状态
     private Vector3f position;
     private float yaw = 0f;               // 角色朝向（弧度）
@@ -62,7 +72,7 @@ public class SkeletalPlayerController {
     private static final float JUMP_FREEZE_EPSILON = 0.05f;
 
     // 资源路径
-    private static final String MODEL_PATH = "mesh/armlegmesh.glb";
+    private static final String MODEL_PATH = "mesh/armlegnew.glb";
     private static final String TEXTURE_PATH = "textures/armlegs/armlegs.png"; // 修复：使用小写路径（与jME AssetManager一致）
 
     // 动画路径
@@ -90,6 +100,7 @@ public class SkeletalPlayerController {
         this.position = startPosition.clone();
 
         initializeCharacterModel();
+        initializePuppetAttachments();
     }
 
     /**
@@ -105,7 +116,6 @@ public class SkeletalPlayerController {
             // 加载基础模型（mesh + skeleton）
             characterModel = assetManager.loadModel(MODEL_PATH);
 
-            System.out.println("[SkeletalPlayer] Model loaded: " + MODEL_PATH);
 
             // 应用贴图
             applyTexture(characterModel, TEXTURE_PATH);
@@ -117,17 +127,16 @@ public class SkeletalPlayerController {
             skinningControl = findControlRecursive(characterModel, SkinningControl.class);
 
             if (animComposer != null) {
-                System.out.println("[SkeletalPlayer] AnimComposer found. Existing clips: "
-                        + animComposer.getAnimClipsNames());
+
+
             } else {
-                System.out.println("[SkeletalPlayer] No AnimComposer in base model (animations will not play)");
+
             }
 
             if (skinningControl != null) {
-                System.out.println("[SkeletalPlayer] SkinningControl found, joint count: "
-                        + skinningControl.getArmature().getJointCount());
+
             } else {
-                System.out.println("[SkeletalPlayer] No SkinningControl in base model");
+
             }
 
             // 附加模型到角色节点
@@ -145,10 +154,48 @@ public class SkeletalPlayerController {
                 playAnimation(cleanAnimName(ANIM_BREATHE), true);
             }
 
-            System.out.println("[SkeletalPlayer] Character model initialized at " + position);
 
         } catch (Exception e) {
-            System.err.println("[SkeletalPlayer] Failed to initialize character model: " + e.getMessage());
+
+        }
+    }
+
+    /**
+     * 初始化 Puppet 骨骼绑定
+     * 将 puppet 部件（面部、身体、脖子）绑定到 3D 模型的骨骼上
+     */
+    private void initializePuppetAttachments() {
+        try {
+            if (characterModel == null) {
+
+                return;
+            }
+
+            // 创建绑定管理器
+            puppetAttachmentManager = new PuppetBoneAttachmentManager(
+                app, characterNode, characterModel, MODEL_SCALE
+            );
+
+            // 定义 puppet 部件到 3D 骨骼的映射
+            // 骨骼名称需要与 mesh/armlegmesh.glb 中的实际骨骼名称完全匹配（区分大小写）。
+            // 已用 com.Hecate.tools.ListModelBones 实测确认：模型骨骼全部为小写
+            // （body/neck/head/hat/leftupperarm/...），不是常见的驼峰命名，不要按惯例猜测。
+            java.util.Map<String, String> boneMapping = new java.util.HashMap<>();
+
+            boneMapping.put("Head", "head");     // puppet 的 Head 部件 -> 模型的 head 骨骼
+            boneMapping.put("Neck", "neck");     // puppet 的 Neck 部件 -> 模型的 neck 骨骼
+            boneMapping.put("Body", "body");     // puppet 的 Body 部件 -> 模型的 body 骨骼
+
+            // 加载并绑定 puppet（缩放到合适大小）
+            float puppetScale = 2.0f;  // puppet 部件的缩放比例，可以调整
+            puppetAttachmentManager.loadAndAttachPuppet(
+                "puppets/defaultChara1/defaultChara1.puppet",
+                boneMapping,
+                puppetScale
+            );
+
+        } catch (Exception e) {
+
             e.printStackTrace();
         }
     }
@@ -195,13 +242,13 @@ public class SkeletalPlayerController {
             ANIM_HOLD_GUN_JUMP
         };
 
-        System.out.println("[SkeletalPlayer] Preloading " + animPaths.length + " animation files...");
+
 
         for (String animPath : animPaths) {
             loadAnimationFile(animPath);
         }
 
-        System.out.println("[SkeletalPlayer] Animation preload complete. Loaded: " + loadedAnimations);
+
     }
 
     /**
@@ -218,28 +265,27 @@ public class SkeletalPlayerController {
      */
     private void loadAnimationFile(String animPath) {
         try {
-            System.out.println("[SkeletalPlayer] Loading animation: " + animPath);
+
 
             Spatial animModel = assetManager.loadModel(animPath);
             AnimComposer sourceComposer = findControlRecursive(animModel, AnimComposer.class);
 
             if (sourceComposer == null) {
-                System.err.println("[SkeletalPlayer] No AnimComposer in: " + animPath + " (skipping)");
+
                 return;
             }
 
             Set<String> clipNames = sourceComposer.getAnimClipsNames();
             if (clipNames.isEmpty()) {
-                System.err.println("[SkeletalPlayer] No animation clips in: " + animPath + " (file may be empty/corrupt, skipping)");
+
                 return;
             }
 
             String sourceClipName = clipNames.iterator().next();
             AnimClip sourceClip = sourceComposer.getAnimClip(sourceClipName);
-            System.out.println("[SkeletalPlayer] Found clip: '" + sourceClipName + "' in " + animPath);
 
             if (animComposer == null || skinningControl == null) {
-                System.err.println("[SkeletalPlayer] Character AnimComposer/SkinningControl not initialized (skipping)");
+
                 return;
             }
 
@@ -275,8 +321,7 @@ public class SkeletalPlayerController {
             }
 
             if (retargetedTracks.isEmpty()) {
-                System.err.println("[SkeletalPlayer] No matching joints between " + animPath
-                        + " and character armature (skipping)");
+
                 return;
             }
 
@@ -287,12 +332,9 @@ public class SkeletalPlayerController {
             animComposer.addAnimClip(retargetedClip);
             loadedAnimations.add(cleanName);
 
-            System.out.println("[SkeletalPlayer] Animation loaded and registered: " + cleanName
-                    + " (matched joints=" + matchedCount + ", skipped=" + skippedCount + ")");
 
         } catch (Exception e) {
-            System.err.println("[SkeletalPlayer] Failed to load animation from " + animPath + ": " + e.getMessage());
-            e.printStackTrace();
+
         }
     }
 
@@ -301,7 +343,7 @@ public class SkeletalPlayerController {
      */
     private void applyTexture(Spatial model, String texturePath) {
         try {
-            System.out.println("[SkeletalPlayer] Loading texture from: " + texturePath);
+
             Texture texture = assetManager.loadTexture(texturePath);
 
             // 像素艺术风格的纹理设置
@@ -311,16 +353,14 @@ public class SkeletalPlayerController {
             // 在UV接缝处出现错误色块/透明块。这是单张贴图集，不需要平铺，改用EdgeClamp。
             texture.setWrap(Texture.WrapMode.EdgeClamp);
 
-            System.out.println("[SkeletalPlayer] Texture loaded successfully");
-            System.out.println("[SkeletalPlayer] Texture size: " + texture.getImage().getWidth() + "x" + texture.getImage().getHeight());
 
             // 递归遍历所有几何体
             applyTextureRecursive(model, texture);
 
-            System.out.println("[SkeletalPlayer] Texture application completed");
+
 
         } catch (Exception e) {
-            System.err.println("[SkeletalPlayer] Failed to load/apply texture: " + e.getMessage());
+
             e.printStackTrace();
         }
     }
@@ -349,7 +389,7 @@ public class SkeletalPlayerController {
             mat.setFloat("AlphaDiscardThreshold", 0.1f);
             geom.setMaterial(mat);
             geom.setQueueBucket(com.jme3.renderer.queue.RenderQueue.Bucket.Transparent);
-            System.out.println("[SkeletalPlayer] Unshaded material applied to: " + geom.getName());
+
 
         } else if (spatial instanceof Node) {
             Node node = (Node) spatial;
@@ -369,7 +409,7 @@ public class SkeletalPlayerController {
 
         VertexBuffer uvBuffer = geom.getMesh().getBuffer(VertexBuffer.Type.TexCoord);
         if (uvBuffer == null) {
-            System.out.println("[SkeletalPlayer] No UV buffer found for: " + geom.getName());
+
             return;
         }
 
@@ -383,7 +423,7 @@ public class SkeletalPlayerController {
 
         insetUvIslands(geom, uv, texture.getImage().getWidth(), texture.getImage().getHeight());
         uvBuffer.updateData(BufferUtils.createFloatBuffer(uv));
-        System.out.println("[SkeletalPlayer] UV coordinates flipped and inset for: " + geom.getName());
+
     }
 
     /**
@@ -518,7 +558,7 @@ public class SkeletalPlayerController {
         action.setSpeed(1.0);
         currentAnimation = animName;
         jumpFrozen = false;
-        System.out.println("[SkeletalPlayer] Playing animation: " + animName + " (loop=" + loop + ")");
+
     }
 
     /**
@@ -578,6 +618,12 @@ public class SkeletalPlayerController {
         // 根据状态切换动画
         updateAnimation();
         updateJumpFreeze();
+
+        // 更新 Puppet 骨骼绑定（让 2D 部件跟随 3D 骨骼动画）
+        if (puppetAttachmentManager != null) {
+            puppetAttachmentManager.update(tpf);
+        }
+
         frameCount++;
     }
 
@@ -645,6 +691,15 @@ public class SkeletalPlayerController {
     }
 
     /**
+     * 设置 puppet 部件的可见性（调试用：临时隐藏/显示2D部件）
+     */
+    public void setPuppetVisible(boolean visible) {
+        if (puppetAttachmentManager != null) {
+            puppetAttachmentManager.setVisible(visible);
+        }
+    }
+
+    /**
      * 获取角色节点（用于相机跟随等）
      */
     public Node getCharacterNode() {
@@ -659,9 +714,19 @@ public class SkeletalPlayerController {
     }
 
     /**
+     * 获取 Puppet 骨骼绑定管理器
+     */
+    public PuppetBoneAttachmentManager getPuppetAttachmentManager() {
+        return puppetAttachmentManager;
+    }
+
+    /**
      * 清理资源
      */
     public void cleanup() {
+        if (puppetAttachmentManager != null) {
+            puppetAttachmentManager.cleanup();
+        }
         if (characterNode != null) {
             characterNode.removeFromParent();
         }

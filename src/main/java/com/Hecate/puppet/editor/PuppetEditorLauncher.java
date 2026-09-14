@@ -26,7 +26,7 @@ public class PuppetEditorLauncher {
 
         // 如果用户取消，则退出
         if (editorMode == null) {
-            System.out.println("用户取消启动编辑器");
+
             return;
         }
 

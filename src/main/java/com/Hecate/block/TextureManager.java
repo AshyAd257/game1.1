@@ -17,7 +17,7 @@ public class TextureManager {
 
     public TextureManager(AssetManager assetManager) {
         this.blockTextureManager = new BlockTextureManager(assetManager);
-        System.out.println("⚠️ 使用了已废弃的 TextureManager，请迁移到 BlockTextureManager");
+
     }
 
     /**

@@ -29,7 +29,7 @@ public class TestModule extends AbstractGameModule {
 
     @Override
     public void onLoad() {
-        System.out.println("测试模块: onLoad()被调用");
+
     }
 
     @Override
@@ -47,7 +47,7 @@ public class TestModule extends AbstractGameModule {
         // 每秒打印一次消息
         timer += tpf;
         if (timer >= 1.0f) {
-            System.out.println("测试模块: onUpdate()被调用 - 游戏已运行" + (int)timer + "秒");
+
             timer -= 1.0f;
         }
     }

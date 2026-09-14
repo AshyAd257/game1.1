@@ -1,0 +1,141 @@
+{
+  "name": "TestPuppet",
+  "version": "1.0",
+  "bones": [
+    {
+      "name": "Part_1",
+      "restPosition": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "restRotation": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0,
+        "w": 1.0
+      },
+      "restScale": {
+        "x": 1.0,
+        "y": 1.0,
+        "z": 1.0
+      },
+      "currentPosition": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "currentRotation": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0,
+        "w": 1.0
+      },
+      "currentScale": {
+        "x": 1.0,
+        "y": 1.0,
+        "z": 1.0
+      },
+      "partConfig": {
+        "width": 0.375,
+        "height": 0.40625,
+        "offset": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        },
+        "customRotationX": 0.0,
+        "customRotationZ": 0.0,
+        "pivotPoint": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        },
+        "texturePath": "puppets/defaultChara1/face/deafultface1.png",
+        "directionTextures": {},
+        "currentDirection": "right",
+        "priority": 0,
+        "uvOffsetX": 0.0,
+        "uvOffsetY": 0.0,
+        "uvScaleX": 1.0,
+        "uvScaleY": 1.0,
+        "directionUVs": {
+          "front": [
+            0.0,
+            0.0,
+            1.0,
+            1.0
+          ]
+        },
+        "directionPriorities": {
+          "front": 0
+        },
+        "directionWidths": {
+          "front": 2.0
+        },
+        "directionHeights": {
+          "front": 2.0
+        },
+        "directionOffsets": {
+          "front": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "directionRotations": {
+          "front": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "directionTextureRotations": {},
+        "billboardEnabled": true,
+        "rotationStripEnabled": true,
+        "stripTexturePath": "puppets/defaultChara1/face/deafultface1.png",
+        "stripSteps": 16,
+        "stripFrameWidthPx": 12,
+        "stripFrameHeightPx": 13,
+        "billboardPitchClampUpDeg": 20.0,
+        "billboardPitchClampDownDeg": 20.0,
+        "stripWidth": 0.375,
+        "stripHeight": 0.40625,
+        "stripOffset": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        },
+        "stripRotationX": 0.0,
+        "stripRotationY": 0.0,
+        "stripRotationZ": 0.0,
+        "stripPriority": 0,
+        "stripCalibrationOffsetPx": 12,
+        "modelEnabled": false,
+        "modelRotationX": 0.0,
+        "modelRotationY": 0.0,
+        "modelRotationZ": 0.0,
+        "modelScale": 1.0
+      },
+      "boneType": "CONNECTED",
+      "gravityDirection": "CUSTOM",
+      "customGravityVector": {
+        "x": 0.0,
+        "y": -1.0,
+        "z": 0.0
+      },
+      "freedomValue": 0.5,
+      "mass": 1.0,
+      "damping": 0.95,
+      "stiffness": 50.0,
+      "gravityStrength": 9.8,
+      "maxSwingAngle": 45.0,
+      "maxVelocity": 10.0,
+      "multiDirectionTextureEnabled": true,
+      "cameraFollowFreedomX": 0.0,
+      "cameraFollowFreedomY": 0.0
+    }
+  ],
+  "groups": [],
+  "billboardMode": "UNIFIED"
+}

@@ -60,7 +60,7 @@ public enum BlockFace {
      * 调试方法：打印所有面
      */
     public static void printAllFaces() {
-        System.out.println("🔍 BlockFace 枚举值: " + java.util.Arrays.toString(values()));
+
     }
 
     @Override

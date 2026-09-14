@@ -35,7 +35,7 @@ public class TextureContentAnalyzer {
 
             Image image = texture.getImage();
             if (image == null) {
-                System.err.println("[内容分析] 贴图没有图像数据: " + texturePath);
+
                 return new float[]{0.0f, 0.0f};
             }
 

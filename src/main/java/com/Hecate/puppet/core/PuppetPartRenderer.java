@@ -1527,6 +1527,18 @@ public class PuppetPartRenderer {
     private static final float DEGREES_PER_STEP = 10f;
     private static final int STEPS_PER_REVOLUTION = 360 / (int) DEGREES_PER_STEP; // 36
 
+    /**
+     * 供外部（如3D骨骼绑定场景下的 PuppetBoneAttachment）在自行接管了
+     * partGeometry 世界坐标之后，仍然驱动条带贴图按观察角度切换UV。
+     * 不会修改 partGeometry 的位置/旋转，只更新贴图UV。
+     * @param worldPos 该部件当前的世界坐标（用于计算相机水平夹角）
+     */
+    public void updateRotationStripUV(Vector3f worldPos) {
+        if (bone.isRotationStripEnabled()) {
+            applyRotationStripUV(worldPos);
+        }
+    }
+
     private void applyRotationStripUV(Vector3f worldPos) {
         String stripPath = bone.getStripTexturePath();
         if (stripPath == null || stripPath.isEmpty()) {

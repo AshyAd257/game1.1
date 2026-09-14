@@ -29,7 +29,7 @@ public class CorpseBlockManager {
         CorpseBlock corpse = new CorpseBlock(position, playerName, playerFacing);
         corpseBlocks.put(corpse.getCorpseId(), corpse);
 
-        System.out.println("💀 尸体方块已注册: " + corpse.getCorpseId());
+
         return corpse;
     }
 
@@ -62,7 +62,7 @@ public class CorpseBlockManager {
     public boolean removeCorpse(String corpseId) {
         CorpseBlock removed = corpseBlocks.remove(corpseId);
         if (removed != null) {
-            System.out.println("🗑️ 移除尸体方块: " + corpseId);
+
             return true;
         }
         return false;
@@ -72,8 +72,7 @@ public class CorpseBlockManager {
      * 📊 获取统计信息
      */
     public void printStatistics() {
-        System.out.println("💀 尸体方块统计:");
-        System.out.println("   总数量: " + corpseBlocks.size());
+
 
         int lootedCount = 0;
         for (CorpseBlock corpse : corpseBlocks.values()) {
@@ -82,8 +81,7 @@ public class CorpseBlockManager {
             }
         }
 
-        System.out.println("   已搜刮: " + lootedCount);
-        System.out.println("   未搜刮: " + (corpseBlocks.size() - lootedCount));
+
     }
 
     /**
@@ -111,7 +109,7 @@ public class CorpseBlockManager {
         }
 
         if (!toRemove.isEmpty()) {
-            System.out.println("🧹 清理了 " + toRemove.size() + " 个过期尸体");
+
         }
     }
 }

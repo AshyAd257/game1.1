@@ -15,7 +15,7 @@ public class test_uv {
             for (int i = 0; i < 12; i++) {
                 positions[i] = ((java.nio.FloatBuffer)posBuffer.getData()).get(i);
             }
-            System.out.println("Position buffer:");
+
             for (int i = 0; i < 4; i++) {
                 System.out.println("  Vertex " + i + ": (" + positions[i*3] + ", " + positions[i*3+1] + ", " + positions[i*3+2] + ")");
             }
@@ -29,7 +29,7 @@ public class test_uv {
             for (int i = 0; i < 8; i++) {
                 texCoords[i] = ((java.nio.FloatBuffer)texBuffer.getData()).get(i);
             }
-            System.out.println("\nTexCoord buffer:");
+
             for (int i = 0; i < 4; i++) {
                 System.out.println("  Vertex " + i + ": (U=" + texCoords[i*2] + ", V=" + texCoords[i*2+1] + ")");
             }

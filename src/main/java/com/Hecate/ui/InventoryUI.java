@@ -186,7 +186,7 @@ public class InventoryUI implements ActionListener {
             );
 
             if (fontLoader == null) {
-                System.err.println("无法加载TTF字体");
+
                 return;
             }
 
@@ -352,7 +352,7 @@ public class InventoryUI implements ActionListener {
 
             return geometry;
         } catch (Exception e) {
-            System.err.println("无法加载UI元素: " + texturePath);
+
             e.printStackTrace();
             return null;
         }

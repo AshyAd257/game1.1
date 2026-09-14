@@ -118,7 +118,7 @@ public class AdvancedAnimationController {
         animationTime = 0.0f;
         currentFrame = 0;
 
-        System.out.println("开始眨眼序列 - 第一次眨眼 (3帧/秒)");
+
     }
 
     /**
@@ -137,17 +137,17 @@ public class AdvancedAnimationController {
             switch (blinkState) {
                 case FIRST_BLINK:
                     blinkState = BlinkState.SECOND_BLINK;
-                    System.out.println("第二次眨眼 (6帧/秒)");
+
                     break;
                 case SECOND_BLINK:
                     blinkState = BlinkState.THIRD_BLINK;
-                    System.out.println("第三次眨眼 (6帧/秒)");
+
                     break;
                 case THIRD_BLINK:
                     // 完成所有眨眼，回到正常状态
                     resetBlinkState();
                     scheduleNextBlink();
-                    System.out.println("眨眼序列完成，安排下次眨眼");
+
                     break;
             }
         }
@@ -182,7 +182,7 @@ public class AdvancedAnimationController {
                 random.nextFloat() * (MAX_BLINK_INTERVAL - MIN_BLINK_INTERVAL);
         blinkTimer = 0.0f;
 
-        System.out.println("下次眨眼将在 " + String.format("%.1f", nextBlinkTime) + " 秒后");
+
     }
 
     /**
@@ -204,7 +204,7 @@ public class AdvancedAnimationController {
                 jumpAnimationStarted = true;
                 animationTime = 0.0f;
                 currentFrame = 0;
-                System.out.println("开始跳跃动画");
+
             }
             // 跳跃中保持当前状态
             return;
@@ -214,7 +214,7 @@ public class AdvancedAnimationController {
                 jumpAnimationStarted = false;
                 animationTime = 0.0f;
                 currentFrame = 0;
-                System.out.println("着陆，重置动画");
+
             }
         }
 
@@ -227,7 +227,7 @@ public class AdvancedAnimationController {
                 currentState = newState;
                 animationTime = 0.0f;
                 currentFrame = 0;
-                System.out.println("切换到 " + (newState == AnimationState.RUNNING ? "跑步" : "走路"));
+
             }
         } else {
             if (currentState != AnimationState.IDLE) {

@@ -16,12 +16,22 @@ import com.Hecate.block.BlockRegistry;
 import com.Hecate.block.BlockPlacementOutline;
 import com.Hecate.world.ChunkManager;
 import com.Hecate.player.PlayerController;
+import com.Hecate.player.PuppetPlayerController;
 import com.Hecate.player.inventory.PlayerStateManager;
 import com.Hecate.weapon.WeaponRegistry;
 import com.Hecate.utils.LogUtils;
 
 /**
- * 提供玩家移动和控制功能
+ * 提供玩家移动和控制功能。模块生命周期入口（onInitialize/onUpdate），被
+ * {@link com.Hecate.core.ApplicationContext} 创建。
+ *
+ * onInitialize() 里同时创建了两套独立的角色显示层，onUpdate() 里也都会驱动：
+ * - {@link #playerController}（{@link PlayerController}）：玩家逻辑核心，内部又持有
+ *   {@link SkeletalPlayerController}（3D四肢模型 + 2D puppet部件挂载渲染）。
+ * - {@link #puppetPlayerController}（{@link PuppetPlayerController}）：纯2D puppet
+ *   角色渲染，与前者完全独立、互不知情。
+ * 两者当前都在运行，改动任一套前先确认游戏里实际显示、生效的是哪一套，
+ * 不要假设另一套是可以直接删除的死代码。
  */
 public class PlayerControlModule extends AbstractGameModule implements ActionListener {
     private static final String MODULE_ID = "player-control-module";
@@ -30,6 +40,7 @@ public class PlayerControlModule extends AbstractGameModule implements ActionLis
     private final SimpleApplication app;
     private final BlockRegistry blockRegistry;
     private PlayerController playerController;
+    private PuppetPlayerController puppetPlayerController;  // Puppet 人物控制器
     private PlayerStateManager playerStateManager;
 
     // 方块交互系统
@@ -45,6 +56,10 @@ public class PlayerControlModule extends AbstractGameModule implements ActionLis
 
     public PlayerController getPlayerController() {
         return playerController;
+    }
+
+    public PuppetPlayerController getPuppetPlayerController() {
+        return puppetPlayerController;
     }
 
     public PlayerControlModule(SimpleApplication app, BlockRegistry blockRegistry) {
@@ -75,6 +90,13 @@ public class PlayerControlModule extends AbstractGameModule implements ActionLis
     public void onInitialize() {
         // 初始化玩家控制器
         playerController = new PlayerController(app);
+
+        // 【已停用】纯2D puppet人物控制器（defaultChara1模型）。现在角色渲染
+        // 统一走 PlayerController -> SkeletalPlayerController（3D四肢+puppet部件
+        // 绑定到骨骼），不再需要这套独立渲染，同时存在会导致头/脖子/躯干在3D模型
+        // 之外多出一套飘浮的重复部件。保留代码和字段不删，以便日后需要对比/回退。
+        // Vector3f startPosition = playerController.getPlayerPosition();
+        // puppetPlayerController = new PuppetPlayerController(app, startPosition);
 
         // 初始化玩家状态管理器（物品栏系统）。PlayerStateManager构造函数内部已经
         // 完成背包注入+默认物品填充（见PlayerEquipment.resetToDefault），不需要
@@ -211,6 +233,14 @@ public class PlayerControlModule extends AbstractGameModule implements ActionLis
         // 更新玩家控制器
         if (playerController != null) {
             playerController.update(tpf);
+        }
+
+        // 更新 Puppet 人物控制器，并同步玩家位置（已停用，puppetPlayerController
+        // 恒为null，见onInitialize()里的说明，这个if判断天然跳过不会执行）
+        if (puppetPlayerController != null && playerController != null) {
+            Vector3f playerPos = playerController.getPlayerPosition();
+            puppetPlayerController.setPosition(playerPos);
+            puppetPlayerController.update(tpf);
         }
 
         // 更新方块破坏系统

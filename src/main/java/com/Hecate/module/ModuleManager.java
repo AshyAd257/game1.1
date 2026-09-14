@@ -35,11 +35,11 @@ public class ModuleManager {
 
         // 检查模块是否已加载
         if (loadedModules.containsKey(moduleId)) {
-            System.out.println("模块已加载: " + moduleId);
+
             return;
         }
 
-        System.out.println("加载模块: " + moduleId + " v" + module.getVersion());
+
 
         // 检查冲突
         checkConflicts(module);
@@ -61,11 +61,11 @@ public class ModuleManager {
             // 发布模块加载事件
             eventBus.publish(new ModuleLoadedEvent(module));
 
-            System.out.println("模块加载成功: " + moduleId);
+
         } catch (Exception e) {
-            System.err.println("加载模块失败: " + moduleId);
+
             e.printStackTrace();
-            throw new RuntimeException("模块加载失败: " + moduleId, e);
+
         }
     }
 
@@ -73,7 +73,7 @@ public class ModuleManager {
      * 初始化所有已加载的模块
      */
     public void initializeAll() {
-        System.out.println("开始初始化所有模块...");
+
 
         // 按依赖顺序排序
         List<GameModule> sortedModules = sortModulesByDependencies();
@@ -81,11 +81,11 @@ public class ModuleManager {
         // 初始化模块
         for (GameModule module : sortedModules) {
             try {
-                System.out.println("初始化模块: " + module.getId());
+
                 module.onInitialize();
                 updateOrder.add(module);
             } catch (Exception e) {
-                System.err.println("初始化模块失败: " + module.getId());
+
                 e.printStackTrace();
             }
         }

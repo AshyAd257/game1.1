@@ -1,0 +1,334 @@
+{
+  "name": "DefaultCharacter",
+  "version": "1.0",
+  "bones": [
+    {
+      "name": "Body",
+      "restPosition": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "restRotation": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0,
+        "w": 1.0
+      },
+      "restScale": {
+        "x": 1.0,
+        "y": 1.0,
+        "z": 1.0
+      },
+      "currentPosition": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "currentRotation": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0,
+        "w": 1.0
+      },
+      "currentScale": {
+        "x": 1.0,
+        "y": 1.0,
+        "z": 1.0
+      },
+      "partConfig": {
+        "width": 0.25,
+        "height": 0.625,
+        "offset": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        },
+        "customRotationX": 0.0,
+        "customRotationZ": 0.0,
+        "pivotPoint": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        },
+        "texturePath": "puppets/defaultChara1/body/body1.png",
+        "directionTextures": {},
+        "currentDirection": "front",
+        "priority": 0,
+        "uvOffsetX": 0.0,
+        "uvOffsetY": 0.0,
+        "uvScaleX": 1.0,
+        "uvScaleY": 1.0,
+        "directionUVs": {},
+        "directionPriorities": {},
+        "directionWidths": {},
+        "directionHeights": {},
+        "directionOffsets": {},
+        "directionRotations": {},
+        "directionTextureRotations": {},
+        "billboardEnabled": true,
+        "rotationStripEnabled": true,
+        "stripTexturePath": "puppets/defaultChara1/body/body1.png",
+        "stripSteps": 16,
+        "stripFrameWidthPx": 8,
+        "stripFrameHeightPx": 20,
+        "billboardPitchClampUpDeg": 20.0,
+        "billboardPitchClampDownDeg": 20.0,
+        "stripWidth": 0.25,
+        "stripHeight": 0.625,
+        "stripOffset": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        },
+        "stripRotationX": 0.0,
+        "stripRotationY": 0.0,
+        "stripRotationZ": 0.0,
+        "stripPriority": 0,
+        "stripCalibrationOffsetPx": 14,
+        "modelEnabled": false,
+        "modelRotationX": 0.0,
+        "modelRotationY": 0.0,
+        "modelRotationZ": 0.0,
+        "modelScale": 1.0
+      },
+      "boneType": "ROOT",
+      "gravityDirection": "DOWN",
+      "customGravityVector": {
+        "x": 0.0,
+        "y": -1.0,
+        "z": 0.0
+      },
+      "freedomValue": 0.0,
+      "mass": 1.0,
+      "damping": 0.95,
+      "stiffness": 50.0,
+      "gravityStrength": 9.8,
+      "maxSwingAngle": 45.0,
+      "maxVelocity": 10.0,
+      "multiDirectionTextureEnabled": false,
+      "cameraFollowFreedomX": 0.0,
+      "cameraFollowFreedomY": 0.0
+    },
+    {
+      "name": "Neck",
+      "parentName": "Body",
+      "restPosition": {
+        "x": 0.0,
+        "y": 0.4,
+        "z": 0.0
+      },
+      "restRotation": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0,
+        "w": 1.0
+      },
+      "restScale": {
+        "x": 1.0,
+        "y": 1.0,
+        "z": 1.0
+      },
+      "currentPosition": {
+        "x": 0.0,
+        "y": 0.4,
+        "z": 0.0
+      },
+      "currentRotation": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0,
+        "w": 1.0
+      },
+      "currentScale": {
+        "x": 1.0,
+        "y": 1.0,
+        "z": 1.0
+      },
+      "partConfig": {
+        "width": 0.1,
+        "height": 0.15,
+        "offset": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        },
+        "customRotationX": 0.0,
+        "customRotationZ": 0.0,
+        "pivotPoint": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        },
+        "texturePath": "puppets/defaultChara1/neck/neck1.png",
+        "directionTextures": {},
+        "currentDirection": "front",
+        "priority": 1,
+        "uvOffsetX": 0.0,
+        "uvOffsetY": 0.0,
+        "uvScaleX": 1.0,
+        "uvScaleY": 1.0,
+        "directionUVs": {},
+        "directionPriorities": {},
+        "directionWidths": {},
+        "directionHeights": {},
+        "directionOffsets": {},
+        "directionRotations": {},
+        "directionTextureRotations": {},
+        "billboardEnabled": true,
+        "rotationStripEnabled": false,
+        "stripTexturePath": "",
+        "stripSteps": 16,
+        "stripFrameWidthPx": 32,
+        "stripFrameHeightPx": 32,
+        "billboardPitchClampUpDeg": 20.0,
+        "billboardPitchClampDownDeg": 20.0,
+        "stripWidth": 1.0,
+        "stripHeight": 1.0,
+        "stripOffset": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        },
+        "stripRotationX": 0.0,
+        "stripRotationY": 0.0,
+        "stripRotationZ": 0.0,
+        "stripPriority": 0,
+        "stripCalibrationOffsetPx": 0,
+        "modelEnabled": false,
+        "modelRotationX": 0.0,
+        "modelRotationY": 0.0,
+        "modelRotationZ": 0.0,
+        "modelScale": 1.0
+      },
+      "boneType": "CONNECTED",
+      "gravityDirection": "DOWN",
+      "customGravityVector": {
+        "x": 0.0,
+        "y": -1.0,
+        "z": 0.0
+      },
+      "freedomValue": 0.3,
+      "mass": 0.5,
+      "damping": 0.95,
+      "stiffness": 50.0,
+      "gravityStrength": 9.8,
+      "maxSwingAngle": 30.0,
+      "maxVelocity": 10.0,
+      "multiDirectionTextureEnabled": false,
+      "cameraFollowFreedomX": 0.0,
+      "cameraFollowFreedomY": 0.0
+    },
+    {
+      "name": "Head",
+      "parentName": "Neck",
+      "restPosition": {
+        "x": 0.0,
+        "y": 0.25,
+        "z": 0.0
+      },
+      "restRotation": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0,
+        "w": 1.0
+      },
+      "restScale": {
+        "x": 1.0,
+        "y": 1.0,
+        "z": 1.0
+      },
+      "currentPosition": {
+        "x": 0.0,
+        "y": 0.25,
+        "z": 0.0
+      },
+      "currentRotation": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0,
+        "w": 1.0
+      },
+      "currentScale": {
+        "x": 1.0,
+        "y": 1.0,
+        "z": 1.0
+      },
+      "partConfig": {
+        "width": 0.375,
+        "height": 0.40625,
+        "offset": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        },
+        "customRotationX": 0.0,
+        "customRotationZ": 0.0,
+        "pivotPoint": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        },
+        "texturePath": "puppets/defaultChara1/face/deafultface1.png",
+        "directionTextures": {},
+        "currentDirection": "front",
+        "priority": 2,
+        "uvOffsetX": 0.0,
+        "uvOffsetY": 0.0,
+        "uvScaleX": 1.0,
+        "uvScaleY": 1.0,
+        "directionUVs": {},
+        "directionPriorities": {},
+        "directionWidths": {},
+        "directionHeights": {},
+        "directionOffsets": {},
+        "directionRotations": {},
+        "directionTextureRotations": {},
+        "billboardEnabled": true,
+        "rotationStripEnabled": true,
+        "stripTexturePath": "puppets/defaultChara1/face/deafultface1.png",
+        "stripSteps": 16,
+        "stripFrameWidthPx": 12,
+        "stripFrameHeightPx": 13,
+        "billboardPitchClampUpDeg": 20.0,
+        "billboardPitchClampDownDeg": 20.0,
+        "stripWidth": 0.375,
+        "stripHeight": 0.40625,
+        "stripOffset": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        },
+        "stripRotationX": 0.0,
+        "stripRotationY": 0.0,
+        "stripRotationZ": 0.0,
+        "stripPriority": 2,
+        "stripCalibrationOffsetPx": 12,
+        "modelEnabled": false,
+        "modelRotationX": 0.0,
+        "modelRotationY": 0.0,
+        "modelRotationZ": 0.0,
+        "modelScale": 1.0
+      },
+      "boneType": "CONNECTED",
+      "gravityDirection": "DOWN",
+      "customGravityVector": {
+        "x": 0.0,
+        "y": -1.0,
+        "z": 0.0
+      },
+      "freedomValue": 0.5,
+      "mass": 0.8,
+      "damping": 0.95,
+      "stiffness": 50.0,
+      "gravityStrength": 9.8,
+      "maxSwingAngle": 45.0,
+      "maxVelocity": 10.0,
+      "multiDirectionTextureEnabled": false,
+      "cameraFollowFreedomX": 0.0,
+      "cameraFollowFreedomY": 0.0
+    }
+  ],
+  "groups": [],
+  "billboardMode": "UNIFIED"
+}

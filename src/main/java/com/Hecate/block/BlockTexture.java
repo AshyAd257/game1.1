@@ -27,35 +27,34 @@ public class BlockTexture {
         this.texturePath = texturePath;
         this.isTransparent = isTransparent;
         this.definition = BlockTextureDefinition.singleTexture(texturePath);
-        System.out.println("🎨 创建单一纹理: " + textureId + " -> " + texturePath);
+
     }
 
     /**
-     * 🎨 多面纹理构造器
+     *  多面纹理构造器
      */
     public BlockTexture(String textureId, String topTexture, String bottomTexture, String sideTexture) {
         this(textureId, topTexture, bottomTexture, sideTexture, false);
     }
 
     /**
-     * 🎨 多面纹理构造器（带透明度）
+     *  多面纹理构造器（带透明度）
      */
     public BlockTexture(String textureId, String topTexture, String bottomTexture, String sideTexture, boolean isTransparent) {
         this.textureId = textureId;
         this.texturePath = topTexture; // 主纹理路径
         this.isTransparent = isTransparent;
         this.definition = BlockTextureDefinition.threeTexture(topTexture, sideTexture, bottomTexture);
-        System.out.println("🎨 创建多面纹理: " + textureId + " (顶:" + topTexture + ", 侧:" + sideTexture + ", 底:" + bottomTexture + ")");
+
     }
 
     /**
-     * 🎨 兼容性方法：加载纹理
+     * 兼容性方法：加载纹理
      * @deprecated 纹理现在由 BlockTextureManager 自动管理
      */
     @Deprecated
     public void load(TextureManager textureManager) {
-        System.out.println("⚠️ BlockTexture.load() 已废弃，纹理由 BlockTextureManager 自动管理");
-        System.out.println("🎨 纹理: " + textureId);
+
     }
 
     /**
@@ -64,8 +63,7 @@ public class BlockTexture {
      */
     @Deprecated
     public void applyToMaterial(Material material) {
-        System.out.println("⚠️ applyToMaterial() 已废弃，请使用 BlockTextureManager.createBlockMaterial()");
-        System.out.println("🎨 纹理ID: " + textureId);
+
         // 这里可以添加基本的纹理应用逻辑作为后备
     }
 
@@ -95,7 +93,7 @@ public class BlockTexture {
      */
     @Deprecated
     public TextureManager.BlockTextureConfig getConfig() {
-        System.out.println("⚠️ getConfig() 已废弃，请使用 getDefinition()");
+
 
         // 返回兼容的配置对象
         if (definition.getType() == BlockTextureDefinition.TextureType.SINGLE) {

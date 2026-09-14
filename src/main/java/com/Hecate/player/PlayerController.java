@@ -40,7 +40,13 @@ import java.util.List;
 
 /**
  * 第三人称玩家控制器
- * 功能: 基于摄像机朝向的移动控制 + 血量系统 + 死亡效果 + 2D精灵动画
+ * 功能: 基于摄像机朝向的移动控制 + 血量系统 + 死亡效果 + 2D精灵动画 + 战斗/背包/UI等
+ * 玩家逻辑的核心枢纽（本类不直接渲染角色外观，只做位置/状态/输入/战斗等逻辑）。
+ *
+ * 通过 {@link #skeletalPlayerController} 持有并驱动 {@link SkeletalPlayerController}
+ * （3D四肢模型+2D puppet部件挂载渲染）——见 initializeSkeletalSystem()/updateSkeletalSystem()。
+ * 由 {@link com.Hecate.module.player.PlayerControlModule} 创建；该模块同时还独立创建了
+ * 另一套 {@link PuppetPlayerController}（纯2D渲染），两者是并行的两套角色显示层。
  */
 public class PlayerController implements ActionListener, AnalogListener {
 
@@ -849,7 +855,7 @@ public class PlayerController implements ActionListener, AnalogListener {
             case "ToggleCollisionBox":
                 if (isPressed && collisionBoxRenderer != null) {
                     collisionBoxRenderer.toggleVisibility();
-                    System.out.println("碰撞箱显示: " + (collisionBoxRenderer.isVisible() ? "开启" : "关闭"));
+
                 }
                 break;
             case "EnterArena":
@@ -922,10 +928,7 @@ public class PlayerController implements ActionListener, AnalogListener {
             return;
         }
 
-        // 调试：打印鼠标输入
-        if (name.contains("MouseLook")) {
-            System.out.println("鼠标输入: " + name + ", value=" + value + ", isMoving=" + isMoving + ", isCameraAligned=" + isCameraAligned);
-        }
+
 
         switch (name) {
             case "MouseLook":

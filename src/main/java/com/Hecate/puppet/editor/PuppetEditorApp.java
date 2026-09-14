@@ -3225,16 +3225,19 @@ public class PuppetEditorApp extends SimpleApplication {
 
     /**
      * 尝试将绝对路径转换为 jME3 资源路径
-     * 支持两种路径格式：
+     * 支持三种路径格式：
      * 1. resources目录下的相对路径（如 "Textures/blocks/grass.png"）
-     * 2. 任意位置的绝对路径（去掉盘符/根目录前缀，配合simpleInitApp()里为每个磁盘根注册的
-     *    FileLocator解析，例如"C:/Users/xxx/foo.png" -> "Users/xxx/foo.png"）
+     * 2. 项目外部的绝对路径（返回原始路径，由loadTexture使用BufferedImage加载）
+     * 3. 项目内部但非resources的路径（去掉盘符，配合FileLocator解析）
+     *
+     * 修复说明：当路径包含特殊字符（如括号）时，保留绝对路径让loadTexture()
+     * 使用BufferedImage直接加载，绕过AssetManager的路径解析问题
      */
     private String convertToResourcePath(String absolutePath) {
         // 将路径标准化（统一使用正斜杠）
         String normalized = absolutePath.replace('\\', '/');
 
-        // 尝试找到 resources 目录
+        // 优先检查 resources 目录（标准资源路径）
         int resourcesIndex = normalized.indexOf("/resources/");
         if (resourcesIndex != -1) {
             // 提取 resources 之后的路径
@@ -3242,7 +3245,19 @@ public class PuppetEditorApp extends SimpleApplication {
             return resourcePath;
         }
 
-        // 找不到 resources 目录：去掉盘符/根目录前缀，得到相对于磁盘根的路径
+        // 检查文件是否存在且为绝对路径
+        java.io.File file = new java.io.File(absolutePath);
+        if (file.exists() && file.isAbsolute()) {
+            // 检查路径是否包含特殊字符（括号、空格等）
+            // 这些字符可能导致 AssetManager 的 FileLocator 解析失败
+            if (normalized.contains("(") || normalized.contains(")") ||
+                normalized.contains(" ") || normalized.contains("%")) {
+                // 返回原始绝对路径，让 loadTexture() 使用 BufferedImage 直接加载
+                return absolutePath;
+            }
+        }
+
+        // 找不到 resources 目录且无特殊字符：去掉盘符/根目录前缀
         // 配合simpleInitApp()中为每个盘符（Windows）或"/"（Unix）注册的FileLocator解析
         if (normalized.matches("^[A-Za-z]:/.*")) {
             // Windows路径："C:/Users/xxx/foo.png" -> "Users/xxx/foo.png"
@@ -3252,7 +3267,6 @@ public class PuppetEditorApp extends SimpleApplication {
             return normalized.substring(1);
         } else {
             // 相对路径（没有盘符前缀），转换为绝对路径后再去掉盘符
-            java.io.File file = new java.io.File(absolutePath);
             String absPath = file.getAbsolutePath().replace('\\', '/');
             if (absPath.matches("^[A-Za-z]:/.*")) {
                 return absPath.substring(3);

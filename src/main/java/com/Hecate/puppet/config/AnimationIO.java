@@ -196,7 +196,7 @@ public class AnimationIO {
         for (String animBone : animBones) {
             String puppetBone = mapping.getMappedBoneName(animBone);
             if (puppetBone != null && !puppetBones.contains(puppetBone)) {
-                System.err.println("[AnimationIO] 映射错误：木偶中不存在骨骼 '" + puppetBone + "'");
+
                 return false;
             }
         }

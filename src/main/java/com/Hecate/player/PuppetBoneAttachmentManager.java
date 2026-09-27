@@ -70,12 +70,11 @@ public class PuppetBoneAttachmentManager {
         // 查找 SkinningControl
         SkinningControl skinningControl = findControlRecursive(characterModel, SkinningControl.class);
         if (skinningControl == null) {
-            System.err.println("[PuppetBoneAttachment] 错误：未找到 SkinningControl");
             return;
         }
 
         modelArmature = skinningControl.getArmature();
-        System.out.println("[PuppetBoneAttachment] 找到骨架，骨骼数量: " + modelArmature.getJointCount());
+
 
         // 构建骨骼映射表
         buildJointMap(modelArmature);
@@ -88,7 +87,6 @@ public class PuppetBoneAttachmentManager {
         for (int i = 0; i < armature.getJointCount(); i++) {
             Joint joint = armature.getJoint(i);
             jointMap.put(joint.getName(), joint);
-            System.out.println("[PuppetBoneAttachment] 骨骼 " + i + ": " + joint.getName());
         }
     }
 
@@ -103,7 +101,7 @@ public class PuppetBoneAttachmentManager {
                                    Map<String, String> boneMapping,
                                    float scale) {
         try {
-            System.out.println("[PuppetBoneAttachment] 加载 puppet 配置: " + puppetConfigPath);
+
 
             // 加载 puppet 配置
             PuppetConfig config = PuppetIO.loadFromResource(puppetConfigPath);
@@ -118,18 +116,15 @@ public class PuppetBoneAttachmentManager {
             // 设置 Billboard 模式为 DISABLED（让部件跟随骨骼旋转）
             puppetRenderer.setBillboardMode(PuppetRenderer.BillboardMode.DISABLED);
 
-            System.out.println("[PuppetBoneAttachment] Puppet 加载成功，部件数量: "
-                + puppetSkeleton.getAllBones().size());
+
 
             // 为每个 puppet 部件创建绑定
             for (Bone puppetBone : puppetSkeleton.getAllBones()) {
                 String puppetPartName = puppetBone.getName();
-                System.out.println("[PuppetBoneAttachment] 处理 puppet 部件: " + puppetPartName);
-
                 String targetJointName = boneMapping.get(puppetPartName);
 
                 if (targetJointName == null) {
-                    System.out.println("[PuppetBoneAttachment] 跳过未映射的部件: " + puppetPartName);
+
                     continue;
                 }
 
@@ -178,11 +173,8 @@ public class PuppetBoneAttachmentManager {
 
                 attachments.add(attachment);
 
-                System.out.println("[PuppetBoneAttachment] 绑定成功: " + puppetPartName
-                    + " -> " + targetJointName);
             }
 
-            System.out.println("[PuppetBoneAttachment] 所有部件绑定完成，总数: " + attachments.size());
 
         } catch (Exception e) {
             System.err.println("[PuppetBoneAttachment] 加载 puppet 失败: " + e.getMessage());

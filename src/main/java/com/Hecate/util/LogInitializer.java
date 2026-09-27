@@ -32,11 +32,9 @@ public class LogInitializer {
      */
     public static void initialize(Level minLevel, boolean filterDuplicates) {
         if (initialized) {
-            System.out.println("[LogInitializer] 已经初始化，跳过");
             return;
         }
 
-        System.out.println("[LogInitializer] 初始化日志系统...");
 
         // 1. 配置JME3日志（最常见的重复日志来源）
         setupJME3Logging(minLevel, filterDuplicates);
@@ -48,9 +46,6 @@ public class LogInitializer {
         setupCommonLoggers(minLevel, filterDuplicates);
 
         initialized = true;
-        System.out.println("[LogInitializer] 日志系统初始化完成");
-        System.out.println("  - 最低级别: " + minLevel);
-        System.out.println("  - 过滤重复: " + (filterDuplicates ? "启用" : "禁用"));
     }
 
     /**
@@ -144,7 +139,6 @@ public class LogInitializer {
         silenceMessage("com.jme3.scene.plugins.gltf.GltfLoader",
             ".*only supports linear interpolation.*");
 
-        System.out.println("[LogInitializer] 已静默JME3常见警告");
     }
 
     /**
@@ -154,7 +148,6 @@ public class LogInitializer {
         if (duplicateFilter != null) {
             duplicateFilter.printStatistics();
         } else {
-            System.out.println("[LogInitializer] 日志过滤器未启用，无统计信息");
         }
     }
 
@@ -177,6 +170,5 @@ public class LogInitializer {
     public static void setLogLevel(String loggerName, Level level) {
         Logger logger = Logger.getLogger(loggerName);
         logger.setLevel(level);
-        System.out.println("[LogInitializer] " + loggerName + " 日志级别设置为: " + level);
     }
 }

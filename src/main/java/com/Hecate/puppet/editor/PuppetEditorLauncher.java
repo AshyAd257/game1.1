@@ -21,6 +21,10 @@ public class PuppetEditorLauncher {
     private static UIMode currentMode = UIMode.CLASSIC;
 
     public static void main(String[] args) {
+        if (java.util.Arrays.asList(args).contains("--volume") || java.util.Arrays.asList(args).contains("--pixel")) {
+            launchNewModeEditor();
+            return;
+        }
         // 先显示模式选择界面（传统模式 vs 新模式）
         EditorModeSelectionScreen.EditorMode editorMode = EditorModeSelectionScreen.showModeSelection();
 
@@ -60,11 +64,7 @@ public class PuppetEditorLauncher {
      */
     private static void launchNewModeEditor() {
         try {
-            // 使用反射调用新模式编辑器的main方法
-            Class<?> newEditorClass = Class.forName("com.Hecate.puppet.newmode.NewModePuppetEditorApp");
-            java.lang.reflect.Method mainMethod = newEditorClass.getMethod("main", String[].class);
-            String[] args = new String[0];
-            mainMethod.invoke(null, (Object) args);
+            com.Hecate.puppet.newmode.NewModePuppetEditorApp.main(new String[0]);
         } catch (Exception e) {
             e.printStackTrace();
             JOptionPane.showMessageDialog(

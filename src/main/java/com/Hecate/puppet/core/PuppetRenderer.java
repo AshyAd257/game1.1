@@ -101,6 +101,8 @@ public class PuppetRenderer {
     // 手动旋转角度（弧度）- 用于"圆盘旋转"效果
     private float manualRotationAngle = 0f;
 
+    public com.jme3.asset.AssetManager getAssetManager(){return app.getAssetManager();}
+
     public PuppetRenderer(SimpleApplication app, Skeleton skeleton) {
         this.app = app;
         this.skeleton = skeleton;
@@ -180,6 +182,8 @@ public class PuppetRenderer {
     /**
      * 更新所有部件的变换
      */
+    private final com.Hecate.puppet.volume.VolumeOcclusion volumeOcclusion=new com.Hecate.puppet.volume.VolumeOcclusion();
+    public String getVolumeOcclusionError(){return volumeOcclusion.getError();}
     public void update(float tpf) {
         if (!initialized) {
             return;
@@ -234,6 +238,9 @@ public class PuppetRenderer {
         for (PuppetPartRenderer renderer : allRenderers) {
             renderer.updateTransform();
         }
+        var coverEntries=new java.util.ArrayList<com.Hecate.puppet.volume.VolumeOcclusion.Entry>();
+        for(var part:allRenderers)coverEntries.add(new com.Hecate.puppet.volume.VolumeOcclusion.Entry(part.getBone().getName(),part.getBone().getVolumeDefinition(),part.getStrip3DView()));
+        volumeOcclusion.apply(coverEntries,app.getCamera());
 
         // 更新阴影投射几何体的位置（跟随部件位置，但保持固定朝向）
         updateShadowCasterPositions();

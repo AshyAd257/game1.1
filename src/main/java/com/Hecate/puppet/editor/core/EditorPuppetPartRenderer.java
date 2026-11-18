@@ -16,6 +16,15 @@ import com.jme3.texture.Texture;
 
 public class EditorPuppetPartRenderer {
 
+    private com.Hecate.puppet.volume.Strip3DView strip3DView;
+    public com.Hecate.puppet.volume.Strip3DView getStrip3DView(){return strip3DView;}
+    private boolean strip3DWasApplied;
+    private com.Hecate.puppet.volume.VolumeAppearance volumeAppearance;
+    private boolean volumeWasApplied;
+    private com.Hecate.puppet.volume.VolumeReferenceView volumeReference;
+    private boolean volumeVisible = true;
+
+
     private final SimpleApplication app;
     private final EditorBone bone;
     private final Node parentNode;
@@ -512,6 +521,14 @@ public void loadTexture(String texturePath) {
     }
 
     public void updateTransform(float tpf) {
+        if(bone.getVolumeDefinition()!=null&&bone.getVolumeDefinition().isSkeletonOnly()){
+            if(partGeometry!=null)partGeometry.setCullHint(Spatial.CullHint.Always);
+            if(highlightNode!=null)highlightNode.setCullHint(Spatial.CullHint.Always);
+            if(strip3DView!=null)strip3DView.setVisible(false);
+            if(volumeReference!=null)volumeReference.setVisible(false);
+            return;
+        }
+
         if (!initialized) {
             return;
         }
@@ -519,7 +536,9 @@ public void loadTexture(String texturePath) {
         // 3D模型骨骼：固定朝向，不走billboard/高光/优先级分层这套2D纸片逻辑，
         // 也不受parentRenderer是否就绪影响（不需要统一billboard参数）
         if (bone.isModelEnabled()) {
+            if(strip3DView!=null)strip3DView.setVisible(false);
             updateModelTransform();
+            if (volumeReference != null) volumeReference.setVisible(false);
             return;
         }
 
@@ -547,6 +566,18 @@ public void loadTexture(String texturePath) {
         Quaternion worldRot = new Quaternion();
         Vector3f worldScale = new Vector3f();
         bone.getWorldTransform(worldPos, worldRot, worldScale);
+        if(bone.getVolumeDefinition()!=null&&bone.getVolumeDefinition().isStrip3DEnabled()){
+            if(strip3DView==null){strip3DView=new com.Hecate.puppet.volume.Strip3DView(app.getAssetManager(),parentNode,bone.getName());strip3DView.prepareBakedPixels(bone.getVolumeDefinition());}
+            strip3DView.setPixelPriority(bone.getPriority());
+            if(parentRenderer!=null){Quaternion manual=new Quaternion().fromAngleAxis(parentRenderer.getManualRotationAngle(),Vector3f.UNIT_Y);worldPos=manual.mult(worldPos);worldRot=manual.mult(worldRot);}
+            updateVolumeReference();
+            boolean appearance=parentRenderer==null||parentRenderer.getVolumeViewMode()!=com.Hecate.puppet.volume.VolumeReferenceView.Mode.SOLID;
+            strip3DView.update(bone.getVolumeDefinition(),worldPos,worldRot,worldScale,app.getCamera(),volumeVisible&&appearance,isSelected);
+            partGeometry.setCullHint(Spatial.CullHint.Always);if(highlightNode!=null)highlightNode.setCullHint(Spatial.CullHint.Always);
+            strip3DWasApplied=true;updatePivotMarkerPosition();return;
+        }
+        if(strip3DWasApplied){strip3DView.setVisible(false);partGeometry.setCullHint(volumeVisible?Spatial.CullHint.Inherit:Spatial.CullHint.Always);strip3DWasApplied=false;}
+
 
         // 旋转条状贴图模式：按相机水平角度动态取样UV（只影响UV，宽高/位置/billboard走原有逻辑）
         if (bone.isRotationStripEnabled()) {
@@ -835,6 +866,17 @@ public void loadTexture(String texturePath) {
         updateHighlightTransform(finalPos, finalRot, worldScale, hasCustomRotation);
 
         updatePivotMarkerPosition();
+        if (bone.getVolumeDefinition() != null && partGeometry != null) {
+            if (volumeAppearance == null) volumeAppearance = new com.Hecate.puppet.volume.VolumeAppearance(app.getAssetManager());
+            volumeAppearance.inheritStyle(partMaterial, "Color");
+            volumeAppearance.update(partGeometry, texture, bone.getVolumeDefinition(),
+                parentNode.getWorldRotation().mult(worldRot), bone.isRotationStripEnabled());
+            volumeWasApplied = true;
+        } else if (volumeWasApplied && partGeometry != null) {
+            partGeometry.setMaterial(partMaterial);
+            volumeWasApplied = false;
+        }
+        updateVolumeReference();
     }
 
     
@@ -876,6 +918,9 @@ public void loadTexture(String texturePath) {
 
     
     public void setVisible(boolean visible) {
+        if(strip3DView!=null)strip3DView.setVisible(visible && bone.getVolumeDefinition()!=null && bone.getVolumeDefinition().isStrip3DEnabled());
+        volumeVisible = visible;
+        if(!visible&&volumeReference!=null)volumeReference.setVisible(false);
         if (initialized) {
             if (partGeometry != null) {
                 partGeometry.setCullHint(visible ?
@@ -906,6 +951,8 @@ public void loadTexture(String texturePath) {
 
 
     public void cleanup() {
+        if(strip3DView!=null){strip3DView.cleanup();strip3DView=null;}
+        if (volumeReference != null) { volumeReference.cleanup(); volumeReference = null; }
 
         if (partGeometry != null) {
             partGeometry.removeFromParent();
@@ -997,6 +1044,10 @@ public void loadTexture(String texturePath) {
      *         这类骨骼仍可以通过部件列表面板按名字选中——见PartListPanel）
      */
     public Geometry getGeometry() {
+        if(bone.getVolumeDefinition()!=null&&bone.getVolumeDefinition().isStrip3DEnabled()&&strip3DView!=null&&parentRenderer!=null&&parentRenderer.getVolumeViewMode()!=com.Hecate.puppet.volume.VolumeReferenceView.Mode.SOLID)return strip3DView.getGeometry();
+        if (bone.getVolumeDefinition() != null && volumeReference != null && parentRenderer != null
+            && parentRenderer.getVolumeViewMode() == com.Hecate.puppet.volume.VolumeReferenceView.Mode.SOLID)
+            return volumeReference.getGeometry();
         return partGeometry;
     }
 
@@ -1674,5 +1725,32 @@ public void loadTexture(String texturePath) {
     public void setParentRenderer(EditorPuppetRenderer renderer) {
         this.parentRenderer = renderer;
     }
+
+    private void updateVolumeReference() {
+        com.Hecate.puppet.volume.VolumeDefinition d = bone.getVolumeDefinition();
+        if (d != null && volumeReference == null)
+            volumeReference = new com.Hecate.puppet.volume.VolumeReferenceView(app.getAssetManager(), parentNode, bone.getName());
+        com.Hecate.puppet.volume.VolumeReferenceView.Mode mode = parentRenderer == null
+            ? com.Hecate.puppet.volume.VolumeReferenceView.Mode.APPEARANCE : parentRenderer.getVolumeViewMode();
+        if (volumeReference != null) {
+            Vector3f p = new Vector3f(), scale = new Vector3f(); Quaternion r = new Quaternion();
+            bone.getWorldTransform(p, r, scale);
+            if (parentRenderer != null) {
+                Quaternion manual = new Quaternion().fromAngleAxis(parentRenderer.getManualRotationAngle(), Vector3f.UNIT_Y);
+                p = manual.mult(p); r = manual.mult(r);
+            }
+            volumeReference.setXray(parentRenderer!=null&&parentRenderer.isVolumeXrayEnabled());
+            volumeReference.update(d, p, r, scale, mode, volumeVisible);
+            volumeReference.setSelected(isSelected);
+        }
+        if (partGeometry != null) partGeometry.setCullHint(volumeVisible && (d == null || mode != com.Hecate.puppet.volume.VolumeReferenceView.Mode.SOLID)
+            ? Spatial.CullHint.Inherit : Spatial.CullHint.Always);
+        if (highlightNode != null) highlightNode.setCullHint(volumeVisible && isSelected
+            && (d == null || mode != com.Hecate.puppet.volume.VolumeReferenceView.Mode.SOLID)
+            ? Spatial.CullHint.Inherit : Spatial.CullHint.Always);
+    }
+    public Geometry getReferenceGeometry() { return volumeReference == null ? null : volumeReference.getGeometry(); }
+    public String getVolumeError() { if(strip3DView!=null&&bone.getVolumeDefinition()!=null&&bone.getVolumeDefinition().isStrip3DEnabled())return strip3DView.getError();return bone.getVolumeDefinition() == null || volumeAppearance == null ? null : volumeAppearance.getError(); }
+    public void refreshVolumeAppearance() { if(strip3DView!=null){strip3DView.invalidate();if(bone.getVolumeDefinition()!=null)strip3DView.prepareBakedPixels(bone.getVolumeDefinition());} if (volumeAppearance != null) volumeAppearance.invalidate(); }
 }
 

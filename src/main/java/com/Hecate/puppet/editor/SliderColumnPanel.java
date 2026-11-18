@@ -110,6 +110,11 @@ public class SliderColumnPanel {
         void onRotationStripCalibrated(int calibrationOffsetPx);
     }
     private SliderCallbacks callbacks;
+    private boolean previewBackendOnly;
+    public void configureVolumeMode() {
+        previewBackendOnly=true;rootNode.detachAllChildren();
+        rootNode.attachChild(rotationStripSelectorPanel.getRootNode());rootNode.attachChild(enlargedPreviewPanel.getRootNode());
+    }
 
     // 原构造函数 - 只使用BitmapFont
     public SliderColumnPanel(SimpleApplication app, BitmapFont font, int x, int y, int width, int height) {
@@ -434,6 +439,7 @@ public class SliderColumnPanel {
             }
         }
 
+        if(previewBackendOnly)return false;
         // 检查"Open UV Editor"按钮
         if (openEnlargedPreviewButton != null && openEnlargedPreviewButton.handleMouseClick(mouseX, mouseY)) {
             return true;
@@ -494,6 +500,7 @@ public class SliderColumnPanel {
      * 检查是否点击在标题栏（用于拖动）
      */
     public boolean handleTitleBarClick(int mouseX, int mouseY) {
+        if(previewBackendOnly)return false;
         // 检查X范围
         if (mouseX < x || mouseX > x + width) {
             return false;
@@ -549,6 +556,7 @@ public class SliderColumnPanel {
                 return;
             }
 
+            if(previewBackendOnly)return;
             // 否则处理纹理预览和滑条拖动
             if (texturePreviewPanel != null) {
                 texturePreviewPanel.handleMouseDrag(mouseX, mouseY);
@@ -769,6 +777,7 @@ public class SliderColumnPanel {
      * 注意：调整大小功能已禁用，因为滑条宽度调整存在问题
      */
     public boolean handleResizeBorderClick(int mouseX, int mouseY) {
+        if(previewBackendOnly)return false;
         // 禁用调整大小功能
         return false;
     }
@@ -1022,7 +1031,7 @@ public class SliderColumnPanel {
     /**
      * 打开旋转条状贴图选区面板，从当前选中部件的Bone拉取现有设置
      */
-    private void openRotationStripSelector() {
+    public void openRotationStripSelector() {
         if (rotationStripSelectorPanel == null || currentPartRenderer == null) {
             return;
         }

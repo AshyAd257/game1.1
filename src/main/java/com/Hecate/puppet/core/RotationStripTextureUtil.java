@@ -69,7 +69,15 @@ public class RotationStripTextureUtil {
         }
 
         try {
-            Texture rawTexture = assetManager.loadTexture(texturePath);
+            Texture rawTexture;
+            java.io.File file = new java.io.File(texturePath);
+            if (file.isAbsolute()) {
+                java.awt.image.BufferedImage image = javax.imageio.ImageIO.read(file);
+                if (image == null) throw new java.io.IOException("无法读取条带图片");
+                rawTexture = new Texture2D(new com.jme3.texture.plugins.AWTLoader().load(image, true));
+            } else {
+                rawTexture = assetManager.loadTexture(texturePath);
+            }
             Image sourceImage = rawTexture.getImage();
             if (sourceImage == null) {
                 return null;
@@ -115,6 +123,12 @@ public class RotationStripTextureUtil {
      * 越界坐标不需要在CPU侧夹紧或做留白）。T轴使用EdgeClamp，因为取景框高度方向
      * 不需要环绕，用EdgeClamp避免边缘因为过滤或极端UV值意外取到对面的像素。
      */
+    public static void invalidate(AssetManager assets, String path) {
+        if (path == null) return;
+        cache.keySet().removeIf(key -> key.startsWith(path + "#ring#"));
+        assets.deleteFromCache(new com.jme3.asset.TextureKey(path, true));
+    }
+
     private static void configureRingTexture(Texture2D texture) {
         texture.setMagFilter(Texture.MagFilter.Nearest);
         texture.setMinFilter(Texture.MinFilter.NearestNoMipMaps);

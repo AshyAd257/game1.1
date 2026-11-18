@@ -14,6 +14,8 @@ import java.util.Map;
  */
 public class Bone {
 
+    private com.Hecate.puppet.volume.VolumeDefinition volumeDefinition;
+
     /**
      * 骨骼类型枚举
      */
@@ -632,8 +634,9 @@ public class Bone {
      * 根据取景框像素宽高，按固定比例重算部件世界尺寸，保证显示形状与取景框像素比例始终一致。
      */
     private void syncStripSizeFromFramePixels() {
-        this.stripWidth = stripFrameWidthPx / STRIP_PIXELS_PER_UNIT;
-        this.stripHeight = stripFrameHeightPx / STRIP_PIXELS_PER_UNIT;
+        float density = volumeDefinition == null ? STRIP_PIXELS_PER_UNIT : volumeDefinition.getPixelsPerUnit();
+        this.stripWidth = stripFrameWidthPx / density;
+        this.stripHeight = stripFrameHeightPx / density;
     }
 
     public float getBillboardPitchClampUpDeg() {
@@ -1858,5 +1861,9 @@ public class Bone {
      */
     public boolean isInGroup(String groupId) {
         return this.groupId != null && this.groupId.equals(groupId);
+    }
+    public com.Hecate.puppet.volume.VolumeDefinition getVolumeDefinition() { return volumeDefinition; }
+    public void setVolumeDefinition(com.Hecate.puppet.volume.VolumeDefinition value) {
+        volumeDefinition = value == null ? null : value.copy();
     }
 }

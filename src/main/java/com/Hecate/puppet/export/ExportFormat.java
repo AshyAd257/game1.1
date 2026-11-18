@@ -4,9 +4,9 @@ package com.Hecate.puppet.export;
  * 导出格式枚举
  */
 public enum ExportFormat {
-    PUPPET("Puppet文件 (JSON)", "puppet", "Puppet Files (*.puppet)"),
+    PUPPET("Puppet完整文件（贴图＋行权重）", "puppet", "Puppet Files (*.puppet)"),
     PUPPET_PACKAGE("Puppet打包文件 (含图片)", "ppkg", "Puppet Package Files (*.ppkg)"),
-    JSON("纯JSON格式", "json", "JSON Files (*.json)"),
+    JSON("JSON参数文件（不含图片）", "json", "JSON Files (*.json)"),
     DRAGONBONES("DragonBones格式", "json", "DragonBones Files (*.json)");
 
     private final String displayName;

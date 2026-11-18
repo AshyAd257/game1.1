@@ -288,6 +288,7 @@ public class PartListPanel {
 
         // 计算总内容高度（按实际渲染的行数，而不是骨骼总数，因为组折叠会减少行数）
         totalContentHeight = (contentTopY + scrollOffset - currentY);
+        clipVolumeRows();
 
         // 更新滚动条
         updateScrollbar();
@@ -574,6 +575,7 @@ public class PartListPanel {
      * 处理鼠标滚轮滚动
      */
     public boolean handleMouseScroll(int mouseX, int mouseY, int scrollAmount) {
+        if(rootNode.getLocalCullHint()==com.jme3.scene.Spatial.CullHint.Always)return false;
         // 检查鼠标是否在面板区域内
         int screenHeight = app.getCamera().getHeight();
         float panelBottomGuiY = Math.max(0, (screenHeight - y) - height);
@@ -602,6 +604,7 @@ public class PartListPanel {
      * 检查是否点击在滚动条上
      */
     public boolean handleScrollbarClick(int mouseX, int mouseY) {
+        if(rootNode.getLocalCullHint()==com.jme3.scene.Spatial.CullHint.Always)return false;
         if (scrollbarThumb == null || totalContentHeight <= visibleHeight) return false;
 
         int screenHeight = app.getCamera().getHeight();
@@ -628,6 +631,7 @@ public class PartListPanel {
      * 处理滚动条拖动
      */
     public void handleScrollbarDrag(int mouseX, int mouseY) {
+        if(rootNode.getLocalCullHint()==com.jme3.scene.Spatial.CullHint.Always)return;
         if (!isDraggingScrollbar) return;
 
         int deltaY = mouseY - scrollbarDragStartY;
@@ -645,6 +649,7 @@ public class PartListPanel {
      * 处理滚动条释放
      */
     public void handleScrollbarRelease() {
+        if(rootNode.getLocalCullHint()==com.jme3.scene.Spatial.CullHint.Always)return;
         isDraggingScrollbar = false;
     }
 
@@ -660,6 +665,13 @@ public class PartListPanel {
      */
     public void setSelectedBone(EditorBone bone) {
         this.selectedBone = bone;
+        if(volumeFixedLayout() && bone!=null) {
+            float bottom=app.getCamera().getHeight()-y-height+5,top=app.getCamera().getHeight()-y-titleBarHeight-5;
+            for(PartListItem item:partItems)if(item.bone==bone){float row=item.background.getLocalTranslation().y;
+                if(row<bottom)scrollOffset+=Math.round(bottom-row);else if(row+40>top)scrollOffset-=Math.round(row+40-top);
+                scrollOffset=Math.max(0,Math.min(Math.max(0,totalContentHeight-visibleHeight+40),scrollOffset));break;}
+            refreshPartList();
+        }
         updateHighlight();
     }
 
@@ -680,17 +692,31 @@ public class PartListPanel {
                 bgMat.setColor("Color", new ColorRGBA(0.2f, 0.2f, 0.2f, 0.5f)); // 默认灰色背景
             }
         }
+        clipVolumeRows();
+    }
+
+    private boolean volumeFixedLayout() { return app instanceof PuppetEditorApp && ((PuppetEditorApp)app).isVolumeMode(); }
+    private void clipVolumeRows() {
+        if(!volumeFixedLayout())return;
+        float bottom=app.getCamera().getHeight()-y-height+5,top=app.getCamera().getHeight()-y-titleBarHeight-5;
+        for(PartListItem item:partItems) {
+            float rowBottom=item.background.getLocalTranslation().y;
+            var hint=rowBottom>=bottom && rowBottom+40<=top ? com.jme3.scene.Spatial.CullHint.Inherit : com.jme3.scene.Spatial.CullHint.Always;
+            item.text.setCullHint(hint);item.background.setCullHint(hint);if(item.mirrorBorderNode!=null)item.mirrorBorderNode.setCullHint(hint);
+        }
     }
 
     /**
      * 查找鼠标位置命中的列表项（背景区域），未命中返回null
      */
     private PartListItem findItemAt(int mouseX, int mouseY) {
+        if(volumeFixedLayout() && (mouseY<app.getCamera().getHeight()-y-height || mouseY>app.getCamera().getHeight()-y-titleBarHeight))return null;
         float mouseGuiX = mouseX;
         float mouseGuiY = mouseY;
 
         for (int i = 0; i < partItems.size(); i++) {
             PartListItem item = partItems.get(i);
+            if(item.background.getLocalCullHint()==com.jme3.scene.Spatial.CullHint.Always)continue;
 
             float bgX = item.background.getLocalTranslation().x;
             float bgY = item.background.getLocalTranslation().y;
@@ -754,6 +780,7 @@ public class PartListPanel {
      * 处理鼠标点击（用于不需要拖拽跟踪的调用方，例如右键松开时的点击判定）
      */
     public boolean handleMouseClick(int mouseX, int mouseY) {
+        if(rootNode.getLocalCullHint()==com.jme3.scene.Spatial.CullHint.Always)return false;
         PartListItem item = findItemAt(mouseX, mouseY);
         if (item != null) {
             activateItem(item);
@@ -769,6 +796,7 @@ public class PartListPanel {
      * @return true如果命中了某一行（阻止相机拖动等背景操作）
      */
     public boolean handleMousePress(int mouseX, int mouseY) {
+        if(rootNode.getLocalCullHint()==com.jme3.scene.Spatial.CullHint.Always)return false;
         PartListItem item = findItemAt(mouseX, mouseY);
         pressedItem = item;
         dragStartMouseX = mouseX;
@@ -785,6 +813,7 @@ public class PartListPanel {
      * 判断是否超过拖拽阈值、更新当前悬停目标（用于0.5秒后自动成组）
      */
     public void handleItemDragMotion(int mouseX, int mouseY) {
+        if(rootNode.getLocalCullHint()==com.jme3.scene.Spatial.CullHint.Always)return;
         if (pressedItem == null) {
             return;
         }
@@ -965,6 +994,8 @@ public class PartListPanel {
      * 检查是否点击在标题栏（用于拖动）
      */
     public boolean handleTitleBarClick(int mouseX, int mouseY) {
+        if(volumeFixedLayout())return false;
+        if(rootNode.getLocalCullHint()==com.jme3.scene.Spatial.CullHint.Always)return false;
         // 鼠标坐标是GUI坐标（Y从底部向上），需要转换
         int screenHeight = app.getCamera().getHeight();
 
@@ -998,6 +1029,7 @@ public class PartListPanel {
      * 互不冲突：面板整体拖动时不处理成组逻辑，否则同时更新拖拽悬停检测。
      */
     public void handleMouseDrag(int mouseX, int mouseY) {
+        if(rootNode.getLocalCullHint()==com.jme3.scene.Spatial.CullHint.Always)return;
         if (isDragging) {
             // 鼠标坐标是GUI坐标（Y从底部向上）
             // 但 y 是从屏幕顶部开始的偏移，需要特殊处理
@@ -1027,6 +1059,7 @@ public class PartListPanel {
      * 说明这是一次普通点击，此时才触发选中/折叠——避免拖拽路径中途误触发点击的选中逻辑。
      */
     public void handleMouseRelease() {
+        if(rootNode.getLocalCullHint()==com.jme3.scene.Spatial.CullHint.Always)return;
         if (isDragging) {
             isDragging = false;
         }

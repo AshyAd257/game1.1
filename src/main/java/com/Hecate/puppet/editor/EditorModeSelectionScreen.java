@@ -65,12 +65,12 @@ public class EditorModeSelectionScreen extends JDialog {
 
         center.add(makeButton("传统模式", FG, () -> choose(EditorMode.LEGACY)));
         center.add(Box.createVerticalStrut(14));
-        center.add(makeButton("新模式", FG, () -> choose(EditorMode.NEW)));
+        center.add(makeButton("新模式 · 预生成像素", FG, () -> choose(EditorMode.NEW)));
         center.add(Box.createVerticalStrut(34));
         center.add(makeButton("退出 (ESC)", FG_DIM, this::cancel));
         center.add(Box.createVerticalStrut(24));
 
-        JLabel note = new JLabel("两种模式数据不兼容");
+        JLabel note = new JLabel("预生成剪影；动画只移动部件，不重新拍照");
         note.setFont(MONO_SM);
         note.setForeground(FG_DIM);
         note.setAlignmentX(Component.CENTER_ALIGNMENT);

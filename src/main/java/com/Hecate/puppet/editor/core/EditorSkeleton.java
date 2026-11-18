@@ -162,12 +162,13 @@ public class EditorSkeleton {
      */
     public com.Hecate.puppet.core.Skeleton getBaseSkeleton() {
         com.Hecate.puppet.core.Skeleton skeleton = new com.Hecate.puppet.core.Skeleton(this.name);
-
-        if (rootBone != null) {
-            // 递归转换骨骼树
-            com.Hecate.puppet.core.Bone baseBone = convertBone(rootBone);
-            skeleton.setRootBone(baseBone);
-        }
+        Map<EditorBone,com.Hecate.puppet.core.Bone> converted=new java.util.IdentityHashMap<>();
+        if(rootBone!=null)skeleton.updateRootBoneReference(convertBone(rootBone,converted));
+        // The editor can contain multiple independent trees. Export its entire registry,
+        // not just the designated primary root; preserve each tree's original parentage.
+        for(EditorBone bone:allBones)convertBone(bone,converted);
+        for(EditorBone bone:allBones)skeleton.addBone(converted.get(bone));
+        for(var bone:converted.values())skeleton.addBone(bone);
 
         return skeleton;
     }
@@ -175,8 +176,11 @@ public class EditorSkeleton {
     /**
      * 递归转换 EditorBone 为 Bone
      */
-    private com.Hecate.puppet.core.Bone convertBone(EditorBone editorBone) {
+    private com.Hecate.puppet.core.Bone convertBone(EditorBone editorBone,Map<EditorBone,com.Hecate.puppet.core.Bone> converted) {
+        if(converted.containsKey(editorBone))return converted.get(editorBone);
         com.Hecate.puppet.core.Bone bone = new com.Hecate.puppet.core.Bone(editorBone.getName());
+        converted.put(editorBone,bone);
+        bone.setVolumeDefinition(editorBone.getVolumeDefinition());
 
         // 复制基本变换属性
         bone.setLocalPosition(editorBone.getLocalPosition().clone());
@@ -302,7 +306,7 @@ public class EditorSkeleton {
 
         // 递归转换子骨骼
         for (EditorBone child : editorBone.getChildren()) {
-            com.Hecate.puppet.core.Bone childBone = convertBone(child);
+            com.Hecate.puppet.core.Bone childBone = convertBone(child,converted);
             bone.addChild(childBone);
         }
 

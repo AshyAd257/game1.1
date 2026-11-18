@@ -60,7 +60,8 @@ public class ExportManager {
         com.Hecate.puppet.core.PuppetRenderer renderer = editorRenderer.getBaseRenderer();
 
         // 调用原始导出方法
-        export(format, skeleton, renderer, filePath);
+        try { export(format, skeleton, renderer, filePath); }
+        finally { renderer.cleanup(); }
     }
 
     /**

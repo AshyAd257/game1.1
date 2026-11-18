@@ -268,6 +268,7 @@ public class AnimationLayerPanel {
      * 处理鼠标点击
      */
     public boolean handleMouseClick(int mouseX, int mouseY) {
+        if(rootNode.getLocalCullHint()==com.jme3.scene.Spatial.CullHint.Always)return false;
         if (modeToggleButton.handleMouseClick(mouseX, mouseY)) return true;
         if (addLayerButton.handleMouseClick(mouseX, mouseY)) return true;
 
@@ -286,6 +287,7 @@ public class AnimationLayerPanel {
      * 处理鼠标拖动
      */
     public void handleMouseDrag(int mouseX, int mouseY) {
+        if(rootNode.getLocalCullHint()==com.jme3.scene.Spatial.CullHint.Always)return;
         for (LayerEntry entry : layerEntries) {
             entry.weightSlider.handleMouseDrag(mouseX, mouseY);
         }
@@ -295,6 +297,7 @@ public class AnimationLayerPanel {
      * 处理鼠标释放
      */
     public void handleMouseRelease() {
+        if(rootNode.getLocalCullHint()==com.jme3.scene.Spatial.CullHint.Always)return;
         for (LayerEntry entry : layerEntries) {
             entry.weightSlider.handleMouseRelease();
         }

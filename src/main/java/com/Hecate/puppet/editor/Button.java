@@ -14,6 +14,7 @@ import com.jme3.scene.shape.Quad;
  * 简单的UI按钮组件
  */
 public class Button {
+    public String getText() { return text; }
 
     private final SimpleApplication app;
     private final BitmapFont font;
@@ -287,6 +288,11 @@ public class Button {
         }
 
         // 更新文本位置
+        if (ttfTextNode != null) {
+            float textX=x+(width-ttfLoader.getTextWidth(text))/2;
+            float textY=y+(height-ttfLoader.getLineHeight())/2+10;
+            ttfTextNode.setLocalTranslation(textX,textY,1);
+        }
         if (labelText != null) {
             float textWidth = labelText.getLineWidth();
             float textHeight = labelText.getLineHeight();

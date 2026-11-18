@@ -1,0 +1,108 @@
+// Closed analytic cylinder/frustum/cone/box, in normalized local coordinates.
+// The same snapped screen ray determines color, silhouette and depth for every part.
+#ifdef SURFACE_DEPTH
+uniform mat4 m_ProxyToClip;
+uniform mat4 m_ClipToProxy;
+uniform int m_ProxyShape;
+uniform float m_TopRatio;
+uniform float m_PixelStep;
+uniform bool m_OutlineEnabled;
+uniform bool m_SnapSurfaceContour;
+uniform mat3 m_ArtToScreen;
+
+void sideCandidate(float t,vec3 o,vec3 d,inout float best){
+    float y=o.y+t*d.y;
+    if(t>=0.0 && y>=-1.000001 && y<=1.000001)best=min(best,t);
+}
+bool surfaceHit(vec2 screen,out float depth){
+    vec4 n=m_ClipToProxy*vec4(screen,-1.0,1.0);
+    vec4 f=m_ClipToProxy*vec4(screen,1.0,1.0);
+    if(abs(n.w)<1e-12 || abs(f.w)<1e-12)return false;
+    vec3 o=n.xyz/n.w,d=normalize(f.xyz/f.w-o);
+    // Treat the proxy as a solid volume when the near plane cuts through it.
+    // Using the exit/back surface here incorrectly puts enclosed parts in front.
+    float nearRadius=(m_TopRatio+1.0)*0.5+(m_TopRatio-1.0)*0.5*o.y;
+    bool nearInside=m_ProxyShape==1 ? all(lessThanEqual(abs(o),vec3(1.0)))
+        : abs(o.y)<=1.0 && dot(o.xz,o.xz)<=nearRadius*nearRadius;
+    if(nearInside){depth=0.0;return true;}
+    float best=1e30;
+    if(m_ProxyShape==1){
+        float lo=-1e30,hi=1e30;
+        for(int i=0;i<3;i++){
+            if(abs(d[i])<1e-8){if(abs(o[i])>1.0)return false;}
+            else {float a=(-1.0-o[i])/d[i],b=(1.0-o[i])/d[i];lo=max(lo,min(a,b));hi=min(hi,max(a,b));}
+        }
+        if(hi<max(lo,0.0))return false;
+        best=lo>=0.0?lo:hi;
+    }else{
+        float k=(m_TopRatio-1.0)*0.5,r=(m_TopRatio+1.0)*0.5+k*o.y;
+        float a=dot(d.xz,d.xz)-k*k*d.y*d.y;
+        float b=2.0*(dot(o.xz,d.xz)-r*k*d.y);
+        float c=dot(o.xz,o.xz)-r*r;
+        if(abs(a)<1e-7){if(abs(b)>1e-8)sideCandidate(-c/b,o,d,best);}
+        else {
+            float disc=b*b-4.0*a*c;
+            if(disc>=0.0){
+                // Stable quadratic roots, including distant orthographic cameras.
+                float q=-0.5*(b+(b>=0.0?1.0:-1.0)*sqrt(disc));
+                if(abs(q)>1e-12){sideCandidate(q/a,o,d,best);sideCandidate(c/q,o,d,best);}
+                else sideCandidate(-b/(2.0*a),o,d,best);
+            }
+        }
+        if(abs(d.y)>1e-8)for(int i=0;i<2;i++){
+            float y=i==0?-1.0:1.0,radius=i==0?1.0:m_TopRatio;
+            float t=(y-o.y)/d.y;vec2 p=o.xz+t*d.xz;
+            if(t>=0.0 && dot(p,p)<=radius*radius+1e-7)best=min(best,t);
+        }
+    }
+    if(best>=1e29)return false;
+    vec4 clip=m_ProxyToClip*vec4(o+d*best,1.0);
+    if(clip.w<=0.0)return false;
+    depth=clip.z/clip.w*0.5+0.5;
+    return depth>=0.0 && depth<=1.0;
+}
+
+bool surfaceArt(vec2 screen,out vec4 color,out vec2 st,out float depth){
+    vec3 p=m_ArtScreenToUV*vec3(screen,1.0);
+    st=pixelUV(m_ColorMap,p.xy/p.z);
+    if(any(lessThan(st,vec2(0.0)))||any(greaterThanEqual(st,vec2(1.0))))return false;
+    color=textureLod(m_ColorMap,st,0.0);
+    if(color.a<0.5)return false;
+    if(m_SnapSurfaceContour){
+        // One silhouette decision for the entire source-art texel, not tiny screen-pixel slices.
+        vec3 centre=m_ArtToScreen*vec3(st,1.0);float centreDepth;
+        if(!surfaceHit(centre.xy/centre.z,centreDepth))return false;
+        // Keep real surface depths inside the volume so nested parts keep their correct ordering.
+        // Only the small rounded-out portion beyond the physical edge inherits the texel-centre depth.
+        if(!surfaceHit(screen,depth))depth=centreDepth;
+        return true;
+    }
+    return surfaceHit(screen,depth);
+}
+
+void renderSurface(){
+    vec2 cell=floor((gl_FragCoord.xy-m_CoverViewport.xy)/m_PixelStep);
+    vec2 screen=(cell+vec2(0.5))*m_PixelStep/m_CoverViewport.zw*2.0-1.0;
+    vec4 color;vec2 st;float depth;
+    if(surfaceArt(screen,color,st,depth)){
+        gl_FragDepth=depth;
+        if(m_UseLighting){vec3 n=textureLod(m_NormalMap,st,0.0).rgb*2.0-1.0;n=normalize(m_NormalRotation*n);color.rgb*=0.35+max(dot(n,normalize(m_LightDirection)),0.0)*m_LightStrength;}
+        outColor=vec4(color.rgb,1.0);return;
+    }
+    if(m_OutlineEnabled||m_Selected){
+        vec2 step=2.0*m_PixelStep/m_CoverViewport.zw;
+        float borderDepth=1.0;bool border=false;
+        for(int i=0;i<4;i++){
+            vec2 offset=i==0?vec2(step.x,0.0):i==1?vec2(-step.x,0.0):i==2?vec2(0.0,step.y):vec2(0.0,-step.y);
+            if(surfaceArt(screen+offset,color,st,depth)){border=true;borderDepth=min(borderDepth,depth);}
+        }
+        if(border){
+            // Holes use their own physical surface depth. Outside silhouettes inherit the adjacent cell.
+            if(surfaceHit(screen,depth))borderDepth=depth;
+            gl_FragDepth=borderDepth;
+            outColor=m_OutlineEnabled?vec4(23.0/255.0,18.0/255.0,28.0/255.0,1.0):vec4(0.35,0.8,1.0,1.0);return;
+        }
+    }
+    discard;
+}
+#endif

@@ -20,6 +20,15 @@ import com.jme3.texture.Texture;
  */
 public class PuppetPartRenderer {
 
+    private com.Hecate.puppet.volume.Strip3DView strip3DView;
+    public com.Hecate.puppet.volume.Strip3DView getStrip3DView(){return strip3DView;}
+    public void preparePixelAppearance(){if(strip3DView!=null&&bone.getVolumeDefinition()!=null)strip3DView.prepareBakedPixels(bone.getVolumeDefinition());}
+    private boolean strip3DWasApplied;
+    private boolean volumeVisible=true;
+    private com.Hecate.puppet.volume.VolumeAppearance volumeAppearance;
+    private boolean volumeWasApplied;
+
+
     private final SimpleApplication app;
     private final Bone bone;
     private final Node parentNode;
@@ -540,6 +549,7 @@ public class PuppetPartRenderer {
         // 只是简单地把bone的世界变换（含父骨骼递归合成的结果）套到模型Spatial上，
         // 再叠加模型自身的额外旋转和缩放（用于修正模型朝向/单位不一致）
         if (bone.isModelEnabled()) {
+            if(strip3DView!=null)strip3DView.setVisible(false);
             updateModelTransform();
             return;
         }
@@ -550,6 +560,16 @@ public class PuppetPartRenderer {
         Quaternion worldRot = new Quaternion();
         Vector3f worldScale = new Vector3f();
         bone.getWorldTransform(worldPos, worldRot, worldScale);
+        if(bone.getVolumeDefinition()!=null&&bone.getVolumeDefinition().isStrip3DEnabled()){
+            if(strip3DView==null){strip3DView=new com.Hecate.puppet.volume.Strip3DView(app.getAssetManager(),parentNode,bone.getName());strip3DView.prepareBakedPixels(bone.getVolumeDefinition());}
+            strip3DView.setPixelPriority(bone.getPriority());
+            if(parentRenderer!=null){Quaternion manual=new Quaternion().fromAngleAxis(parentRenderer.getManualRotationAngle(),Vector3f.UNIT_Y);worldPos=manual.mult(worldPos);worldRot=manual.mult(worldRot);}
+            strip3DView.update(bone.getVolumeDefinition(),worldPos,worldRot,worldScale,app.getCamera(),volumeVisible,isSelected);
+            partGeometry.setCullHint(Spatial.CullHint.Always);if(highlightNode!=null)highlightNode.setCullHint(Spatial.CullHint.Always);
+            strip3DWasApplied=true;updatePivotMarkerPosition();return;
+        }
+        if(strip3DWasApplied){strip3DView.setVisible(false);partGeometry.setCullHint(volumeVisible?Spatial.CullHint.Inherit:Spatial.CullHint.Always);strip3DWasApplied=false;}
+
 
         // 旋转条状贴图模式：按相机水平角度动态取样UV（只影响UV，宽高/位置/billboard走原有逻辑）
         if (bone.isRotationStripEnabled()) {
@@ -816,6 +836,16 @@ public class PuppetPartRenderer {
 
         // 鏇存柊涓績鐐规爣璁颁綅�?
         updatePivotMarkerPosition();
+        if (bone.getVolumeDefinition() != null && partGeometry != null) {
+            if (volumeAppearance == null) volumeAppearance = new com.Hecate.puppet.volume.VolumeAppearance(app.getAssetManager());
+            volumeAppearance.inheritStyle(partMaterial, "Diffuse");
+            volumeAppearance.update(partGeometry, texture, bone.getVolumeDefinition(),
+                parentNode.getWorldRotation().mult(worldRot), bone.isRotationStripEnabled());
+            volumeWasApplied = true;
+        } else if (volumeWasApplied && partGeometry != null) {
+            partGeometry.setMaterial(partMaterial);
+            volumeWasApplied = false;
+        }
     }
 
     /**
@@ -921,6 +951,8 @@ public class PuppetPartRenderer {
      * 璁剧疆鍙�?
      */
     public void setVisible(boolean visible) {
+        if(strip3DView!=null)strip3DView.setVisible(visible && bone.getVolumeDefinition()!=null && bone.getVolumeDefinition().isStrip3DEnabled());
+        volumeVisible=visible;
         if (initialized) {
             if (partGeometry != null) {
                 partGeometry.setCullHint(visible ?
@@ -955,6 +987,7 @@ public class PuppetPartRenderer {
      * 娓呯悊璧勬簮
      */
     public void cleanup() {
+        if(strip3DView!=null){strip3DView.cleanup();strip3DView=null;}
         if (partGeometry != null) {
             partGeometry.removeFromParent();
         }
@@ -1040,6 +1073,7 @@ public class PuppetPartRenderer {
      *         这类骨骼仍可以通过部件列表面板按名字选中——见PartListPanel）
      */
     public Geometry getGeometry() {
+        if(bone.getVolumeDefinition()!=null&&bone.getVolumeDefinition().isStrip3DEnabled()&&strip3DView!=null)return strip3DView.getGeometry();
         return partGeometry;
     }
 

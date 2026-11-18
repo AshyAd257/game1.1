@@ -9,6 +9,8 @@ import java.util.List;
  */
 public class BoneConfig {
 
+    private com.Hecate.puppet.volume.VolumeDefinition volumeDefinition;
+
     private String name;
     private String parentName;  // 父骨骼名称（null 表示根骨骼）
 
@@ -250,5 +252,9 @@ public class BoneConfig {
 
     public void setGroupId(String groupId) {
         this.groupId = groupId;
+    }
+    public com.Hecate.puppet.volume.VolumeDefinition getVolumeDefinition() { return volumeDefinition; }
+    public void setVolumeDefinition(com.Hecate.puppet.volume.VolumeDefinition value) {
+        volumeDefinition = value == null ? null : value.copy();
     }
 }

@@ -52,6 +52,12 @@ public class PuppetEditorUI {
     private final int timelineHeight = 120;  // 底部时间轴高度
 
     // 顶栏按钮
+    private VolumeInspectorPanel volumeInspector;
+    private final java.util.List<Button> volumeToolButtons=new java.util.ArrayList<>();
+    private final java.util.List<Button> volumeNavigationButtons=new java.util.ArrayList<>();
+    private int volumeNavigation;
+    private boolean volumeLayout() { return app instanceof PuppetEditorApp && ((PuppetEditorApp)app).isVolumeMode(); }
+    private Button volumeButton;
     private Button backButton;
     private Button exitButton;
     private Button languageButton;  // 语言切换按钮
@@ -123,6 +129,9 @@ public class PuppetEditorUI {
         // 创建方向显示
         createDirectionDisplay();
 
+        if(volumeLayout()) {
+            createVolumeLayout();editorRootNode.setCullHint(com.jme3.scene.Spatial.CullHint.Always);return;
+        }
         // 计算主区域高度（扣除顶栏和底部时间轴）
         int mainAreaHeight = screenHeight - topBarHeight - timelineHeight;
         int mainAreaY = topBarHeight;
@@ -184,8 +193,8 @@ public class PuppetEditorUI {
 
         // 标题文本
         BitmapText titleText = new BitmapText(guiFont);
-        titleText.setText("木偶编辑器 - Puppet Editor");
-        titleText.setSize(guiFont.getCharSet().getRenderedSize() * 2.5f);
+        titleText.setText(volumeLayout()?"Pixel Puppet Editor":"木偶编辑器 - Puppet Editor");
+        titleText.setSize(guiFont.getCharSet().getRenderedSize() * (volumeLayout()?1.4f:2.5f));
         titleText.setColor(ColorRGBA.White);
         titleText.setLocalTranslation(10, screenHeight - 15, 0);
         editorRootNode.attachChild(titleText);
@@ -193,6 +202,21 @@ public class PuppetEditorUI {
         // Back 按钮（放在顶栏里面，上移以适应TTF字体）
         int buttonY = screenHeight - 35;  // 再上移15像素
 
+        if (app instanceof PuppetEditorApp) {
+            volumeButton = ttfLoader != null
+                ? new Button(app, ttfLoader, "体积工作台", screenWidth - 410, buttonY, 130, 40)
+                : new Button(app, guiFont, "Volume", screenWidth - 410, buttonY, 130, 40);
+            volumeButton.setClickListener(() -> {if(volumeLayout())((PuppetEditorApp)app).toggleVolumeDisplay();else ((PuppetEditorApp)app).openVolumeWorkbench();});
+            if(volumeLayout())volumeButton.setText(((PuppetEditorApp)app).isVolumeModelDisplay()?"显示：模型":"显示：图像");
+            editorRootNode.attachChild(volumeButton.getRootNode());
+        }
+
+        volumeToolButtons.clear();
+        if(volumeLayout()){
+            String[] toolLabels={"移动","尺寸","旋转","缩放","隐藏","骨骼：开","网格：开","透视：关"};int[] modes={0,1,3,4,2};
+            for(int i=0;i<toolLabels.length;i++){final int index=i;Button b=ttfLoader!=null?new Button(app,ttfLoader,toolLabels[i],286+i*80,screenHeight-65,76,26):new Button(app,guiFont,toolLabels[i],286+i*80,screenHeight-65,76,26);
+                b.setClickListener(()->{if(index==7)((PuppetEditorApp)app).toggleVolumeXray();else if(index==6)((PuppetEditorApp)app).toggleVolumeGrid();else if(index==5)((PuppetEditorApp)app).toggleVolumeBones();else {((PuppetEditorApp)app).setVolumeTool(modes[index]);if(volumeInspector!=null)volumeInspector.showTool(modes[index]);}});volumeToolButtons.add(b);editorRootNode.attachChild(b.getRootNode());}
+        }
         // 语言切换按钮 (最右边往左数第三个)
         int langX = screenWidth - 270;
         if (ttfLoader != null) {
@@ -267,6 +291,12 @@ public class PuppetEditorUI {
         // 放在方向文本下方
         keyframeTypeText.setLocalTranslation(screenWidth / 2 - 150, screenHeight - 90, 10);
         editorRootNode.attachChild(keyframeTypeText);
+
+        if(volumeLayout()) {
+            currentDirectionText.setSize(17);currentDirectionText.setLocalTranslation(300,screenHeight-22,10);
+            keyframeTypeText.setSize(13);keyframeTypeText.setLocalTranslation(850,screenHeight-48,10);
+            keyframeTypeText.setText("Keyframe: Interpolated (T)");
+        }
 
         // 注册语言变化监听器
         LanguageManager.getInstance().addListener(newLanguage -> {
@@ -478,6 +508,7 @@ public class PuppetEditorUI {
         }
 
         // 更新顶栏按钮
+        if (volumeButton != null) volumeButton.update(tpf);
         if (backButton != null) {
             backButton.update(tpf);
         }
@@ -498,6 +529,12 @@ public class PuppetEditorUI {
      * 更新按钮状态（独立于时间轴）
      */
     public void updateButtons(float tpf) {
+        if(volumeLayout() && volumeInspector!=null) {
+            volumeInspector.update(tpf);volumeNavigationButtons.forEach(b->b.update(tpf));
+            int[] modes={0,1,3,4,2};for(int i=0;i<volumeToolButtons.size();i++){Button b=volumeToolButtons.get(i);b.update(tpf);if(i<5)b.setActive(((PuppetEditorApp)app).getVolumeTool()==modes[i]);else{String text=i==7?(((PuppetEditorApp)app).isVolumeModelDisplay()?(((PuppetEditorApp)app).isVolumeXrayEnabled()?"透视：开":"透视：关"):"模型透视"):i==5?(((PuppetEditorApp)app).isVolumeBonesVisible()?"骨骼：开":"骨骼：关"):(((PuppetEditorApp)app).isVolumeGridVisible()?"网格：开":"网格：关");if(!text.equals(b.getText()))b.setText(text);}}
+            String label=((PuppetEditorApp)app).isVolumeModelDisplay()?"显示：模型":"显示：图像";
+            if(!label.equals(volumeButton.getText()))volumeButton.setText(label);
+        }
         if (!visible) return;
 
         // 更新按钮列
@@ -506,6 +543,7 @@ public class PuppetEditorUI {
         }
 
         // 更新顶栏按钮
+        if (volumeButton != null) volumeButton.update(tpf);
         if (backButton != null) {
             backButton.update(tpf);
         }
@@ -611,6 +649,7 @@ public class PuppetEditorUI {
         createTopBar();
         createDirectionDisplay();
 
+        if(volumeLayout())createVolumeLayout();else {
         // 计算主区域高度（扣除顶栏和底部时间轴）
         int mainAreaHeight = screenHeight - topBarHeight - timelineHeight;
         int mainAreaY = topBarHeight;
@@ -646,6 +685,7 @@ public class PuppetEditorUI {
         timelinePanel = new TimelinePanel(app, guiFont, 0, 0, screenWidth, timelineHeight);
         editorRootNode.attachChild(timelinePanel.getRootNode());
 
+        }
         // 恢复骨架和选中的骨骼
         if (currentSkeleton != null) {
             partListPanel.setSkeleton(currentSkeleton);
@@ -671,9 +711,23 @@ public class PuppetEditorUI {
     public boolean handleMouseClick(int mouseX, int mouseY) {
         if (!visible) return false;
 
+        if(volumeLayout() && sliderColumnPanel.getRotationStripSelectorPanel().isVisible()) {
+            sliderColumnPanel.handleMouseClick(mouseX,mouseY);return true;
+        }
+        if(volumeLayout()) {
+            for(Button b:volumeToolButtons)if(b.handleMouseClick(mouseX,mouseY))return true;
+            if(volumeInspector.handleMouseClick(mouseX,mouseY))return true;
+            for(Button b:volumeNavigationButtons)if(b.handleMouseClick(mouseX,mouseY))return true;
+            if(mouseX<280 && mouseY>=timelineHeight && mouseY<screenHeight-topBarHeight) {
+                if(buttonColumnPanel.handleMouseClick(mouseX,mouseY))return true;
+                switch(volumeNavigation){case 0:if(!partListPanel.handleScrollbarClick(mouseX,mouseY))partListPanel.handleMousePress(mouseX,mouseY);break;case 1:animationLayerPanel.handleMouseClick(mouseX,mouseY);break;case 2:groupControlPanel.handleMouseClick(mouseX,mouseY);break;}
+                return true;
+            }
+        }
         // 调试输出
 
         // 检查语言按钮
+        if (volumeButton != null && volumeButton.handleMouseClick(mouseX, mouseY)) return true;
         if (languageButton != null && languageButton.handleMouseClick(mouseX, mouseY)) {
             return true;
         }
@@ -760,7 +814,7 @@ public class PuppetEditorUI {
      */
     public void updateCurrentDirection(EditorBone.Direction direction) {
         if (currentDirectionText != null) {
-            currentDirectionText.setText("Current View: " + direction.name());
+            currentDirectionText.setText(volumeLayout() && app instanceof PuppetEditorApp editor ? "View: "+editor.getPixelCameraViewLabel() : "Current View: " + direction.name());
         }
     }
 
@@ -770,12 +824,46 @@ public class PuppetEditorUI {
     public void updateKeyframeTypeDisplay(com.Hecate.puppet.animation.Keyframe.KeyframeType type) {
         if (keyframeTypeText != null) {
             if (type == com.Hecate.puppet.animation.Keyframe.KeyframeType.SNAPSHOT) {
-                keyframeTypeText.setText("模式: 快照 (T切换)");
+                keyframeTypeText.setText(volumeLayout()?"Keyframe: Snapshot (T)":"模式: 快照 (T切换)");
                 keyframeTypeText.setColor(new ColorRGBA(0.2f, 0.5f, 1.0f, 1.0f)); // 蓝色表示快照模式
             } else {
-                keyframeTypeText.setText("模式: 插值 (T切换)");
+                keyframeTypeText.setText(volumeLayout()?"Keyframe: Interpolated (T)":"模式: 插值 (T切换)");
                 keyframeTypeText.setColor(ColorRGBA.Yellow); // 黄色表示插值模式
             }
         }
     }
+
+    private void createVolumeLayout() {
+        int bodyHeight=screenHeight-topBarHeight-timelineHeight;
+        int actionHeight=Math.min(320,Math.max(285,bodyHeight/2));
+        int listHeight=bodyHeight-actionHeight-38;
+        buttonColumnPanel=new ButtonColumnPanel(app,guiFont,ttfLoader,0,screenHeight-topBarHeight-actionHeight,280,actionHeight);
+        buttonColumnPanel.configureVolumeMode();editorRootNode.attachChild(buttonColumnPanel.getRootNode());
+        partListPanel=new PartListPanel(app,guiFont,0,screenHeight-timelineHeight-listHeight,280,listHeight);
+        animationLayerPanel=new AnimationLayerPanel(app,guiFont,0,timelineHeight,280,bodyHeight-38);
+        groupControlPanel=new GroupControlPanel(app,guiFont,ttfLoader,0,timelineHeight,280,bodyHeight-38);
+        editorRootNode.attachChild(partListPanel.getRootNode());editorRootNode.attachChild(animationLayerPanel.getRootNode());editorRootNode.attachChild(groupControlPanel.getRootNode());
+        volumeNavigationButtons.clear();String[] labels={"部件层级","动画层","骨骼组"};
+        for(int i=0;i<3;i++){final int index=i;Button b=ttfLoader!=null?new Button(app,ttfLoader,labels[i],8+i*91,timelineHeight+listHeight+4,87,30):new Button(app,guiFont,labels[i],8+i*91,timelineHeight+listHeight+4,87,30);
+            b.setClickListener(()->selectVolumeNavigation(index));volumeNavigationButtons.add(b);editorRootNode.attachChild(b.getRootNode());}
+        selectVolumeNavigation(volumeNavigation);
+        sliderColumnPanel=new SliderColumnPanel(app,guiFont,ttfLoader,screenWidth-330,timelineHeight,330,bodyHeight);
+        sliderColumnPanel.configureVolumeMode();editorRootNode.attachChild(sliderColumnPanel.getRootNode());
+        volumeInspector=new VolumeInspectorPanel((PuppetEditorApp)app,guiFont,ttfLoader,screenWidth-330,timelineHeight,330,bodyHeight);
+        editorRootNode.attachChild(volumeInspector.getRootNode());
+        timelinePanel=new TimelinePanel(app,guiFont,0,0,screenWidth,timelineHeight);editorRootNode.attachChild(timelinePanel.getRootNode());
+        if(currentSkeleton!=null)groupControlPanel.setSkeleton(currentSkeleton);
+        ((PuppetEditorApp)app).bindVolumeAnimationPanel(animationLayerPanel);
+    }
+    private void selectVolumeNavigation(int index) {
+        volumeNavigation=index;Node[] nodes={partListPanel.getRootNode(),animationLayerPanel.getRootNode(),groupControlPanel.getRootNode()};
+        for(int i=0;i<nodes.length;i++){nodes[i].setCullHint(i==index?com.jme3.scene.Spatial.CullHint.Inherit:com.jme3.scene.Spatial.CullHint.Always);if(volumeNavigationButtons.size()>i)volumeNavigationButtons.get(i).setActive(i==index);}
+        buttonColumnPanel.getRootNode().setCullHint(index==0?com.jme3.scene.Spatial.CullHint.Inherit:com.jme3.scene.Spatial.CullHint.Always);
+        int bodyHeight=screenHeight-topBarHeight-timelineHeight;
+        int actionHeight=Math.min(320,Math.max(285,bodyHeight/2));
+        int tabY=screenHeight-topBarHeight-34-(index==0?actionHeight:0);
+        for(int i=0;i<volumeNavigationButtons.size();i++)volumeNavigationButtons.get(i).setPosition(8+i*91,tabY);
+    }
+    Node createVolumeHint(String text){if(ttfLoader!=null)return ttfLoader.createText(text,new ColorRGBA(.75f,.8f,.86f,1));Node node=new Node("VolumeHint");BitmapText label=new BitmapText(guiFont);label.setText(text);label.setSize(14);node.attachChild(label);return node;}
+    public boolean blocksVolumeViewport(int x,int y) {return volumeLayout()&&(x<280||x>=screenWidth-330||y<timelineHeight||y>=screenHeight-topBarHeight);}
 }

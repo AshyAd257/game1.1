@@ -1,0 +1,60 @@
+MaterialDef PuppetStrip3D {
+    MaterialParameters {
+        Boolean SurfaceDepth
+        Boolean SnapSurfaceContour
+        Matrix3 ArtToScreen
+        Vector4 ScreenBounds
+        Matrix4 ProxyToClip
+        Matrix4 ClipToProxy
+        Int ProxyShape
+        Float TopRatio
+        Float PixelStep
+        Boolean OutlineEnabled
+        Texture2D ColorMap
+        Int CoverCount
+        Vector4 CoverViewport
+        Matrix3 ArtScreenToUV
+        Boolean UseArtProjection
+        Texture2D CoverMap0
+        Matrix3 CoverScreenToUV0
+        Vector3 CoverDepth0
+        Texture2D CoverMap1
+        Matrix3 CoverScreenToUV1
+        Vector3 CoverDepth1
+        Texture2D CoverMap2
+        Matrix3 CoverScreenToUV2
+        Vector3 CoverDepth2
+        Texture2D CoverMap3
+        Matrix3 CoverScreenToUV3
+        Vector3 CoverDepth3
+        Texture2D CoverMap4
+        Matrix3 CoverScreenToUV4
+        Vector3 CoverDepth4
+        Texture2D CoverMap5
+        Matrix3 CoverScreenToUV5
+        Vector3 CoverDepth5
+        Texture2D CoverMap6
+        Matrix3 CoverScreenToUV6
+        Vector3 CoverDepth6
+        Texture2D CoverMap7
+        Matrix3 CoverScreenToUV7
+        Vector3 CoverDepth7
+        Texture2D NormalMap
+        Vector2 TexelSize
+        Matrix4 ArtToWorld
+        Matrix3 NormalRotation
+        Boolean UseLighting
+        Boolean Selected
+        Vector3 LightDirection
+        Float LightStrength
+    }
+    Technique {
+        VertexShader GLSL150: Shaders/PuppetStrip3D.vert
+        FragmentShader GLSL150: Shaders/PuppetStrip3D.frag
+        WorldParameters { ViewProjectionMatrix }
+        Defines {
+            COVER_COUNT : CoverCount
+            SURFACE_DEPTH : SurfaceDepth
+        }
+    }
+}

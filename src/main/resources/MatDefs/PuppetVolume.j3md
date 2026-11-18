@@ -1,0 +1,23 @@
+MaterialDef PuppetVolume {
+    MaterialParameters {
+        Texture2D ColorMap
+        Texture2D NormalMap
+        Color Color
+        Boolean UseLighting
+        Matrix3 PartRotation
+        Vector3 LightDirection
+        Float LightStrength
+    }
+    Technique {
+        VertexShader GLSL100: Shaders/PuppetVolume.vert
+        FragmentShader GLSL100: Shaders/PuppetVolume.frag
+        WorldParameters {
+            WorldViewProjectionMatrix
+        }
+        Defines {
+            HAS_COLOR : ColorMap
+            HAS_NORMAL : NormalMap
+            USE_LIGHTING : UseLighting
+        }
+    }
+}

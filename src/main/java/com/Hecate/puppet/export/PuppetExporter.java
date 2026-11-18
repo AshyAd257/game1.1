@@ -9,14 +9,13 @@ import java.io.IOException;
 
 /**
  * Puppet格式导出器
- * 使用现有的PuppetIO保存为.puppet文件
+ * 导出包含配置与贴图的完整 .puppet 资源包
  */
 public class PuppetExporter implements IExporter {
 
     @Override
     public void export(Skeleton skeleton, PuppetRenderer renderer, String filePath) throws IOException {
-        PuppetConfig config = PuppetIO.createConfig(skeleton, renderer);
-        PuppetIO.saveToFile(config, filePath);
+        com.Hecate.puppet.config.PuppetPackageIO.savePackage(skeleton,renderer,filePath);
     }
 
     @Override

@@ -608,11 +608,6 @@ public class SkeletalPlayerController {
             // 设置统一缩放，不做左右翻转，保持左右手位置正确
             characterNode.setLocalScale(MODEL_SCALE, MODEL_SCALE, MODEL_SCALE);
 
-            // 调试输出
-            if (frameCount % 60 == 0) {  // 每秒输出一次
-                System.out.println("[SkeletalPlayer] 模型旋转角度 yaw=" + (yaw * FastMath.RAD_TO_DEG) +
-                        "°, 实际旋转=" + ((yaw + MODEL_ROTATION_OFFSET) * FastMath.RAD_TO_DEG) + "°");
-            }
         }
 
         // 根据状态切换动画

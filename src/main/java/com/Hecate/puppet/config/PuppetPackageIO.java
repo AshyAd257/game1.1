@@ -78,64 +78,35 @@ public class PuppetPackageIO {
      */
     public static void savePackage(Skeleton skeleton, PuppetRenderer renderer, String packagePath) throws IOException {
 
-        // 1. 创建配置
-        PuppetConfig config = PuppetIO.createConfig(skeleton, renderer);
+        savePackage(PuppetIO.createConfig(skeleton,renderer),renderer.getAssetManager(),packagePath);
+    }
 
-        // 2. 收集所有纹理路径
-        Set<String> texturePaths = collectTexturePaths(config);
-
-        // 3. 创建纹理路径映射（原始路径 -> 打包内路径）
-        Map<String, String> pathMapping = new HashMap<>();
-        int textureIndex = 0;
-        for (String originalPath : texturePaths) {
-            if (originalPath != null && !originalPath.isEmpty()) {
-                // 获取文件扩展名
-                String extension = getFileExtension(originalPath);
-                // 生成打包内的路径
-                String packagedPath = TEXTURE_DIR + "texture_" + textureIndex + extension;
-                pathMapping.put(originalPath, packagedPath);
-                textureIndex++;
-            }
-        }
-
-        // 4. 修改配置中的纹理路径为打包内路径
-        PuppetConfig packagedConfig = remapTexturePaths(config, pathMapping);
-
-        // 5. 创建ZIP文件
-        try (ZipOutputStream zos = new ZipOutputStream(new FileOutputStream(packagePath))) {
-            // 5.1 写入配置JSON
-            ZipEntry configEntry = new ZipEntry(CONFIG_ENTRY);
-            zos.putNextEntry(configEntry);
-            String jsonString = gson.toJson(packagedConfig);
-            zos.write(jsonString.getBytes("UTF-8"));
-            zos.closeEntry();
-
-            // 5.2 写入所有纹理文件
-            for (Map.Entry<String, String> entry : pathMapping.entrySet()) {
-                String originalPath = entry.getKey();
-                String packagedPath = entry.getValue();
-
-                File textureFile = new File(originalPath);
-                if (textureFile.exists() && textureFile.isFile()) {
-                    ZipEntry textureEntry = new ZipEntry(packagedPath);
-                    zos.putNextEntry(textureEntry);
-
-                    // 复制文件内容
-                    try (FileInputStream fis = new FileInputStream(textureFile)) {
-                        byte[] buffer = new byte[8192];
-                        int bytesRead;
-                        while ((bytesRead = fis.read(buffer)) != -1) {
-                            zos.write(buffer, 0, bytesRead);
-                        }
-                    }
-
-                    zos.closeEntry();
-                } else {
-                    System.err.println("[PuppetPackageIO] 警告：纹理文件不存在: " + originalPath);
+    /** Complete resource bundle; an incomplete export never replaces an existing good file. */
+    public static void savePackage(PuppetConfig config,com.jme3.asset.AssetManager assets,String packagePath)throws IOException{
+        Set<String> paths=collectTexturePaths(config);Map<String,String> mapping=new LinkedHashMap<>();int index=0;
+        for(String path:paths)mapping.put(path,TEXTURE_DIR+"texture_"+(index++)+getFileExtension(path));
+        PuppetConfig packaged=remapTexturePaths(config,mapping);
+        Path destination=Paths.get(packagePath).toAbsolutePath();Path staging=Files.createTempFile(destination.getParent(),".puppet-export-",".tmp");
+        try{
+            try(ZipOutputStream zip=new ZipOutputStream(Files.newOutputStream(staging))){
+                zip.putNextEntry(new ZipEntry(CONFIG_ENTRY));zip.write(gson.toJson(packaged).getBytes(java.nio.charset.StandardCharsets.UTF_8));zip.closeEntry();
+                for(var item:mapping.entrySet())try(InputStream input=openResource(item.getKey(),assets)){
+                    zip.putNextEntry(new ZipEntry(item.getValue()));input.transferTo(zip);zip.closeEntry();
                 }
             }
-        }
-
+            try{Files.move(staging,destination,java.nio.file.StandardCopyOption.ATOMIC_MOVE,java.nio.file.StandardCopyOption.REPLACE_EXISTING);}
+            catch(java.nio.file.AtomicMoveNotSupportedException ex){Files.move(staging,destination,java.nio.file.StandardCopyOption.REPLACE_EXISTING);}
+        }finally{Files.deleteIfExists(staging);}
+    }
+    private static InputStream openResource(String name,com.jme3.asset.AssetManager assets)throws IOException{
+        try{
+            Path file=name.startsWith("file:")?Paths.get(java.net.URI.create(name)):Paths.get(name);
+            if(Files.isRegularFile(file))return Files.newInputStream(file);
+            String resource=name.replace('\\','/');
+            if(assets!=null){var info=assets.locateAsset(new com.jme3.asset.AssetKey<Object>(resource));if(info!=null)return info.openStream();}
+            InputStream stream=PuppetPackageIO.class.getClassLoader().getResourceAsStream(resource);if(stream!=null)return stream;
+        }catch(RuntimeException ex){throw new IOException("无法读取资源："+name,ex);}
+        throw new IOException("导出失败，找不到资源："+name+"。请重新选择贴图后再导出。");
     }
 
     /**
@@ -150,8 +121,14 @@ public class PuppetPackageIO {
     public static void loadPackage(String packagePath, Skeleton skeleton, PuppetRenderer renderer,
                                    com.jme3.asset.AssetManager assetManager) throws IOException {
 
+        PuppetIO.applyConfig(readPackageConfig(packagePath), skeleton, renderer);
+    }
+
+    /** Reads a portable package into a config usable by either renderer. */
+    public static PuppetConfig readPackageConfig(String packagePath) throws IOException {
         // 1. 创建临时目录用于解压纹理
         Path tempDir = Files.createTempDirectory("puppet_package_");
+        tempDir.toFile().deleteOnExit();
 
         try {
             PuppetConfig config = null;
@@ -188,7 +165,8 @@ public class PuppetPackageIO {
 
                     } else if (entryName.startsWith(TEXTURE_DIR) && !entry.isDirectory()) {
                         // 解压纹理文件
-                        Path texturePath = tempDir.resolve(entryName);
+                        Path texturePath = tempDir.resolve(entryName).normalize();
+                        if (!texturePath.startsWith(tempDir)) throw new IOException("非法资源路径: " + entryName);
                         Files.createDirectories(texturePath.getParent());
 
                         try (FileOutputStream fos = new FileOutputStream(texturePath.toFile())) {
@@ -199,6 +177,7 @@ public class PuppetPackageIO {
                             }
                         }
 
+                        Path directory=texturePath.getParent();java.util.List<Path> parents=new java.util.ArrayList<>();while(directory!=null&&directory.startsWith(tempDir)){parents.add(directory);directory=directory.getParent();}java.util.Collections.reverse(parents);for(Path parent:parents)parent.toFile().deleteOnExit();texturePath.toFile().deleteOnExit();
                         extractedTextures.put(entryName, texturePath);
                     }
 
@@ -216,10 +195,11 @@ public class PuppetPackageIO {
                 pathMapping.put(entry.getKey(), entry.getValue().toString());
             }
 
+            for(String reference:collectTexturePaths(config))if(!pathMapping.containsKey(reference))throw new IOException("木偶文件缺少资源："+reference);
             PuppetConfig remappedConfig = remapTexturePaths(config, pathMapping);
 
             // 4. 应用配置到骨架和渲染器
-            PuppetIO.applyConfig(remappedConfig, skeleton, renderer);
+            return remappedConfig;
 
         } finally {
             // 注意：临时文件在程序退出时会被删除
@@ -233,9 +213,16 @@ public class PuppetPackageIO {
      * 收集配置中的所有纹理路径
      */
     private static Set<String> collectTexturePaths(PuppetConfig config) {
-        Set<String> paths = new HashSet<>();
+        Set<String> paths = new LinkedHashSet<>();
 
         for (BoneConfig boneConfig : config.getBones()) {
+            if (boneConfig.getVolumeDefinition() != null && boneConfig.getVolumeDefinition().getNormalTexturePath() != null) {
+                paths.add(boneConfig.getVolumeDefinition().getNormalTexturePath());
+            }
+            if(boneConfig.getVolumeDefinition()!=null)for(var surface:com.Hecate.puppet.volume.Strip3DDefinition.Surface.values()){
+                var layer=boneConfig.getVolumeDefinition().getStrip3D().layer(surface);
+                if(layer.getColorPath()!=null)paths.add(layer.getColorPath());if(layer.getNormalPath()!=null)paths.add(layer.getNormalPath());
+            }
             PartConfig partConfig = boneConfig.getPartConfig();
             if (partConfig != null) {
                 // 单一纹理路径
@@ -277,6 +264,15 @@ public class PuppetPackageIO {
 
         // 重新映射所有纹理路径
         for (BoneConfig boneConfig : newConfig.getBones()) {
+            if (boneConfig.getVolumeDefinition() != null) {
+                String path = boneConfig.getVolumeDefinition().getNormalTexturePath();
+                if (path != null) boneConfig.getVolumeDefinition().setNormalTexturePath(pathMapping.getOrDefault(path, path));
+            }
+            if(boneConfig.getVolumeDefinition()!=null)for(var surface:com.Hecate.puppet.volume.Strip3DDefinition.Surface.values()){
+                var layer=boneConfig.getVolumeDefinition().getStrip3D().layer(surface);
+                if(layer.getColorPath()!=null)layer.setColorPath(pathMapping.getOrDefault(layer.getColorPath(),layer.getColorPath()));
+                if(layer.getNormalPath()!=null)layer.setNormalPath(pathMapping.getOrDefault(layer.getNormalPath(),layer.getNormalPath()));
+            }
             PartConfig partConfig = boneConfig.getPartConfig();
             if (partConfig != null) {
                 // 单一纹理路径
@@ -340,7 +336,12 @@ public class PuppetPackageIO {
      * 检查文件是否为打包格式
      */
     public static boolean isPackageFile(String filePath) {
-        return filePath != null && filePath.toLowerCase().endsWith(".puppet");
+        if(filePath==null)return false;
+        try(InputStream input=new FileInputStream(filePath)){return isPackageStream(input);}catch(IOException e){return false;}
+    }
+
+    static boolean isPackageStream(InputStream input)throws IOException{
+        byte[] header=input.readNBytes(4);return header.length==4&&header[0]=='P'&&header[1]=='K'&&header[2]==3&&header[3]==4;
     }
 
     /**
@@ -357,14 +358,6 @@ public class PuppetPackageIO {
     public static void loadPackage(String packagePath, EditorSkeleton editorSkeleton,
                                    EditorPuppetRenderer editorRenderer,
                                    com.jme3.asset.AssetManager assetManager) throws IOException {
-        // 转换为基础类型
-        Skeleton skeleton = editorSkeleton.getBaseSkeleton();
-        PuppetRenderer renderer = editorRenderer.getBaseRenderer();
-
-        // 调用原始加载方法
-        loadPackage(packagePath, skeleton, renderer, assetManager);
-
-        // TODO: 需要将加载的数据同步回 EditorSkeleton 和 EditorPuppetRenderer
-        // 这需要实现反向转换逻辑
+        PuppetIO.applyConfig(readPackageConfig(packagePath), editorSkeleton, editorRenderer);
     }
 }

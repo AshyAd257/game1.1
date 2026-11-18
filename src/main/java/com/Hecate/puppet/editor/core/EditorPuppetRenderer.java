@@ -170,6 +170,8 @@ public class EditorPuppetRenderer {
     /**
      * 更新所有部件的变换
      */
+    private final com.Hecate.puppet.volume.VolumeOcclusion volumeOcclusion=new com.Hecate.puppet.volume.VolumeOcclusion();
+    public String getVolumeOcclusionError(){return volumeOcclusion.getError();}
     public void update(float tpf) {
         if (!initialized) {
             return;
@@ -209,6 +211,9 @@ public class EditorPuppetRenderer {
         for (EditorPuppetPartRenderer renderer : allRenderers) {
             renderer.updateTransform(tpf);
         }
+        var coverEntries=new java.util.ArrayList<com.Hecate.puppet.volume.VolumeOcclusion.Entry>();
+        for(var part:allRenderers)coverEntries.add(new com.Hecate.puppet.volume.VolumeOcclusion.Entry(part.getBone().getName(),part.getBone().getVolumeDefinition(),part.getStrip3DView()));
+        volumeOcclusion.apply(coverEntries,app.getCamera());
 
         // 【编辑器模式】禁用阴影投射几何体更新
         // 更新阴影投射几何体的位置（跟随部件位置，但保持固定朝向）
@@ -1108,9 +1113,8 @@ public class EditorPuppetRenderer {
      * 注意：这个方法主要用于导出，只复制基本结构，不包括所有运行时状态
      */
     public com.Hecate.puppet.core.PuppetRenderer getBaseRenderer() {
-        com.Hecate.puppet.core.PuppetRenderer renderer = new com.Hecate.puppet.core.PuppetRenderer(
-            app, skeleton.getBaseSkeleton()
-        );
+        com.Hecate.puppet.core.Skeleton baseSkeleton = skeleton.getBaseSkeleton();
+        com.Hecate.puppet.core.PuppetRenderer renderer = new com.Hecate.puppet.core.PuppetRenderer(app, baseSkeleton);
 
         // 转换 BillboardMode 枚举
         com.Hecate.puppet.core.PuppetRenderer.BillboardMode baseBillboardMode;
@@ -1132,7 +1136,7 @@ public class EditorPuppetRenderer {
         // 转换所有部件渲染器（复制完整配置）
         for (EditorPuppetPartRenderer editorPartRenderer : allRenderers) {
             EditorBone editorBone = editorPartRenderer.getBone();
-            com.Hecate.puppet.core.Bone baseBone = skeleton.getBaseSkeleton().findBone(editorBone.getName());
+            com.Hecate.puppet.core.Bone baseBone = baseSkeleton.findBone(editorBone.getName());
 
             if (baseBone != null) {
                 // 创建基础部件渲染器（3D模型骨骼在addPartRenderer()内部的initialize()里
@@ -1180,4 +1184,11 @@ public class EditorPuppetRenderer {
 
         return renderer;
     }
+
+    private com.Hecate.puppet.volume.VolumeReferenceView.Mode volumeViewMode = com.Hecate.puppet.volume.VolumeReferenceView.Mode.APPEARANCE;
+    private boolean volumeXrayEnabled;
+    public boolean isVolumeXrayEnabled(){return volumeXrayEnabled;}
+    public void setVolumeXrayEnabled(boolean value){volumeXrayEnabled=value;}
+    public com.Hecate.puppet.volume.VolumeReferenceView.Mode getVolumeViewMode() { return volumeViewMode; }
+    public void setVolumeViewMode(com.Hecate.puppet.volume.VolumeReferenceView.Mode value) { volumeViewMode = value; }
 }

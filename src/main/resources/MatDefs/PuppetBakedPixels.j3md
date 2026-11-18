@@ -1,0 +1,48 @@
+MaterialDef PuppetBakedPixels {
+    MaterialParameters {
+        Texture2D DepthAtlas
+        Texture2D EditAtlas
+        Texture2D TextureRows
+        Texture2D Palette
+        Float PaletteCount
+        Boolean HasEditedAtlas
+        Texture2D Color0
+        Texture2D Color1
+        Texture2D Color2
+        Vector4 Source0
+        Vector4 Source1
+        Vector4 Source2
+        Vector4 Bounds
+        Vector4 Viewport
+        Vector4 ViewChoice
+        Vector3 ViewRight0
+        Vector3 ViewRight1
+        Vector3 ViewUp0
+        Vector3 ViewUp1
+        Vector3 ViewToward0
+        Vector3 ViewToward1
+        Vector4 ViewPlane0
+        Vector4 ViewPlane1
+        Vector4 ViewPerspective0
+        Vector4 ViewPerspective1
+        Vector2 ViewSampleCentre0
+        Vector2 ViewSampleCentre1
+        Matrix3 ScreenToUV0
+        Matrix3 ScreenToUV1
+        Matrix4 LocalToClip
+        Vector2 TextureOrigin
+        Float AtlasSize
+        Float YawViews
+        Vector2 AtlasTiles
+        Float Radius
+        Float PixelStep
+        Float Priority
+        Color Tint
+        Boolean Selected
+        Boolean Outline
+    }
+    Technique {
+        VertexShader GLSL150: Shaders/PuppetBakedPixels.vert
+        FragmentShader GLSL150: Shaders/PuppetBakedPixels.frag
+    }
+}

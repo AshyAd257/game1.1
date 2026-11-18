@@ -18,6 +18,11 @@ public class BoneClipboardData {
      */
     public static class BoneData {
         public String name;
+        public boolean rotationStripEnabled;
+        public String stripTexturePath;
+        public int stripSteps,stripFrameWidthPx=32,stripFrameHeightPx=32,stripCalibrationOffsetPx,stripPriority;
+        public Vector3f stripOffset=new Vector3f(),stripRotation=new Vector3f();
+        public com.Hecate.puppet.volume.VolumeDefinition volumeDefinition;
         public Vector3f localPosition;
         public Quaternion localRotation;
         public Vector3f localScale;
@@ -61,6 +66,10 @@ public class BoneClipboardData {
         public BoneData clone() {
             BoneData copy = new BoneData();
             copy.name = this.name;
+            copy.rotationStripEnabled=rotationStripEnabled;copy.stripTexturePath=stripTexturePath;copy.stripSteps=stripSteps;
+            copy.stripFrameWidthPx=stripFrameWidthPx;copy.stripFrameHeightPx=stripFrameHeightPx;copy.stripCalibrationOffsetPx=stripCalibrationOffsetPx;
+            copy.stripPriority=stripPriority;copy.stripOffset=stripOffset.clone();copy.stripRotation=stripRotation.clone();
+            copy.volumeDefinition = volumeDefinition == null ? null : volumeDefinition.copy();
             copy.localPosition = this.localPosition.clone();
             copy.localRotation = this.localRotation.clone();
             copy.localScale = this.localScale.clone();
@@ -109,6 +118,7 @@ public class BoneClipboardData {
 
             // 翻转X偏移
             mirrored.offset.x = -mirrored.offset.x;
+            mirrored.stripOffset.x=-mirrored.stripOffset.x;mirrored.stripRotation.y=-mirrored.stripRotation.y;mirrored.stripRotation.z=-mirrored.stripRotation.z;
 
             // 翻转Y和Z旋转（保持X旋转）
             float[] angles = mirrored.localRotation.toAngles(null);

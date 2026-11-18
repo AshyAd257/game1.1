@@ -9,7 +9,7 @@ import java.io.IOException;
 
 /**
  * 纯JSON格式导出器
- * 导出为标准JSON文件（和puppet格式相同，但扩展名为.json）
+ * 仅导出配置与资源路径，不嵌入图片
  */
 public class JsonExporter implements IExporter {
 

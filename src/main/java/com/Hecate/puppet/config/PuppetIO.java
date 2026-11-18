@@ -62,6 +62,8 @@ public class PuppetIO {
 
         for (Bone bone : allBones) {
             BoneConfig boneConfig = new BoneConfig(bone.getName());
+            boneConfig.setVolumeDefinition(bone.getVolumeDefinition());
+            if (bone.getVolumeDefinition() != null) config.setVersion("2.0");
 
             // 设置父骨骼名称
             if (bone.getParent() != null) {
@@ -219,7 +221,7 @@ public class PuppetIO {
      * 保存配置到文件
      */
     public static void saveToFile(PuppetConfig config, String filePath) throws IOException {
-        try (Writer writer = new FileWriter(filePath)) {
+        try (Writer writer = java.nio.file.Files.newBufferedWriter(java.nio.file.Path.of(filePath),java.nio.charset.StandardCharsets.UTF_8)) {
             gson.toJson(config, writer);
         }
     }
@@ -228,9 +230,8 @@ public class PuppetIO {
      * 从文件加载配置
      */
     public static PuppetConfig loadFromFile(String filePath) throws IOException {
-        try (Reader reader = new FileReader(filePath)) {
-            return gson.fromJson(reader, PuppetConfig.class);
-        }
+        if(PuppetPackageIO.isPackageFile(filePath))return PuppetPackageIO.readPackageConfig(filePath);
+        return readLegacyJson(java.nio.file.Files.readAllBytes(java.nio.file.Path.of(filePath)));
     }
 
     /**
@@ -242,9 +243,19 @@ public class PuppetIO {
         if (inputStream == null) {
             throw new IOException("资源未找到: " + resourcePath);
         }
-        try (Reader reader = new InputStreamReader(inputStream)) {
-            return gson.fromJson(reader, PuppetConfig.class);
+        try (BufferedInputStream buffered=new BufferedInputStream(inputStream)) {
+            buffered.mark(4);boolean packaged=PuppetPackageIO.isPackageStream(buffered);buffered.reset();
+            if(packaged)return PuppetPackageIO.readPackageConfig(resourcePath);
+            return readLegacyJson(buffered.readAllBytes());
         }
+    }
+
+    private static PuppetConfig readLegacyJson(byte[] data)throws IOException{
+        String json;
+        try{json=java.nio.charset.StandardCharsets.UTF_8.newDecoder().decode(java.nio.ByteBuffer.wrap(data)).toString();}
+        catch(java.nio.charset.CharacterCodingException ex){json=new String(data,java.nio.charset.Charset.defaultCharset());}
+        if(json.startsWith("\ufeff"))json=json.substring(1);
+        return gson.fromJson(json,PuppetConfig.class);
     }
 
     /**
@@ -333,6 +344,7 @@ public class PuppetIO {
         Map<String, Bone> boneMap = new HashMap<>();
         for (BoneConfig boneConfig : config.getBones()) {
             Bone bone = new Bone(boneConfig.getName());
+            bone.setVolumeDefinition(boneConfig.getVolumeDefinition());
 
             // 设置 Rest Pose
             if (boneConfig.getRestPosition() != null) {
@@ -519,10 +531,7 @@ public class PuppetIO {
                 // 这是根骨骼
                 if (rootBone == null) {
                     rootBone = bone;
-                } else {
-                    // 多个根骨骼！将后续的"根骨骼"作为第一个根骨骼的子骨骼
-                    rootBone.addChild(bone);
-                }
+                } // Keep additional roots independent; their transforms are already world-relative.
                 rootBoneCount++;
             } else {
                 // 找到父骨骼并建立关系
@@ -540,7 +549,7 @@ public class PuppetIO {
 
         // 设置根骨骼
         if (rootBone != null) {
-            skeleton.setRootBone(rootBone);
+            skeleton.updateRootBoneReference(rootBone);
         } else {
 
         }
@@ -648,6 +657,7 @@ public class PuppetIO {
         Map<String, Bone> boneMap = new HashMap<>();
         for (BoneConfig boneConfig : config.getBones()) {
             Bone bone = new Bone(boneConfig.getName());
+            bone.setVolumeDefinition(boneConfig.getVolumeDefinition());
 
             // 设置 Rest Pose
             if (boneConfig.getRestPosition() != null) {
@@ -877,6 +887,7 @@ public class PuppetIO {
         Map<String, com.Hecate.puppet.editor.core.EditorBone> boneMap = new HashMap<>();
         for (BoneConfig boneConfig : config.getBones()) {
             com.Hecate.puppet.editor.core.EditorBone bone = new com.Hecate.puppet.editor.core.EditorBone(boneConfig.getName());
+            bone.setVolumeDefinition(boneConfig.getVolumeDefinition());
 
             // 设置 Rest Pose
             if (boneConfig.getRestPosition() != null) {
@@ -1057,10 +1068,7 @@ public class PuppetIO {
                 // 这是根骨骼
                 if (rootBone == null) {
                     rootBone = bone;
-                } else {
-                    // 多个根骨骼！将后续的"根骨骼"作为第一个根骨骼的子骨骼
-                    rootBone.addChild(bone);
-                }
+                } // Keep additional roots independent; their transforms are already world-relative.
             } else {
                 // 找到父骨骼并建立关系
                 com.Hecate.puppet.editor.core.EditorBone parent = boneMap.get(parentName);
@@ -1077,7 +1085,7 @@ public class PuppetIO {
 
         // 设置根骨骼
         if (rootBone != null) {
-            editorSkeleton.setRootBone(rootBone);
+            editorSkeleton.updateRootBoneReference(rootBone);
         } else {
 
         }
@@ -1164,6 +1172,7 @@ public class PuppetIO {
         Map<String, com.Hecate.puppet.editor.core.EditorBone> boneMap = new HashMap<>();
         for (BoneConfig boneConfig : config.getBones()) {
             com.Hecate.puppet.editor.core.EditorBone bone = new com.Hecate.puppet.editor.core.EditorBone(boneConfig.getName());
+            bone.setVolumeDefinition(boneConfig.getVolumeDefinition());
 
             // 设置 Rest Pose
             if (boneConfig.getRestPosition() != null) {

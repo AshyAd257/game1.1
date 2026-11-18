@@ -1,0 +1,15 @@
+MaterialDef SurfaceReference {
+    MaterialParameters {
+        Texture2D ColorMap
+        Matrix3 ArtScreenToUV
+        Vector4 Viewport
+        Boolean UseEnclosingSelection
+        Texture2D EnclosingSelection
+        Matrix3 EnclosingProjection
+    }
+    Technique {
+        VertexShader GLSL150: Shaders/SurfaceReference.vert
+        FragmentShader GLSL150: Shaders/SurfaceReference.frag
+        WorldParameters { WorldViewProjectionMatrix }
+    }
+}

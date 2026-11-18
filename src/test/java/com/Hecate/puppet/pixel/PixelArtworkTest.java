@@ -1,0 +1,18 @@
+package com.Hecate.puppet.pixel;
+
+import com.Hecate.puppet.volume.*;
+import com.jme3.math.*;
+import com.google.gson.Gson;
+import org.junit.jupiter.api.Test;
+import java.awt.image.BufferedImage;
+import java.util.List;
+import static org.junit.jupiter.api.Assertions.*;
+
+final class PixelArtworkTest {
+    static VolumeDefinition definition(){var d=new VolumeDefinition();d.setShape(VolumeDefinition.Shape.BOX);d.setDimensions(24,24,24);d.setPixelsPerUnit(25);d.getBakedPixels().setEnabled(true);d.getBakedPixels().setPerspectiveStrength(0);d.getStrip3D().setEnabled(true);d.getStrip3D().setOutlineEnabled(false);return d;}
+    static BufferedImage[] sources(int color){BufferedImage image=new BufferedImage(96,24,BufferedImage.TYPE_INT_ARGB);for(int y=0;y<24;y++)for(int x=0;x<96;x++)image.setRGB(x,y,color);return new BufferedImage[]{image,image,image};}
+    @Test void extendingOutlineUsesExistingDepthAndSurvivesSave(){var d=definition();var atlas=PixelAtlasBaker.bake(d);int n=atlas.size(),x=n/2+12,y=n/2;boolean[] mask=new boolean[n*n];for(int yy=0;yy<n;yy++)for(int xx=0;xx<n;xx++)mask[yy*n+xx]=atlas.occupied(20,xx,yy);assertFalse(mask[y*n+x]);mask[y*n+x]=true;d.getBakedPixels().setEdit(20,new BakedPixelDefinition.MaskEdit(n,mask,atlas.key()));d=new Gson().fromJson(new Gson().toJson(d),VolumeDefinition.class);byte[] resolved=PixelEdits.resolve(atlas,d,20),expected=new byte[4];atlas.copyCell(20,x-1,y,expected,0);assertArrayEquals(expected,java.util.Arrays.copyOfRange(resolved,(y*n+x)*4,(y*n+x+1)*4));assertEquals(0xffcc8844,PixelArtwork.view(atlas,d,20,sources(0xffcc8844)).getRGB(x,y));atlas.dispose();}
+    @Test void paletteOnlyChangesMatchingSourcePixelsWithoutNewCaptures(){var d=definition();var cache=new PixelAtlasCache(4*1024*1024);try(var lease=cache.acquire(d)){String key=PixelAtlasBaker.key(d);d.getBakedPixels().setPalette(List.of(new BakedPixelDefinition.PaletteEntry("皮肤",0xcc8844,0x44cc88)));assertEquals(key,PixelAtlasBaker.key(d));var image=PixelArtwork.view(lease.atlas(),d,24,sources(0xffcc8844));assertEquals(0xff44cc88,image.getRGB(image.getWidth()/2,image.getHeight()/2));var restored=new Gson().fromJson(new Gson().toJson(d),VolumeDefinition.class);assertEquals("皮肤",restored.getBakedPixels().getPalette().get(0).name());assertEquals(0xff44cc88,restored.getBakedPixels().recolor(0xffcc8844));assertEquals(0xff123456,restored.getBakedPixels().recolor(0xff123456));try(var other=cache.acquire(restored)){assertSame(lease.atlas(),other.atlas());}assertEquals(1,cache.builds());}cache.clearUnused();}
+    @Test void assemblyCheckKeepsNearestPartAndReusesAtlas(){var d=definition();var cache=new PixelAtlasCache(4*1024*1024);try(var lease=cache.acquire(d)){var near=new PixelAssemblyPreview.Part(d,lease.atlas(),new Transform(new Vector3f(0,0,.3f),new Quaternion(),Vector3f.UNIT_XYZ),0,sources(0xffff0000));var far=new PixelAssemblyPreview.Part(d,lease.atlas(),new Transform(),0,sources(0xff0000ff));var image=PixelAssemblyPreview.render(List.of(near,far),Vector3f.ZERO,64,0);assertEquals(0xffff0000,image.getRGB(32,32));assertNotNull(PixelAssemblyPreview.contactSheet(List.of(near,far)));assertEquals(1,cache.builds());}cache.clearUnused();}
+    @Test void transparentStripPixelRevealsRearAssemblyPart(){var d=definition();var atlas=PixelAtlasBaker.bake(d);var near=new PixelAssemblyPreview.Part(d,atlas,new Transform(new Vector3f(0,0,.3f),new Quaternion(),Vector3f.UNIT_XYZ),100,sources(0));var far=new PixelAssemblyPreview.Part(d,atlas,new Transform(),0,sources(0xff0000ff));assertEquals(0xff0000ff,PixelAssemblyPreview.render(List.of(near,far),Vector3f.ZERO,64,0).getRGB(32,32));atlas.dispose();}
+}

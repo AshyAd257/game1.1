@@ -12,6 +12,7 @@ import com.jme3.input.RawInputListener;
 import com.jme3.light.DirectionalLight;
 import com.jme3.math.ColorRGBA;
 import com.jme3.math.Vector3f;
+import com.jme3.math.FastMath;
 import com.jme3.math.Quaternion;
 import com.jme3.renderer.RenderManager;
 import com.jme3.system.AppSettings;
@@ -51,6 +52,13 @@ import java.util.List;
  */
 public class PuppetEditorApp extends SimpleApplication {
 
+    private boolean volumeMode;
+    private VolumeViewportTools volumeTools;
+    private boolean volumeBonesVisible=true;
+    public boolean isVolumeMode() { return volumeMode; }
+    private VolumeWorkbench volumeWorkbench;
+    private boolean openVolumeWorkbenchOnStart;
+    public void setOpenVolumeWorkbenchOnStart(boolean value) { openVolumeWorkbenchOnStart=value; }
     private EditorPuppetTestScene puppetTestScene;
     private PuppetEditorUI editorUI;
     private float animationTime = 0f;
@@ -72,10 +80,16 @@ public class PuppetEditorApp extends SimpleApplication {
     private RawInputListener mouseListener;
 
     // 相机控制
+    private boolean volumeOrthographic;
     private float cameraDistance = 15f;
     private float cameraAngleX = 0f;
     private float cameraAngleY = 0f;
     private boolean isDraggingCamera = false;
+    private boolean isShiftPanningCamera;
+    private int shiftPanStartX,shiftPanStartY;
+    private float shiftPanDepth;
+    private Vector3f shiftPanStartPivot;
+    private com.jme3.renderer.Camera shiftPanCamera;
     private boolean isPanningCamera = false;  // 右键平移模式
     private int lastMouseX = 0;
     private int lastMouseY = 0;
@@ -143,6 +157,8 @@ public class PuppetEditorApp extends SimpleApplication {
 
     public PuppetEditorApp() {
         super();
+        // Keep the 3D preview live while the modeless workbench has keyboard focus.
+        setPauseOnLostFocus(false);
     }
 
     @Override
@@ -181,6 +197,7 @@ public class PuppetEditorApp extends SimpleApplication {
         // INDEPENDENT - 每个部件独立朝向摄像机（不推荐，会导致诡异效果）
         puppetTestScene.getPuppetRenderer().setBillboardMode(EditorPuppetRenderer.BillboardMode.UNIFIED);
 
+        if (volumeMode) initializeVolumeModeParts(true);
         // 收集所有骨骼
         collectAllBones();
 
@@ -193,6 +210,7 @@ public class PuppetEditorApp extends SimpleApplication {
         // 创建编辑器UI（必须先创建，因为动画系统需要访问Timeline）
         editorUI = new PuppetEditorUI(this);
         editorUI.setSkeleton(puppetTestScene.getTestSkeleton());
+        if(volumeMode)volumeTools=new VolumeViewportTools(this);
 
         // 设置 PartListPanel 的 MirrorManager 引用
         editorUI.getPartListPanel().setMirrorManager(mirrorManager);
@@ -243,7 +261,7 @@ public class PuppetEditorApp extends SimpleApplication {
         initializeAnimationSystem();
 
         // 选择第一个骨骼（Body）
-        selectBone(0);
+        if(allBones.length>0)selectBone(0);
 
         // 添加键盘控制
         setupKeyBindings();
@@ -253,6 +271,7 @@ public class PuppetEditorApp extends SimpleApplication {
 
         // 创建线框球体（位于屏幕左上方）
         createWireframeSphere();
+        if (openVolumeWorkbenchOnStart) openVolumeWorkbench();
     }
 
     /**
@@ -325,8 +344,8 @@ public class PuppetEditorApp extends SimpleApplication {
         // 计算球体位置（使用屏幕坐标）
         float viewWidth = cam.getWidth();
         float viewHeight = cam.getHeight();
-        float screenX = viewWidth / 6.0f;  // 左边1/6位置
-        float screenY = viewHeight * 0.85f;  // 顶部附近（从底部算起85%高度处）
+        float screenX = volumeMode ? 345 : viewWidth / 6.0f;  // 左边1/6位置
+        float screenY = volumeMode ? viewHeight - 140 : viewHeight * 0.85f;  // 顶部附近（从底部算起85%高度处）
 
         directionSphere.setLocalTranslation(screenX, screenY, 0);
 
@@ -463,6 +482,8 @@ public class PuppetEditorApp extends SimpleApplication {
      * 设置键盘绑定
      */
     private void setupKeyBindings() {
+        // In volume mode Esc is handled here so an in-progress drag can consume it before exit.
+        if(volumeMode&&inputManager.hasMapping(com.jme3.app.SimpleApplication.INPUT_MAPPING_EXIT))inputManager.deleteMapping(com.jme3.app.SimpleApplication.INPUT_MAPPING_EXIT);
         // ESC键关闭编辑器
         inputManager.addMapping("CloseEditor", new KeyTrigger(KeyInput.KEY_ESCAPE));
 
@@ -501,7 +522,9 @@ public class PuppetEditorApp extends SimpleApplication {
         // 相机视角快捷键（Blender风格：Numpad 1/3/5/7 或方向键）
         inputManager.addMapping("ViewFront", new KeyTrigger(KeyInput.KEY_NUMPAD1), new KeyTrigger(KeyInput.KEY_UP));
         inputManager.addMapping("ViewLeft", new KeyTrigger(KeyInput.KEY_NUMPAD3), new KeyTrigger(KeyInput.KEY_LEFT));
-        inputManager.addMapping("ViewRight", new KeyTrigger(KeyInput.KEY_NUMPAD5), new KeyTrigger(KeyInput.KEY_RIGHT));
+        if(volumeMode)inputManager.addMapping("ViewRight",new KeyTrigger(KeyInput.KEY_RIGHT));
+        else inputManager.addMapping("ViewRight",new KeyTrigger(KeyInput.KEY_NUMPAD5),new KeyTrigger(KeyInput.KEY_RIGHT));
+        inputManager.addMapping("ToggleProjection",new KeyTrigger(KeyInput.KEY_NUMPAD5));
         inputManager.addMapping("ViewTop", new KeyTrigger(KeyInput.KEY_NUMPAD7), new KeyTrigger(KeyInput.KEY_DOWN));
 
         // Billboard模式切换（B键）
@@ -537,6 +560,14 @@ public class PuppetEditorApp extends SimpleApplication {
         ActionListener actionListener = new ActionListener() {
             @Override
             public void onAction(String name, boolean keyPressed, float tpf) {
+                if(isShiftPanningCamera){
+                    if(name.equals("CloseEditor")&&!keyPressed){isShiftPanningCamera=false;cameraPivotPoint.set(shiftPanStartPivot);shiftPanCamera=null;updateCameraPosition();}
+                    return;
+                }
+                if(volumeTools!=null&&volumeTools.isDragging()){
+                    if(name.equals("CloseEditor")&&!keyPressed)volumeTools.cancel();
+                    return;
+                }
                 // 撤销/重做在按下时响应
                 if (name.equals("Undo")) {
                     if (keyPressed && isCtrlPressed) {
@@ -576,6 +607,10 @@ public class PuppetEditorApp extends SimpleApplication {
 
                 // 相机视角快捷键（在按键释放时响应）
                 if (!keyPressed) {
+                    if(volumeMode&&name.equals("ToggleProjection")){setVolumeCameraView(5);return;}
+                    if(volumeMode&&name.equals("ViewFront")){setVolumeCameraView(1);return;}
+                    if(volumeMode&&name.equals("ViewLeft")){setVolumeCameraView(3);return;}
+                    if(volumeMode&&name.equals("ViewTop")){setVolumeCameraView(7);return;}
                     if (name.equals("ViewFront")) {
                         setCameraToFrontView();
                         return;
@@ -634,6 +669,7 @@ public class PuppetEditorApp extends SimpleApplication {
             "MirrorAxisX",
             "MirrorAxisY",
             "MirrorAxisZ",
+            "ToggleProjection",
             "ViewFront",
             "ViewLeft",
             "ViewRight",
@@ -808,6 +844,8 @@ public class PuppetEditorApp extends SimpleApplication {
                 int mouseX = evt.getX();
                 int mouseY = evt.getY();
 
+                if(isShiftPanningCamera){updateShiftCameraPan(mouseX,mouseY);lastMouseX=mouseX;lastMouseY=mouseY;evt.setConsumed();return;}
+                if(volumeTools!=null&&volumeTools.isDragging()){volumeTools.drag(mouseX,mouseY);evt.setConsumed();return;}
                 // 检查UV详览面板是否可见，如果可见则优先处理并阻止背景操作
                 if (editorUI != null && editorUI.getSliderColumnPanel() != null &&
                     editorUI.getSliderColumnPanel().getEnlargedPreviewPanel() != null &&
@@ -833,7 +871,7 @@ public class PuppetEditorApp extends SimpleApplication {
                     cameraAngleX -= deltaY * 0.005f;
 
                     // 限制垂直角度
-                    cameraAngleX = Math.max(-1.5f, Math.min(1.5f, cameraAngleX));
+                    cameraAngleX = Math.max(volumeMode?-FastMath.HALF_PI:-1.5f, Math.min(volumeMode?FastMath.HALF_PI:1.5f, cameraAngleX));
 
                     updateCameraPosition();
                 }
@@ -916,6 +954,26 @@ public class PuppetEditorApp extends SimpleApplication {
                     return; // 阻止所有背景操作
                 }
 
+                if(isShiftPanningCamera){
+                    if(evt.getButtonIndex()==MouseInput.BUTTON_LEFT&&evt.isReleased()){updateShiftCameraPan(mouseX,mouseY);isShiftPanningCamera=false;shiftPanCamera=null;}
+                    evt.setConsumed();return;
+                }
+                // Capture Shift + left before axis handles and part selection, only inside the viewport.
+                if(volumeMode&&isShiftPressed&&evt.getButtonIndex()==MouseInput.BUTTON_LEFT&&evt.isPressed()
+                    &&volumeViewportAllows(mouseX,mouseY)&&(volumeTools==null||!volumeTools.isDragging())){
+                    isShiftPanningCamera=true;shiftPanStartX=mouseX;shiftPanStartY=mouseY;
+                    shiftPanStartPivot=cameraPivotPoint.clone();shiftPanCamera=cam.clone();shiftPanDepth=cam.getScreenCoordinates(cameraPivotPoint).z;
+                    isDraggingCamera=false;isPanningCamera=false;lastMouseX=mouseX;lastMouseY=mouseY;evt.setConsumed();return;
+                }
+                if(volumeTools!=null){
+                    if(volumeTools.isDragging()){
+                        if(evt.getButtonIndex()==MouseInput.BUTTON_LEFT&&evt.isReleased()){volumeTools.drag(mouseX,mouseY);volumeTools.finish();}
+                        evt.setConsumed();return;
+                    }
+                    if(evt.getButtonIndex()==MouseInput.BUTTON_LEFT&&evt.isPressed()&&volumeViewportAllows(mouseX,mouseY)&&volumeTools.press(mouseX,mouseY)){
+                        isDraggingCamera=false;isPanningCamera=false;evt.setConsumed();return;
+                    }
+                }
                 // 左键设置旋转中心点 / 拖动面板 / 拖动视角
                 if (evt.getButtonIndex() == MouseInput.BUTTON_LEFT) {
                     if (evt.isPressed()) {
@@ -981,7 +1039,7 @@ public class PuppetEditorApp extends SimpleApplication {
                             boolean clickedOnPart = checkIfClickedOnPart(mouseX, mouseY);
 
                             // 如果没有点击在部件上，启动相机拖动模式（Unity/Blender风格）
-                            if (!clickedOnPart) {
+                            if (!clickedOnPart || volumeMode) {
                                 isDraggingCamera = true;
                                 lastMouseX = mouseX;
                                 lastMouseY = mouseY;
@@ -1013,6 +1071,10 @@ public class PuppetEditorApp extends SimpleApplication {
                             }
                         }
                     }
+                }
+
+                if (volumeMode && evt.getButtonIndex() != MouseInput.BUTTON_LEFT && editorUI.blocksVolumeViewport(mouseX, mouseY)) {
+                    isPanningCamera=false;evt.setConsumed();return;
                 }
 
                 // 右键拖动平移视角 / 点击选择部件
@@ -1082,6 +1144,7 @@ public class PuppetEditorApp extends SimpleApplication {
         com.jme3.input.controls.AnalogListener zoomListener = new com.jme3.input.controls.AnalogListener() {
             @Override
             public void onAnalog(String name, float value, float tpf) {
+                if(isShiftPanningCamera||(volumeTools!=null&&volumeTools.isDragging()))return;
                 // 获取当前鼠标位置
                 int mouseX = inputManager.getCursorPosition().getX() != 0 ? (int) inputManager.getCursorPosition().getX() : lastMouseX;
                 int mouseY = inputManager.getCursorPosition().getY() != 0 ? (int) inputManager.getCursorPosition().getY() : lastMouseY;
@@ -1128,7 +1191,7 @@ public class PuppetEditorApp extends SimpleApplication {
                 // 如果不在任何UI区域，处理相机缩放
                 if (name.equals("CameraZoomUp")) {
                     // 向上滚动：拉近
-                    cameraDistance = Math.max(2f, cameraDistance - value * 5f);
+                    cameraDistance = Math.max(volumeMode?.2f:2f, cameraDistance - value * 5f);
                     updateCameraPosition();
                 } else if (name.equals("CameraZoomDown")) {
                     // 向下滚动：拉远
@@ -1144,6 +1207,16 @@ public class PuppetEditorApp extends SimpleApplication {
     /**
      * 更新相机位置
      */
+    private void updateShiftCameraPan(int mouseX,int mouseY){
+        // Unproject on the view plane through the orbit target. This gives smooth, one-to-one
+        // screen dragging in both projection modes without changing distance, FOV, or part data.
+        Vector3f start=shiftPanCamera.getWorldCoordinates(new com.jme3.math.Vector2f(shiftPanStartX,shiftPanStartY),shiftPanDepth);
+        Vector3f current=shiftPanCamera.getWorldCoordinates(new com.jme3.math.Vector2f(mouseX,mouseY),shiftPanDepth);
+        Vector3f delta=start.subtract(current);
+        if(!Vector3f.isValidVector(delta))return;
+        cameraPivotPoint.set(shiftPanStartPivot).addLocal(delta);
+        updateCameraPosition();
+    }
     private void updateCameraPosition() {
         float x = (float) (cameraDistance * Math.cos(cameraAngleX) * Math.sin(cameraAngleY));
         float y = (float) (cameraDistance * Math.sin(cameraAngleX));
@@ -1157,7 +1230,9 @@ public class PuppetEditorApp extends SimpleApplication {
         );
 
         cam.setLocation(cameraPos);
-        cam.lookAt(cameraPivotPoint, Vector3f.UNIT_Y);
+        Vector3f cameraUp=volumeMode?new Vector3f(-FastMath.sin(cameraAngleY)*FastMath.sin(cameraAngleX),FastMath.cos(cameraAngleX),-FastMath.cos(cameraAngleY)*FastMath.sin(cameraAngleX)):Vector3f.UNIT_Y;
+        cam.lookAt(cameraPivotPoint,cameraUp);
+        if(volumeMode)updateVolumeCameraProjection();
 
         // 同步方向指示球体的旋转
         updateDirectionSphereRotation();
@@ -1187,7 +1262,7 @@ public class PuppetEditorApp extends SimpleApplication {
         rotation = yRotation.mult(xRotation);
 
         // 应用旋转到球体
-        directionSphere.setLocalRotation(rotation);
+        directionSphere.setLocalRotation(volumeMode?cam.getRotation().inverse():rotation);
     }
 
     /**
@@ -1196,6 +1271,7 @@ public class PuppetEditorApp extends SimpleApplication {
      * 支持6个方向：前后左右上下
      */
     private void updateCameraDirection() {
+        if(volumeMode){if(editorUI!=null)editorUI.updateCurrentDirection(currentCameraDirection);return;}
         EditorBone.Direction newDirection;
 
         // 首先检查垂直角度（优先级更高）
@@ -1255,6 +1331,30 @@ public class PuppetEditorApp extends SimpleApplication {
     /**
      * 切换到正面视角 (Numpad 1 / Up Arrow)
      */
+    public void setVolumeCameraView(int key) {
+        if(!volumeMode)return;
+        if(key==5){volumeOrthographic=!volumeOrthographic;updateVolumeCameraProjection();return;}
+        if(key==1){cameraAngleY=0;cameraAngleX=0;}
+        else if(key==3){cameraAngleY=FastMath.HALF_PI;cameraAngleX=0;}
+        else if(key==7){cameraAngleY=0;cameraAngleX=FastMath.HALF_PI;}
+        else return;
+        volumeOrthographic=true;updateCameraPosition();updateCameraDirection();
+    }
+    public void setPixelCameraElevation(int degrees){
+        if(!volumeMode)return;
+        cameraAngleX=FastMath.clamp(degrees,-90,90)*FastMath.DEG_TO_RAD;
+        updateCameraPosition();updateCameraDirection();
+    }
+    public String getPixelCameraViewLabel(){
+        float pitch=cameraAngleX*FastMath.RAD_TO_DEG;
+        String name=Math.abs(pitch-90)<.05f?"Top":Math.abs(pitch+90)<.05f?"Bottom":pitch>.05f?"Upper slant":pitch<-.05f?"Lower slant":"Level";
+        return name+" "+Math.round(pitch)+" deg";
+    }
+    private void updateVolumeCameraProjection(){
+        float aspect=(float)cam.getWidth()/Math.max(1,cam.getHeight());
+        if(volumeOrthographic){float half=cameraDistance*FastMath.tan(22.5f*FastMath.DEG_TO_RAD);cam.setParallelProjection(true);cam.setFrustum(.1f,1000,-half*aspect,half*aspect,half,-half);}
+        else cam.setFrustumPerspective(45,aspect,.1f,1000);
+    }
     private void setCameraToFrontView() {
         cameraAngleY = 0f;  // 0° = FRONT
         cameraAngleX = 0f;  // 水平视角
@@ -1490,6 +1590,7 @@ public class PuppetEditorApp extends SimpleApplication {
             puppetTestScene.update(tpf);
         }
 
+        if(volumeTools!=null)volumeTools.update();
         // 始终更新按钮状态
         if (editorUI != null) {
             editorUI.updateButtons(tpf);
@@ -1650,6 +1751,8 @@ public class PuppetEditorApp extends SimpleApplication {
 
         // 延迟一帧更新UI，确保camera已更新
         enqueue(() -> {
+            if(directionSphere!=null)directionSphere.setLocalTranslation(volumeMode?345:width/6f,volumeMode?height-140:height*.85f,0);
+            if(volumeMode)updateVolumeCameraProjection();
             if (editorUI != null && editorUI.isVisible()) {
                 editorUI.reshapeUI(width, height);
             }
@@ -1659,6 +1762,7 @@ public class PuppetEditorApp extends SimpleApplication {
 
     @Override
     public void destroy() {
+        java.awt.EventQueue.invokeLater(() -> { if (volumeWorkbench != null) volumeWorkbench.close(); });
         if (puppetTestScene != null) {
             puppetTestScene.cleanup();
         }
@@ -2559,7 +2663,7 @@ public class PuppetEditorApp extends SimpleApplication {
      */
     private void savePuppet() {
         // 在独立线程中显示文件对话框（避免阻塞渲染线程）
-        new Thread(() -> {
+        java.awt.EventQueue.invokeLater(() -> {
             // 创建置顶的父窗口
             JFrame parentFrame = createTopMostFrame();
 
@@ -2639,9 +2743,7 @@ public class PuppetEditorApp extends SimpleApplication {
                 }
 
                 // 只有在保存为puppet格式时才更新currentFilePath
-                if (exportFormat == ExportFormat.PUPPET) {
-                    currentFilePath = path;
-                }
+
 
                 // 在渲染线程中执行导出
                 final String finalPath = path;
@@ -2654,14 +2756,16 @@ public class PuppetEditorApp extends SimpleApplication {
                                 puppetTestScene.getPuppetRenderer(),
                                 finalPath
                         );
-
+                        if(exportFormat==ExportFormat.PUPPET||exportFormat==ExportFormat.PUPPET_PACKAGE)currentFilePath=finalPath;
+                        java.awt.EventQueue.invokeLater(()->EditorDialogs.message("导出完成：\n"+finalPath));
                     } catch (Exception e) {
                         e.printStackTrace();
+                        java.awt.EventQueue.invokeLater(()->EditorDialogs.message("导出失败：\n"+e.getMessage()));
                     }
                     return null;
                 });
             }
-        }).start();
+        });
     }
 
     /**
@@ -2669,7 +2773,7 @@ public class PuppetEditorApp extends SimpleApplication {
      */
     private void loadPuppet() {
         // 在独立线程中显示文件对话框
-        new Thread(() -> {
+        java.awt.EventQueue.invokeLater(() -> {
             // 创建置顶的父窗口
             JFrame parentFrame = createTopMostFrame();
 
@@ -2696,58 +2800,25 @@ public class PuppetEditorApp extends SimpleApplication {
                 File file = fileChooser.getSelectedFile();
                 String path = file.getAbsolutePath();
 
-                currentFilePath = path;
+
 
                 // 在渲染线程中执行加载
                 final String finalPath = path;
                 enqueue(() -> {
                     try {
-                        // 根据文件扩展名选择加载方式
-                        if (finalPath.toLowerCase().endsWith(".ppkg")) {
-                            // 打包格式：包含图片
-
-                            // TODO: 需要重构PuppetPackageIO以支持新的加载架构
-                            javax.swing.JOptionPane.showMessageDialog(
-                                null,
-                                "暂不支持.ppkg格式，请使用.puppet或.json格式",
-                                "格式不支持",
-                                javax.swing.JOptionPane.WARNING_MESSAGE
-                            );
-                            return null;
-                        } else {
-                            // JSON格式：仅配置 (.puppet 或 .json)
-
-                            PuppetConfig config = PuppetIO.loadFromFile(finalPath);
-
-                            // 清理旧的渲染器
-                            if (puppetTestScene.getPuppetRenderer() != null) {
-                                puppetTestScene.getPuppetRenderer().cleanup();
-                            }
-
-                            // 创建全新的Skeleton和PuppetRenderer
-
-                            EditorSkeleton newSkeleton = new EditorSkeleton(config.getName() != null ? config.getName() : "LoadedPuppet");
-                            EditorPuppetRenderer newRenderer = new EditorPuppetRenderer(this, newSkeleton);
-                            // 注意：不要在这里调用initialize()，让applyConfig处理
-
-                            // 应用配置到新对象（这会调用initialize）
-
-                            PuppetIO.applyConfig(config, newSkeleton, newRenderer);
-
-                            // 【修复】重置initialized标志并调用initialize()创建编辑器渲染器
-                            // PuppetIO.applyConfig()会设置base renderer的initialized=true，
-                            // 但EditorPuppetRenderer的partRenderers集合仍为空，需要重新初始化
-                            newRenderer.setInitialized(false);
-                            newRenderer.initialize();
-
-                            // 手动附加到场景（因为新renderer之前没有附加过）
-                            newRenderer.attachToScene(rootNode);
-                            newRenderer.setWorldPosition(new Vector3f(0, 5, 0));
-
-                            // 替换puppetTestScene中的引用
-                            puppetTestScene.setTestSkeleton(newSkeleton);
-                            puppetTestScene.setPuppetRenderer(newRenderer);
-                        }
+                        PuppetConfig config = PuppetIO.loadFromFile(finalPath);
+                        EditorSkeleton newSkeleton = new EditorSkeleton(config.getName() != null ? config.getName() : "LoadedPuppet");
+                        EditorPuppetRenderer newRenderer = new EditorPuppetRenderer(this, newSkeleton);
+                        PuppetIO.applyConfig(config, newSkeleton, newRenderer);
+                        if (puppetTestScene.getPuppetRenderer() != null) puppetTestScene.getPuppetRenderer().cleanup();
+                        newRenderer.attachToScene(rootNode);
+                        newRenderer.setWorldPosition(new Vector3f(0, 5, 0));
+                        puppetTestScene.setTestSkeleton(newSkeleton);
+                        puppetTestScene.setPuppetRenderer(newRenderer);
+                        commandManager.clear();
+                        selectedBones.clear();selectedBone=null;selectedBoneIndex=-1;hiddenParts.clear();
+                        if (volumeMode) {initializeVolumeModeParts(false);if(newSkeleton.getAllBones().stream().anyMatch(b->b.getVolumeDefinition()!=null&&b.getVolumeDefinition().isStrip3DEnabled()))newRenderer.setVolumeViewMode(com.Hecate.puppet.volume.VolumeReferenceView.Mode.APPEARANCE);}
+                        initializeAnimationSystem();
 
                         // 【关键修复】更新UI的skeleton引用，否则UI组件仍然引用旧的skeleton
                         if (editorUI != null) {
@@ -2767,21 +2838,17 @@ public class PuppetEditorApp extends SimpleApplication {
                         if (allBones.length > 0) {
                             selectBone(0);
                         }
+                        currentFilePath=finalPath;
                     } catch (Exception e) {
                         e.printStackTrace();
 
                         // 显示错误对话框
-                        javax.swing.JOptionPane.showMessageDialog(
-                            null,
-                            "加载木偶失败：\n" + e.getMessage(),
-                            "加载错误",
-                            javax.swing.JOptionPane.ERROR_MESSAGE
-                        );
+                        java.awt.EventQueue.invokeLater(()->EditorDialogs.message("加载木偶失败：\n"+e.getMessage()));
                     }
                     return null;
                 });
             }
-        }).start();
+        });
     }
 
     /**
@@ -2824,6 +2891,7 @@ public class PuppetEditorApp extends SimpleApplication {
                             puppetTestScene.getPuppetRenderer()
                         );
 
+                        if(volumeMode){var mode=puppetTestScene.getPuppetRenderer().getVolumeViewMode();initializeVolumeModeParts(false);puppetTestScene.getPuppetRenderer().setVolumeViewMode(mode);}
                         // 重新获取骨骼数组（新骨骼已添加）
                         List<EditorBone> newBonesList = puppetTestScene.getTestSkeleton().getAllBones();
                         allBones = newBonesList.toArray(new EditorBone[0]);
@@ -3395,13 +3463,15 @@ public class PuppetEditorApp extends SimpleApplication {
             return;
         }
 
-        puppetTestScene.getPuppetRenderer().setShowBoneConnections(enabled);
+        if(volumeMode){volumeBonesVisible=enabled;puppetTestScene.getPuppetRenderer().setShowBoneConnections(false);}
+        else puppetTestScene.getPuppetRenderer().setShowBoneConnections(enabled);
     }
 
     /**
      * 添加新的部件
      */
     private void addPart() {
+        if (volumeMode) { requestVolumePart(); return; }
         if (puppetTestScene == null || puppetTestScene.getTestSkeleton() == null) {
             return;
         }
@@ -4442,6 +4512,10 @@ public class PuppetEditorApp extends SimpleApplication {
 
         // 复制骨骼属性
         data.name = bone.getName();
+        data.volumeDefinition = bone.getVolumeDefinition() == null ? null : bone.getVolumeDefinition().copy();
+        data.rotationStripEnabled=bone.isRotationStripEnabled();data.stripTexturePath=bone.getStripTexturePath();data.stripSteps=bone.getStripSteps();
+        data.stripFrameWidthPx=bone.getStripFrameWidthPx();data.stripFrameHeightPx=bone.getStripFrameHeightPx();data.stripCalibrationOffsetPx=bone.getStripCalibrationOffsetPx();
+        data.stripPriority=bone.getStripPriority();data.stripOffset=bone.getStripOffset();data.stripRotation=new Vector3f(bone.getStripRotationX(),bone.getStripRotationY(),bone.getStripRotationZ());
         data.localPosition = bone.getLocalPosition().clone();
         data.localRotation = bone.getLocalRotation().clone();
         data.localScale = bone.getLocalScale().clone();
@@ -4595,6 +4669,12 @@ public class PuppetEditorApp extends SimpleApplication {
 
         // 创建骨骼
         EditorBone bone = new EditorBone(uniqueName);
+        bone.setVolumeDefinition(data.volumeDefinition);
+        if(volumeMode && bone.getVolumeDefinition()==null){var d=new com.Hecate.puppet.volume.VolumeDefinition();d.setDimensions(Math.max(1,Math.min(4096,Math.round(data.width*32))),Math.max(1,Math.min(4096,Math.round(data.height*32))),32);bone.setVolumeDefinition(d);}
+        bone.setRotationStripEnabled(data.rotationStripEnabled);bone.setStripTexturePath(data.stripTexturePath);bone.setStripSteps(data.stripSteps);
+        bone.setStripFrameWidthPx(data.stripFrameWidthPx);bone.setStripFrameHeightPx(data.stripFrameHeightPx);bone.setStripCalibrationOffsetPx(data.stripCalibrationOffsetPx);
+        bone.setStripPriority(data.stripPriority);bone.setStripOffset(data.stripOffset.x,data.stripOffset.y,data.stripOffset.z);
+        bone.setStripRotation(data.stripRotation.x,data.stripRotation.y,data.stripRotation.z);
 
         // 【修复】显式启用billboard，确保粘贴的模型在旋转时正确面向摄像机
         bone.setBillboardEnabled(true);
@@ -4645,6 +4725,10 @@ public class PuppetEditorApp extends SimpleApplication {
             // 恢复UV坐标数据
             renderer.setUV(data.uvOffsetX, data.uvOffsetY, data.uvScaleX, data.uvScaleY);
         }
+
+        if(data.rotationStripEnabled){bone.setStripWidth(data.width);bone.setStripHeight(data.height);
+            bone.setStripOffset(data.stripOffset.x,data.stripOffset.y,data.stripOffset.z);bone.setStripRotation(data.stripRotation.x,data.stripRotation.y,data.stripRotation.z);
+            if(renderer!=null)renderer.updateTextureFromBone();}
 
         // 递归创建子骨骼
         for (BoneClipboardData.BoneData childData : data.children) {
@@ -4808,6 +4892,7 @@ public class PuppetEditorApp extends SimpleApplication {
 
         // 创建新的骨骼对象（因为name是final的）
         EditorBone newBone = new EditorBone(newName);
+        newBone.setVolumeDefinition(oldBone.getVolumeDefinition());
 
         // 复制所有属性
         newBone.setRestPosition(oldBone.getRestPosition().clone());
@@ -4890,6 +4975,9 @@ public class PuppetEditorApp extends SimpleApplication {
         puppetTestScene.getTestSkeleton().removeBone(oldName);
 
         puppetTestScene.getTestSkeleton().addBone(newBone);
+        for(var part:puppetTestScene.getTestSkeleton().getAllBones()){
+            var value=part.getVolumeDefinition();if(value!=null&&oldName.equals(value.getCoverTarget())){var copy=value.copy();copy.setCoverTarget(newName);part.setVolumeDefinition(copy);}
+        }
 
         // 如果是根骨骼，需要手动更新根骨骼引用（不调用setRootBone以避免rebuildBoneList）
         boolean isRootBone = (oldBone == puppetTestScene.getTestSkeleton().getRootBone());
@@ -4979,4 +5067,467 @@ public class PuppetEditorApp extends SimpleApplication {
 
         return app;
     }
+
+    /** Opens a modeless UI; every controller operation is marshalled to the scene thread. */
+    public void openVolumeWorkbench() {
+        java.awt.EventQueue.invokeLater(() -> {
+            if (volumeWorkbench == null) volumeWorkbench = new VolumeWorkbench(new VolumeWorkbench.Controller() {
+                public void requestSnapshot(java.util.function.Consumer<VolumeWorkbench.Snapshot> receiver) {
+                    enqueue(() -> {
+                        EditorBone b = selectedBone;
+                        EditorPuppetRenderer renderer = puppetTestScene.getPuppetRenderer();
+                        boolean live = b != null && puppetTestScene.getTestSkeleton().findBone(b.getName()) == b;
+                        com.Hecate.puppet.volume.VolumeDefinition d = live ? b.getVolumeDefinition() : null;
+                        EditorPuppetPartRenderer part = live ? renderer.getPartRenderer(b.getName()) : null;
+                        receiver.accept(new VolumeWorkbench.Snapshot(
+                            puppetTestScene.getTestSkeleton().getAllBones().stream().map(EditorBone::getName).toArray(String[]::new),
+                            live ? b.getName() : null, live ? b : null, d, d == null ? null : d.copy(),
+                            renderer.getVolumeViewMode(), live && !b.isModelEnabled(), part == null ? null : part.getVolumeError()));
+                    });
+                }
+                public void select(String name) { enqueue(() -> { collectAllBones(); for(int i=0;i<allBones.length;i++)if(allBones[i].getName().equals(name)){selectBone(i);break;} }); }
+                public void create(com.Hecate.puppet.volume.VolumeDefinition d) { enqueue(() -> createVolumePart(d)); }
+                public void mode(com.Hecate.puppet.volume.VolumeReferenceView.Mode mode) { enqueue(() -> puppetTestScene.getPuppetRenderer().setVolumeViewMode(mode)); }
+                public void apply(Object token, com.Hecate.puppet.volume.VolumeDefinition d) {
+                    enqueue(() -> {
+                        if (!isCurrentVolumeBone(token)) return;
+                        EditorBone b = (EditorBone)token;
+                        if (b.isModelEnabled()) return;
+                        commandManager.executeCommand(new SetVolumeDefinitionCommand(b,d,() -> {
+                            EditorPuppetPartRenderer p = puppetTestScene.getPuppetRenderer().getPartRenderer(b.getName());
+                            if(p != null)p.refreshVolumeAppearance();
+                        }));
+                    });
+                }
+                public void action(String action, Object token) {
+                    enqueue(() -> {
+                        switch(action) {
+                            case "undo": performUndo(); break;
+                            case "redo": performRedo(); break;
+                            case "play": togglePlayback(); break;
+                            case "key": addKeyframe(); break;
+                            case "save": savePuppet(); break;
+                            default:
+                                if(!isCurrentVolumeBone(token))return;
+                                switch(action) {
+                                    case "color": loadTexture(); break;
+                                    case "strip": loadStripTexture(); break;
+                                    case "crop": editorUI.getSliderColumnPanel().openRotationStripSelector(); break;
+                                    case "refresh": puppetTestScene.getPuppetRenderer().getPartRenderer(((EditorBone)token).getName()).refreshVolumeAppearance(); break;
+                                }
+                        }
+                    });
+                }
+            });
+            volumeWorkbench.show();
+        });
+    }
+    private boolean isCurrentVolumeBone(Object token) {
+        return token instanceof EditorBone && token == selectedBone
+            && puppetTestScene.getTestSkeleton().findBone(((EditorBone)token).getName()) == token;
+    }
+    private void createVolumePart(com.Hecate.puppet.volume.VolumeDefinition definition) {
+        EditorSkeleton skeleton = puppetTestScene.getTestSkeleton();
+        EditorPuppetRenderer renderer = puppetTestScene.getPuppetRenderer();
+        int suffix=1; while(skeleton.findBone("Volume_"+suffix)!=null)suffix++;
+        EditorBone bone=new EditorBone("Volume_"+suffix);
+        if(volumeMode){definition.getStrip3D().setEnabled(true);definition.getBakedPixels().setEnabled(true);}
+        bone.setVolumeDefinition(definition); bone.setBillboardEnabled(true);
+        if (volumeMode) {
+            bone.setRotationStripEnabled(true); bone.setStripWidth(definition.width()); bone.setStripHeight(definition.height());
+            bone.setStripFrameWidthPx(definition.getWidthPx());bone.setStripFrameHeightPx(definition.getHeightPx());
+        }
+        bone.setDirectionUV("front",0,0,1,1);
+        bone.setDirectionWidth("front",definition.width()); bone.setDirectionHeight("front",definition.height());
+        bone.setDirectionPriority("front",0); bone.setDirectionOffset("front",0,0,0); bone.setDirectionRotation("front",0,0,0);
+        bone.setRestPosition(new Vector3f());bone.setRestRotation(new Quaternion());bone.setRestScale(new Vector3f(1,1,1));bone.resetToRestPose();
+        EditorBone parent = isCurrentVolumeBone(selectedBone) ? selectedBone : skeleton.getRootBone();
+        commandManager.executeCommand(new Command() {
+            public void execute() {
+                if(parent==null)skeleton.setRootBone(bone);else parent.addChild(bone);
+                skeleton.addBone(bone);renderer.addPartRenderer(bone);
+                renderer.getPartRenderer(bone.getName()).setWidth(definition.width());renderer.getPartRenderer(bone.getName()).setHeight(definition.height());
+                refreshVolumeStructure(bone);
+            }
+            public void undo() {
+                renderer.removePartRenderer(bone.getName());skeleton.removeBone(bone.getName());
+                if(skeleton.getRootBone()==bone)skeleton.updateRootBoneReference(null);
+                selectedBones.remove(bone);refreshVolumeStructure(parent);
+            }
+            public String getDescription(){return "新建实体部件";}
+        });
+        if (!volumeMode) renderer.setVolumeViewMode(com.Hecate.puppet.volume.VolumeReferenceView.Mode.OVERLAY);
+    }
+    private void refreshVolumeStructure(EditorBone focus) {
+        collectAllBones();puppetTestScene.getPuppetRenderer().refreshBoneConnections();
+        editorUI.getPartListPanel().refreshPartList();
+        for(int i=0;i<allBones.length;i++)if(allBones[i]==focus){selectBone(i);return;}
+        if(allBones.length>0)selectBone(0);
+        else {selectedBone=null;selectedBoneIndex=-1;editorUI.setSkeleton(puppetTestScene.getTestSkeleton());}
+    }
+
+    public static PuppetEditorApp createPixelEditor() {
+        PuppetEditorApp app=createEditor();app.volumeMode=true;app.settings.setTitle("木偶编辑器 · 预生成像素模式");return app;
+    }
+    public static PuppetEditorApp createVolumeEditor() { return createPixelEditor(); }
+    public void bindVolumeAnimationPanel(AnimationLayerPanel panel) { if(animationPlayer!=null)panel.setAnimationPlayer(animationPlayer); }
+    public EditorBone getVolumeSelectedBone() { return isCurrentVolumeBone(selectedBone) ? selectedBone : null; }
+    public boolean isVolumeModelDisplay() { return puppetTestScene.getPuppetRenderer().getVolumeViewMode()==com.Hecate.puppet.volume.VolumeReferenceView.Mode.SOLID; }
+    public boolean isVolumeXrayEnabled(){return puppetTestScene.getPuppetRenderer().isVolumeXrayEnabled();}
+    public void toggleVolumeXray(){
+        var renderer=puppetTestScene.getPuppetRenderer();
+        if(!isVolumeModelDisplay()){
+            renderer.setVolumeViewMode(com.Hecate.puppet.volume.VolumeReferenceView.Mode.SOLID);
+            renderer.setVolumeXrayEnabled(true);
+        }else renderer.setVolumeXrayEnabled(!renderer.isVolumeXrayEnabled());
+    }
+    public void toggleVolumeDisplay() {
+        puppetTestScene.getPuppetRenderer().setVolumeViewMode(isVolumeModelDisplay()
+            ? com.Hecate.puppet.volume.VolumeReferenceView.Mode.APPEARANCE : com.Hecate.puppet.volume.VolumeReferenceView.Mode.SOLID);
+    }
+    private void initializeVolumeModeParts(boolean sample) {
+        if(sample){var skeleton=puppetTestScene.getTestSkeleton();var renderer=puppetTestScene.getPuppetRenderer();
+            for(var bone:new java.util.ArrayList<>(skeleton.getAllBones()))renderer.removePartRenderer(bone.getName());skeleton.clear();renderer.setVolumeViewMode(com.Hecate.puppet.volume.VolumeReferenceView.Mode.SOLID);return;}
+
+        EditorPuppetRenderer renderer=puppetTestScene.getPuppetRenderer();
+        for(EditorBone bone:puppetTestScene.getTestSkeleton().getAllBones()) {
+            if(bone.isModelEnabled()||bone.getVolumeDefinition()!=null&&bone.getVolumeDefinition().isSkeletonOnly())continue;
+            if(bone.getVolumeDefinition()!=null){var existing=bone.getVolumeDefinition().copy();existing.getBakedPixels().setEnabled(true);existing.getStrip3D().setEnabled(true);bone.setVolumeDefinition(existing);var existingPart=renderer.getPartRenderer(bone.getName());if(existingPart!=null)existingPart.refreshVolumeAppearance();continue;}
+            var part=renderer.getPartRenderer(bone.getName());
+            var d=new com.Hecate.puppet.volume.VolumeDefinition();d.getBakedPixels().setEnabled(true);d.getStrip3D().setEnabled(true);
+            if(sample) {
+                d.getStrip3D().setEnabled(true);
+                if(bone.getName().equals("Body"))d.setDimensions(40,56,24);
+                else if(bone.getName().equals("Head"))d.setDimensions(32,32,32);
+                else d.setDimensions(16,32,16);
+                bone.setRotationStripEnabled(true);bone.setStripFrameWidthPx(d.getWidthPx());bone.setStripFrameHeightPx(d.getHeightPx());
+                if(part!=null){part.setWidth(d.width());part.setHeight(d.height());}
+            } else if(part!=null) d.setDimensions(Math.max(1,Math.min(4096,Math.round(part.getWidth()*32))),Math.max(1,Math.min(4096,Math.round(part.getHeight()*32))),32);
+            bone.setVolumeDefinition(d);
+        }
+        renderer.setVolumeViewMode(com.Hecate.puppet.volume.VolumeReferenceView.Mode.SOLID);
+    }
+    public void requestVolumePart() {
+        if(volumeMode){requestBlenderModel();return;}
+        EditorSkeleton skeleton=puppetTestScene.getTestSkeleton();
+        EditorBone parent=getVolumeSelectedBone();
+        java.awt.EventQueue.invokeLater(() -> {
+            var definition=VolumePartDialog.show(new com.Hecate.puppet.volume.VolumeDefinition());
+            if(definition!=null)enqueue(() -> {
+                if(puppetTestScene.getTestSkeleton()!=skeleton)return;
+                if(parent!=null && skeleton.findBone(parent.getName())==parent){collectAllBones();for(int i=0;i<allBones.length;i++)if(allBones[i]==parent)selectBone(i);}
+                createVolumePart(definition);
+            });
+        });
+    }
+    public void requestBlenderModel(){
+        EditorSkeleton expected=puppetTestScene.getTestSkeleton();EditorBone parent=getVolumeSelectedBone();
+        java.awt.EventQueue.invokeLater(()->{javax.swing.JFileChooser chooser=new javax.swing.JFileChooser();chooser.setDialogTitle("导入 Blender 模型 · 1 米 = 25 像素");chooser.setFileFilter(new javax.swing.filechooser.FileNameExtensionFilter("Blender 导出的 glTF 2.0（GLB / glTF）","glb","gltf"));
+            if(chooser.showOpenDialog(null)!=javax.swing.JFileChooser.APPROVE_OPTION)return;java.nio.file.Path path=chooser.getSelectedFile().toPath();
+            enqueue(()->{if(puppetTestScene.getTestSkeleton()!=expected)return;try{applyBlenderParts(com.Hecate.puppet.pixel.BlenderPixelImporter.load(path),parent);}catch(Exception e){java.awt.EventQueue.invokeLater(()->EditorDialogs.message("导入模型失败："+e.getMessage()));}});
+        });
+    }
+    private void applyBlenderParts(java.util.List<com.Hecate.puppet.pixel.BlenderPixelImporter.Part> parts,EditorBone requestedParent){
+        EditorSkeleton skeleton=puppetTestScene.getTestSkeleton();EditorPuppetRenderer renderer=puppetTestScene.getPuppetRenderer();
+        EditorBone oldRoot=skeleton.getRootBone();EditorBone attachment=requestedParent!=null&&skeleton.findBone(requestedParent.getName())==requestedParent?requestedParent:oldRoot;
+        boolean createRoot=attachment==null;
+        EditorBone root=createRoot?new EditorBone("ModelRoot"):attachment;
+        if(createRoot){var rootDefinition=new com.Hecate.puppet.volume.VolumeDefinition();rootDefinition.setSkeletonOnly(true);rootDefinition.setPixelsPerUnit(com.Hecate.puppet.pixel.PixelMetrics.PIXELS_PER_METRE);root.setVolumeDefinition(rootDefinition);root.setRestPosition(new Vector3f());root.setRestRotation(new Quaternion());root.setRestScale(Vector3f.UNIT_XYZ.clone());root.resetToRestPose();}
+        var bones=new java.util.ArrayList<EditorBone>();java.util.Set<String> names=new java.util.HashSet<>();for(var existing:skeleton.getAllBones())names.add(existing.getName());names.add(root.getName());
+        // Preflight all captures before applying a command, so failed imports cannot leave half a model.
+        var leases=new java.util.ArrayList<com.Hecate.puppet.pixel.PixelAtlasCache.Lease>();
+        try{
+            for(var part:parts){leases.add(com.Hecate.puppet.pixel.PixelAtlasCache.SHARED.acquire(part.definition()));String name=part.name();int index=2;while(!names.add(name))name=part.name()+"_"+(index++);EditorBone bone=new EditorBone(name);bone.setVolumeDefinition(part.definition());bone.setRestPosition(part.position().clone());bone.setRestRotation(part.rotation().clone());bone.setRestScale(Vector3f.UNIT_XYZ.clone());bone.resetToRestPose();bone.setRotationStripEnabled(true);bone.setStripFrameWidthPx(part.definition().getWidthPx());bone.setStripFrameHeightPx(part.definition().getHeightPx());bone.setStripWidth(part.definition().width());bone.setStripHeight(part.definition().height());bones.add(bone);}
+            commandManager.executeCommand(new Command(){
+                public void execute(){if(createRoot)skeleton.setRootBone(root);for(int i=0;i<bones.size();i++){EditorBone parent=parts.get(i).parent()<0?root:bones.get(parts.get(i).parent());parent.addChild(bones.get(i));skeleton.addBone(bones.get(i));renderer.addPartRenderer(bones.get(i));}renderer.setVolumeViewMode(com.Hecate.puppet.volume.VolumeReferenceView.Mode.APPEARANCE);refreshVolumeStructure(bones.get(0));if(createRoot)framePixelModel();}
+                public void undo(){for(int i=bones.size()-1;i>=0;i--){renderer.removePartRenderer(bones.get(i).getName());skeleton.removeBone(bones.get(i).getName());selectedBones.remove(bones.get(i));}if(createRoot){skeleton.removeBone(root.getName());skeleton.updateRootBoneReference(oldRoot);}refreshVolumeStructure(oldRoot);}
+                public String getDescription(){return "导入 Blender 刚性部件 · 1 米 = 25 像素";}
+            });
+        }finally{for(var lease:leases)lease.close();}
+    }
+    private void framePixelModel(){
+        com.jme3.bounding.BoundingBox bounds=null;
+        for(EditorBone b:puppetTestScene.getTestSkeleton().getAllBones()){var d=b.getVolumeDefinition();if(d==null||d.isSkeletonOnly())continue;var mesh=com.Hecate.puppet.volume.VolumeMeshFactory.create(d);var position=new Vector3f();var rotation=new Quaternion();var scale=new Vector3f();b.getWorldTransform(position,rotation,scale);var transform=new com.jme3.math.Transform(position,rotation,Vector3f.UNIT_XYZ).combineWithParent(puppetTestScene.getPuppetRenderer().getPuppetNode().getWorldTransform());var box=(com.jme3.bounding.BoundingBox)mesh.getBound().transform(transform);bounds=bounds==null?box:(com.jme3.bounding.BoundingBox)bounds.merge(box);}
+        if(bounds==null)return;cameraPivotPoint.set(bounds.getCenter());float radius=new Vector3f(bounds.getXExtent(),bounds.getYExtent(),bounds.getZExtent()).length();cameraDistance=Math.max(.2f,radius/FastMath.tan(22.5f*FastMath.DEG_TO_RAD)*1.2f);cameraAngleX=0;cameraAngleY=0;volumeOrthographic=true;updateCameraPosition();updateCameraDirection();
+    }
+    public boolean isVolumeBonesVisible(){return volumeBonesVisible;}
+    public void toggleVolumeBones(){toggleBoneLines(!volumeBonesVisible);}
+    boolean volumeBoneVisible(EditorBone bone){return bone!=null&&puppetTestScene!=null&&puppetTestScene.getTestSkeleton().findBone(bone.getName())==bone&&!hiddenParts.contains(bone.getName());}
+    void commitVolumeTransform(EditorBone bone,Quaternion rotation,Vector3f scale){
+        if(!isCurrentVolumeBone(bone))return;enterEditMode();
+        Vector3f p=bone.getLocalPosition().clone(),oldP=bone.getRestPosition().clone(),oldS=bone.getRestScale().clone();Quaternion oldR=bone.getRestRotation().clone();
+        Quaternion targetRotation=rotation.clone();Vector3f targetScale=scale.clone();
+        SetBoneTransformCommand pose=new SetBoneTransformCommand(bone,p,bone.getLocalRotation(),bone.getLocalScale(),p,targetRotation,targetScale);
+        commandManager.executeCommand(new Command(){public void execute(){pose.execute();bone.setRestPosition(p.clone());bone.setRestRotation(targetRotation.clone());bone.setRestScale(targetScale.clone());}
+            public void undo(){pose.undo();bone.setRestPosition(oldP.clone());bone.setRestRotation(oldR.clone());bone.setRestScale(oldS.clone());}public String getDescription(){return "拖动旋转／缩放骨骼";}});
+    }
+    public void setVolumeTool(int mode){if(volumeTools!=null)volumeTools.setMode(mode);}
+    public int getVolumeTool(){return volumeTools==null?0:volumeTools.getMode();}
+    public void toggleVolumeGrid(){if(volumeTools!=null)volumeTools.toggleGrid();}
+    public boolean isVolumeGridVisible(){return volumeTools==null||volumeTools.isGridVisible();}
+    boolean volumeViewportAllows(int x,int y){return editorUI!=null&&editorUI.isVisible()&&!editorUI.blocksVolumeViewport(x,y)&&!editorUI.getSliderColumnPanel().getRotationStripSelectorPanel().isVisible()&&!editorUI.getSliderColumnPanel().getEnlargedPreviewPanel().isVisible();}
+    EditorPuppetRenderer volumeSceneRenderer(){return puppetTestScene==null?null:puppetTestScene.getPuppetRenderer();}
+    Vector3f volumeViewPivot(){return cameraPivotPoint.clone();}
+    com.jme3.scene.Node createVolumeHint(String text){return editorUI.createVolumeHint(text);}
+    boolean volumeToolsVisible(){return editorUI!=null&&editorUI.isVisible();}
+    boolean volumeBoneEditable(EditorBone bone){return bone!=null&&isCurrentVolumeBone(bone)&&!hiddenParts.contains(bone.getName())&&!bone.isModelEnabled()&&bone.getVolumeDefinition()!=null;}
+    void beginVolumeDrag(){enterEditMode();}
+    void commitVolumeMove(EditorBone bone,int axis,float value){applyVolumePose(bone,"p"+"xyz".charAt(axis),value);}
+    void commitVolumeSize(EditorBone bone,com.Hecate.puppet.volume.VolumeDefinition d){applyVolumeDefinition(bone,d);}
+    @Override public void loseFocus(){isShiftPanningCamera=false;shiftPanCamera=null;isDraggingCamera=false;isPanningCamera=false;isShiftPressed=false;if(editorUI!=null&&editorUI.getPartListPanel()!=null)editorUI.getPartListPanel().setShiftPressed(false);if(volumeTools!=null)volumeTools.cancel();super.loseFocus();}
+    public void attachVolumeToSelected() { if(getVolumeSelectedBone()!=null){var d=new com.Hecate.puppet.volume.VolumeDefinition();d.getBakedPixels().setEnabled(volumeMode);d.getStrip3D().setEnabled(volumeMode);applyVolumeDefinition(selectedBone,d);} }
+    public void setVolumeShape(com.Hecate.puppet.volume.VolumeDefinition.Shape shape) {
+        EditorBone b=getVolumeSelectedBone();if(b==null||b.getVolumeDefinition()==null)return;
+        var d=b.getVolumeDefinition().copy();d.setShape(shape);applyVolumeDefinition(b,d);
+    }
+    private void applyVolumeDefinition(EditorBone bone,com.Hecate.puppet.volume.VolumeDefinition d) {
+        if(!isCurrentVolumeBone(bone)||bone.isModelEnabled())return;
+        commandManager.executeCommand(new SetVolumeDefinitionCommand(bone,d,()->{
+            var part=puppetTestScene.getPuppetRenderer().getPartRenderer(bone.getName());if(part!=null)part.refreshVolumeAppearance();
+        },volumeMode));
+    }
+    public void editVolumeDimensions(){
+        EditorBone bone=getVolumeSelectedBone();if(bone==null||bone.getVolumeDefinition()==null)return;var snapshot=bone.getVolumeDefinition().copy();
+        java.awt.EventQueue.invokeLater(()->{int[] size=VolumeDimensionsDialog.show(snapshot);if(size!=null)enqueue(()->{if(!isCurrentVolumeBone(bone)||bone.getVolumeDefinition()==null)return;var next=bone.getVolumeDefinition().copy();next.setDimensions(size[0],size[1],size[2]);applyVolumeDefinition(bone,next);});});
+    }
+    public void editVolumeCoverTarget(){
+        EditorBone bone=getVolumeSelectedBone();if(bone==null||bone.getVolumeDefinition()==null)return;
+        if(!bone.getVolumeDefinition().isStrip3DEnabled()){java.awt.EventQueue.invokeLater(()->EditorDialogs.message("请先在图像面板启用三维条带，再设置包覆目标。"));return;}
+        var names=new java.util.ArrayList<String>();
+        for(var candidate:puppetTestScene.getTestSkeleton().getAllBones())if(candidate!=bone&&!candidate.isModelEnabled()&&candidate.getVolumeDefinition()!=null&&candidate.getVolumeDefinition().isStrip3DEnabled())names.add(candidate.getName());
+        names.sort(String::compareTo);String current=bone.getVolumeDefinition().getCoverTarget();
+        java.awt.EventQueue.invokeLater(()->{
+            javax.swing.JComboBox<String> choice=new javax.swing.JComboBox<>();choice.setName("coverTarget");choice.addItem("无（正常空间遮挡）");for(String name:names)choice.addItem(name);
+            int selected=current==null?-1:names.indexOf(current);choice.setSelectedIndex(selected+1);
+            javax.swing.JPanel panel=new javax.swing.JPanel(new java.awt.GridLayout(0,1,6,8));panel.add(new javax.swing.JLabel("外层部件："+bone.getName()));panel.add(choice);
+            panel.add(new javax.swing.JLabel("外层有色像素覆盖目标；透明孔洞露出内层。"));panel.add(new javax.swing.JLabel("可逐层指定，单个部件最多接受 8 个外层；不允许循环。"));
+            if(current!=null&&selected<0)panel.add(new javax.swing.JLabel("原目标不可用："+current+"，可重新选择或清除。"));
+            if(EditorDialogs.confirm(panel,"设置包覆目标")==javax.swing.JOptionPane.OK_OPTION){String target=choice.getSelectedIndex()==0?null:names.get(choice.getSelectedIndex()-1);
+                enqueue(()->{if(!isCurrentVolumeBone(bone)||bone.getVolumeDefinition()==null)return;
+                    try{applyVolumeCoverTarget(bone,target);}catch(IllegalArgumentException e){java.awt.EventQueue.invokeLater(()->EditorDialogs.message(e.getMessage()));}
+                });
+            }
+        });
+    }
+    private void applyVolumeCoverTarget(EditorBone bone,String target){
+        java.util.Map<String,String> targets=new java.util.LinkedHashMap<>();
+        for(var part:puppetTestScene.getTestSkeleton().getAllBones())if(!part.isModelEnabled()&&part.getVolumeDefinition()!=null&&part.getVolumeDefinition().isStrip3DEnabled())targets.put(part.getName(),part.getVolumeDefinition().getCoverTarget());
+        if(target!=null&&!targets.containsKey(target))throw new IllegalArgumentException("目标已被删除或不再是三维条带部件，请重新选择。");
+        targets.put(bone.getName(),target);com.Hecate.puppet.volume.VolumeOcclusion.resolve(targets);
+        var next=bone.getVolumeDefinition().copy();next.setCoverTarget(target);applyVolumeDefinition(bone,next);
+    }
+    public void editSelectionWidth(){
+        EditorBone bone=getVolumeSelectedBone();if(bone==null||bone.getVolumeDefinition()==null)return;
+        if(bone.getVolumeDefinition().isBakedPixelsEnabled()){editSelectionShape();return;}
+        var snapshot=bone.getVolumeDefinition().getStrip3D().copy();
+        java.awt.EventQueue.invokeLater(()->{Integer width=SelectionWidthDialog.show(snapshot,assetManager);if(width!=null)enqueue(()->{
+            if(!isCurrentVolumeBone(bone)||bone.getVolumeDefinition()==null)return;var next=bone.getVolumeDefinition().copy();
+            if(next.getStrip3D().getFrameWidth()!=snapshot.getFrameWidth()||next.getStrip3D().getFrameHeight()!=snapshot.getFrameHeight()){
+                java.awt.EventQueue.invokeLater(()->EditorDialogs.message("贴图尺寸已改变，请重新打开选框宽度设置。"));return;
+            }
+            next.getStrip3D().setSampleWidth(width);applyVolumeDefinition(bone,next);
+        });});
+    }
+    public void regeneratePixelSilhouettes(){
+        EditorBone bone=getVolumeSelectedBone();if(bone==null||bone.getVolumeDefinition()==null)return;
+        var d=bone.getVolumeDefinition().copy();d.getBakedPixels().setEnabled(true);d.getStrip3D().setEnabled(true);applyVolumeDefinition(bone,d);
+    }
+    public String getPixelCaptureStatus(){
+        var cache=com.Hecate.puppet.pixel.PixelAtlasCache.SHARED;
+        return "剪影："+String.format(java.util.Locale.ROOT,"%.1f",cache.bytes()/1048576.0)+" / 64 MB";
+    }
+    public com.Hecate.puppet.pixel.PixelRingTexture.Requirement getPixelTextureRequirement(){
+        var bone=getVolumeSelectedBone();if(bone==null)return null;
+        var part=puppetTestScene.getPuppetRenderer().getPartRenderer(bone.getName());
+        var strip=part==null?null:part.getStrip3DView();var view=strip==null?null:strip.getBakedView();
+        return view==null||view.atlas()==null?null:com.Hecate.puppet.pixel.PixelRingTexture.requirement(view.atlas());
+    }
+    public String getPixelTextureSize(){var r=getPixelTextureRequirement();return r==null?"贴图尺寸：等待剪影":"宽度自由 · 建议高"+r.recommendedHeight()+" px";}
+    public String getPixelTextureStep(){var r=getPixelTextureRequirement();return r==null?"一圈 20 张剪影":"20 步整列移动 · 360° 循环";}
+    public String getPixelCaptureCount(){return "生成次数："+com.Hecate.puppet.pixel.PixelAtlasCache.SHARED.builds()+"（动画不增加）";}
+    public void editPixelCaptureSettings(){
+        EditorBone bone=getVolumeSelectedBone();if(bone==null||bone.getVolumeDefinition()==null)return;var snapshot=bone.getVolumeDefinition().copy();
+        java.awt.EventQueue.invokeLater(()->{
+            var options=snapshot.getBakedPixels();javax.swing.JPanel panel=new javax.swing.JPanel(new java.awt.GridLayout(0,2,8,8));
+            javax.swing.JSpinner lower=new javax.swing.JSpinner(new javax.swing.SpinnerNumberModel((double)options.elevation(0),-89.0,-1.0,1.0));
+            javax.swing.JSpinner upper=new javax.swing.JSpinner(new javax.swing.SpinnerNumberModel((double)options.elevation(2),1.0,89.0,1.0));
+            javax.swing.JSpinner transition=new javax.swing.JSpinner(new javax.swing.SpinnerNumberModel((double)options.getTransitionDegrees(),1.0,20.0,1.0));
+            javax.swing.JSpinner ox=new javax.swing.JSpinner(new javax.swing.SpinnerNumberModel(options.getTextureOriginX(),-65536,65536,1)),oy=new javax.swing.JSpinner(new javax.swing.SpinnerNumberModel(options.getTextureOriginY(),-65536,65536,1));
+            javax.swing.JSpinner priority=new javax.swing.JSpinner(new javax.swing.SpinnerNumberModel(options.getPriority(),-100,100,1));
+            javax.swing.JSpinner perspective=new javax.swing.JSpinner(new javax.swing.SpinnerNumberModel((double)Math.round(options.getPerspectiveStrength()*100),0.0,20.0,1.0));
+            String[] labels={"透视强度（%，0 为正交）","下斜视仰角（度）","上斜视仰角（度）","逐行过渡范围（度）","条带起点 X（整列）","条带起点 Y（整行）","关节接缝优先级"};javax.swing.JSpinner[] fields={perspective,lower,upper,transition,ox,oy,priority};
+            for(int i=0;i<labels.length;i++){panel.add(new javax.swing.JLabel(labels[i]));panel.add(fields[i]);}
+            if(EditorDialogs.confirm(panel,"五组剪影 · 平视 0°、顶底 ±90°固定，每组 20 张")!=javax.swing.JOptionPane.OK_OPTION)return;
+            enqueue(()->{if(!isCurrentVolumeBone(bone)||bone.getVolumeDefinition()==null)return;var next=bone.getVolumeDefinition().copy();var value=next.getBakedPixels();
+                value.setPerspectiveStrength(((Number)perspective.getValue()).floatValue()/100);value.setElevations(((Number)lower.getValue()).floatValue(),((Number)upper.getValue()).floatValue());value.setTransitionDegrees(((Number)transition.getValue()).floatValue());
+                value.setTextureOrigin((int)ox.getValue(),(int)oy.getValue());value.setPriority((int)priority.getValue());applyVolumeDefinition(bone,next);
+            });
+        });
+    }
+    public void exportPixelAssemblyCheck(){
+        var parts=new java.util.ArrayList<com.Hecate.puppet.pixel.PixelAssemblyPreview.Part>();var leases=new java.util.ArrayList<com.Hecate.puppet.pixel.PixelAtlasCache.Lease>();
+        try{for(EditorBone b:puppetTestScene.getTestSkeleton().getAllBones()){var d=b.getVolumeDefinition();if(d==null||d.isSkeletonOnly()||!d.isBakedPixelsEnabled())continue;var lease=com.Hecate.puppet.pixel.PixelAtlasCache.SHARED.acquire(d);leases.add(lease);var position=new Vector3f();var rotation=new Quaternion();var scale=new Vector3f();b.getWorldTransform(position,rotation,scale);parts.add(new com.Hecate.puppet.pixel.PixelAssemblyPreview.Part(d.copy(),lease.atlas(),new com.jme3.math.Transform(position,rotation,scale),b.getPriority(),BakedSilhouetteDialog.loadSources(d,assetManager)));}}
+        catch(Exception e){leases.forEach(com.Hecate.puppet.pixel.PixelAtlasCache.Lease::close);java.awt.EventQueue.invokeLater(()->EditorDialogs.message(e.getMessage()));return;}
+        java.awt.EventQueue.invokeLater(()->{try{var chooser=new javax.swing.JFileChooser();chooser.setDialogTitle("导出当前姿势的整人 20 方向检查图");chooser.setSelectedFile(new java.io.File("人物-20方向.png"));if(chooser.showSaveDialog(null)!=javax.swing.JFileChooser.APPROVE_OPTION)return;java.nio.file.Path path=chooser.getSelectedFile().toPath();if(!path.toString().toLowerCase(java.util.Locale.ROOT).endsWith(".png"))path=java.nio.file.Path.of(path+".png");if(java.nio.file.Files.exists(path)&&EditorDialogs.confirm("将覆盖同名检查图。","保存检查图")!=javax.swing.JOptionPane.OK_OPTION)return;javax.imageio.ImageIO.write(com.Hecate.puppet.pixel.PixelAssemblyPreview.contactSheet(parts),"png",path.toFile());EditorDialogs.message("已导出当前姿势的 20 方向检查图；部件剪影没有重新生成。");}catch(Exception e){EditorDialogs.message(e.getMessage());}finally{leases.forEach(com.Hecate.puppet.pixel.PixelAtlasCache.Lease::close);}});
+    }
+    public void editPixelPalette(){
+        EditorBone bone=getVolumeSelectedBone();if(bone==null||bone.getVolumeDefinition()==null)return;var snapshot=bone.getVolumeDefinition().getBakedPixels().copy();
+        java.awt.EventQueue.invokeLater(()->{var result=PixelPaletteDialog.show(snapshot);if(result!=null)enqueue(()->{if(!isCurrentVolumeBone(bone)||bone.getVolumeDefinition()==null)return;var next=bone.getVolumeDefinition().copy();next.getBakedPixels().setPalette(result);applyVolumeDefinition(bone,next);});});
+    }
+    public void editPixelTint(){
+        EditorBone bone=getVolumeSelectedBone();if(bone==null||bone.getVolumeDefinition()==null)return;float[] tint=bone.getVolumeDefinition().getBakedPixels().getTint();
+        java.awt.EventQueue.invokeLater(()->{java.awt.Color result=javax.swing.JColorChooser.showDialog(null,"部件颜色倍率（白色恢复原色）",new java.awt.Color(tint[0],tint[1],tint[2]));
+            if(result!=null)enqueue(()->{if(!isCurrentVolumeBone(bone)||bone.getVolumeDefinition()==null)return;var next=bone.getVolumeDefinition().copy();next.getBakedPixels().setTint(result.getRed()/255f,result.getGreen()/255f,result.getBlue()/255f);applyVolumeDefinition(bone,next);});
+        });
+    }
+    public void editBakedSilhouette(){
+        EditorBone bone=getVolumeSelectedBone();if(bone==null||bone.getVolumeDefinition()==null)return;var snapshot=bone.getVolumeDefinition().copy();
+        // Keep an extra lease while the modal painter is open; no animation-dependent capture.
+        final com.Hecate.puppet.pixel.PixelAtlasCache.Lease lease;
+        try{lease=com.Hecate.puppet.pixel.PixelAtlasCache.SHARED.acquire(snapshot);}catch(Exception e){java.awt.EventQueue.invokeLater(()->EditorDialogs.message(e.getMessage()));return;}
+        java.awt.EventQueue.invokeLater(()->{try{
+            var result=BakedSilhouetteDialog.show(snapshot,lease.atlas(),BakedSilhouetteDialog.loadSources(snapshot,assetManager));
+            if(result!=null)enqueue(()->{if(!isCurrentVolumeBone(bone)||bone.getVolumeDefinition()==null)return;var next=bone.getVolumeDefinition().copy();
+                if(!com.Hecate.puppet.pixel.PixelAtlasBaker.key(next).equals(com.Hecate.puppet.pixel.PixelAtlasBaker.key(snapshot))){java.awt.EventQueue.invokeLater(()->EditorDialogs.message("形状已改变，请重新打开剪影画板。"));return;}
+                for(int i=0;i<com.Hecate.puppet.pixel.PixelAtlas.VIEWS;i++)next.getBakedPixels().setEdit(i,result.getBakedPixels().getEdit(i));applyVolumeDefinition(bone,next);
+            });
+        }catch(Exception e){EditorDialogs.message(e.getMessage());}finally{lease.close();}});
+    }
+    private com.Hecate.puppet.volume.Strip3DDefinition showPixelSelection(com.Hecate.puppet.volume.VolumeDefinition d){try(var lease=com.Hecate.puppet.pixel.PixelAtlasCache.SHARED.acquire(d)){return SelectionShapeDialog.showBaked(d,lease.atlas(),assetManager);}catch(Exception e){EditorDialogs.message(e.getMessage());return null;}}
+    public void editSelectionShape(){
+        EditorBone bone=getVolumeSelectedBone();if(bone==null||bone.getVolumeDefinition()==null)return;var definition=bone.getVolumeDefinition().copy();var snapshot=definition.getStrip3D().copy();
+        java.awt.EventQueue.invokeLater(()->{var result=definition.isBakedPixelsEnabled()?showPixelSelection(definition):SelectionShapeDialog.show(snapshot,assetManager);if(result!=null)enqueue(()->{
+            if(!isCurrentVolumeBone(bone)||bone.getVolumeDefinition()==null)return;var next=bone.getVolumeDefinition().copy();
+            if(next.getStrip3D().getFrameWidth()!=result.getFrameWidth()||next.getStrip3D().getFrameHeight()!=result.getFrameHeight()){
+                java.awt.EventQueue.invokeLater(()->EditorDialogs.message("贴图尺寸已改变，请重新打开选框形状画板。"));return;
+            }
+            next.getStrip3D().copyWindowFrom(result);applyVolumeDefinition(bone,next);
+        });});
+    }
+    public void editRowImportance(){
+        EditorBone bone=getVolumeSelectedBone();if(bone==null||bone.getVolumeDefinition()==null)return;if(bone.getVolumeDefinition().isBakedPixelsEnabled()){editStrip3DTextures();return;}var snapshot=bone.getVolumeDefinition().getStrip3D().copy();
+        java.awt.EventQueue.invokeLater(()->{var result=RowImportanceDialog.show(snapshot,assetManager);if(result!=null)enqueue(()->{if(!isCurrentVolumeBone(bone)||bone.getVolumeDefinition()==null)return;var next=bone.getVolumeDefinition().copy();
+            if(next.getStrip3D().getFrameHeight()!=result.getFrameHeight()){java.awt.EventQueue.invokeLater(()->EditorDialogs.message("贴图高度已改变，请重新打开行重要度编辑器。"));return;}
+            next.getStrip3D().setImportance(result.getImportance());next.getStrip3D().setImportanceEnabled(result.isImportanceEnabled());applyVolumeDefinition(bone,next);});});
+    }
+    public void editVolumeNumber(String key) {
+        if(key.equals("width")||key.equals("height")||key.equals("depth")){editVolumeDimensions();return;}
+        if(volumeMode&&key.equals("density")){java.awt.EventQueue.invokeLater(()->EditorDialogs.message("预生成像素模式固定为 1 米 = 25 像素。"));return;}
+        EditorBone bone=getVolumeSelectedBone();if(bone==null||bone.getVolumeDefinition()==null)return;
+        var d=bone.getVolumeDefinition();float value=switch(key){case "width"->d.getWidthPx();case "height"->d.getHeightPx();case "depth"->d.getDepthPx();case "ratio"->d.getTopRatio();case "density"->d.getPixelsPerUnit();case "yaw"->d.getLightYaw();case "elevation"->d.getLightElevation();default->d.getLightStrength();};
+        boolean integer=key.equals("width")||key.equals("height")||key.equals("depth");
+        askVolumeNumber(integer?"尺寸（1–4096 整数像素）":"修改参数",value,integer,n->{
+            if(!isCurrentVolumeBone(bone)||bone.getVolumeDefinition()==null)return;
+            var next=bone.getVolumeDefinition().copy();
+            switch(key){case "width":next.setDimensions(n.intValue(),next.getHeightPx(),next.getDepthPx());break;
+                case "height":next.setDimensions(next.getWidthPx(),n.intValue(),next.getDepthPx());break;
+                case "depth":next.setDimensions(next.getWidthPx(),next.getHeightPx(),n.intValue());break;
+                case "ratio":next.setTopRatio(n);break;case "density":next.setPixelsPerUnit(n);break;
+                case "yaw":next.setLight(n,next.getLightElevation(),next.getLightStrength());break;
+                case "elevation":next.setLight(next.getLightYaw(),n,next.getLightStrength());break;
+                case "strength":next.setLight(next.getLightYaw(),next.getLightElevation(),n);break;}
+            applyVolumeDefinition(bone,next);
+        });
+    }
+    private void askVolumeNumber(String title,float initial,boolean integer,java.util.function.Consumer<Float> change) {
+        java.awt.EventQueue.invokeLater(()->{
+            String input=EditorDialogs.input(title,integer?Integer.toString((int)initial):Float.toString(initial));if(input==null)return;
+            try {float value=Float.parseFloat(input.trim());if(!Float.isFinite(value)||(integer&&value!=Math.rint(value)))throw new IllegalArgumentException("请输入有效数值；像素尺寸必须为整数");
+                enqueue(()->{try{change.accept(value);}catch(IllegalArgumentException e){java.awt.EventQueue.invokeLater(()->EditorDialogs.message(e.getMessage()));}});
+            }catch(IllegalArgumentException e){EditorDialogs.message(e.getMessage());}
+        });
+    }
+    public void editVolumePose(String key) {
+        EditorBone bone=getVolumeSelectedBone();if(bone==null)return;int axis="xyz".indexOf(key.charAt(1));
+        float initial=key.charAt(0)=='p'?bone.getLocalPosition().get(axis):key.charAt(0)=='s'?bone.getLocalScale().get(axis):bone.getLocalRotation().toAngles(null)[axis]*com.jme3.math.FastMath.RAD_TO_DEG;
+        askVolumeNumber("局部骨骼姿态（旋转单位为度）",initial,false,n->applyVolumePose(bone,key,n));
+    }
+    private void applyVolumePose(EditorBone bone,String key,float value) {
+        if(!isCurrentVolumeBone(bone))return;enterEditMode();int axis="xyz".indexOf(key.charAt(1));
+        Vector3f p=bone.getLocalPosition().clone(),s=bone.getLocalScale().clone();Quaternion r=bone.getLocalRotation().clone();
+        Vector3f oldP=bone.getRestPosition().clone(),oldS=bone.getRestScale().clone();Quaternion oldR=bone.getRestRotation().clone();
+        switch(key.charAt(0)){case 'p':p.set(axis,value);break;case 's':if(Math.abs(value)<.001f)throw new IllegalArgumentException("缩放不能为零");s.set(axis,value);break;
+            case 'r':float[] angles=r.toAngles(null);angles[axis]=value*com.jme3.math.FastMath.DEG_TO_RAD;r.fromAngles(angles);break;}
+        SetBoneTransformCommand pose=new SetBoneTransformCommand(bone,bone.getLocalPosition(),bone.getLocalRotation(),bone.getLocalScale(),p,r,s);
+        commandManager.executeCommand(new Command(){public void execute(){pose.execute();bone.setRestPosition(p.clone());bone.setRestRotation(r.clone());bone.setRestScale(s.clone());}
+            public void undo(){pose.undo();bone.setRestPosition(oldP.clone());bone.setRestRotation(oldR.clone());bone.setRestScale(oldS.clone());}public String getDescription(){return "修改实体骨骼姿态";}});
+    }
+    public String getVolumeImageError(){String coverError=puppetTestScene.getPuppetRenderer().getVolumeOcclusionError();if(coverError!=null)return coverError;EditorBone b=getVolumeSelectedBone();if(b==null)return null;var part=puppetTestScene.getPuppetRenderer().getPartRenderer(b.getName());return part==null?null:part.getVolumeError();}
+    static void copyPixelTextureSettings(com.Hecate.puppet.volume.VolumeDefinition target,com.Hecate.puppet.volume.VolumeDefinition edit){
+        target.getBakedPixels().setTextureOrigin(edit.getBakedPixels().getTextureOriginX(),edit.getBakedPixels().getTextureOriginY());target.getBakedPixels().copyTextureRowsFrom(edit.getBakedPixels());
+        target.getStrip3D().setEnabled(edit.isStrip3DEnabled());target.getStrip3D().copyOptionsFrom(edit.getStrip3D());
+        for(var surface:com.Hecate.puppet.volume.Strip3DDefinition.Surface.values()){
+            var from=edit.getStrip3D().layer(surface);var to=target.getStrip3D().layer(surface);
+            to.setColorPath(from.getColorPath());to.setNormalPath(from.getNormalPath());to.setSampling(from.getOffsetX(),from.getOffsetY(),from.getTravelX(),from.getTravelY());
+        }
+    }
+    /** Render-thread preview. The closing action records a single undoable edit. */
+    void previewPixelTextureSettings(EditorBone bone,com.Hecate.puppet.volume.VolumeDefinition edit){
+        if(!isCurrentVolumeBone(bone)||bone.getVolumeDefinition()==null||bone.isModelEnabled())return;
+        var current=bone.getVolumeDefinition().copy();copyPixelTextureSettings(current,edit);bone.setVolumeDefinition(current);
+        var renderer=puppetTestScene.getPuppetRenderer();var part=renderer.getPartRenderer(bone.getName());if(part!=null)part.refreshVolumeAppearance();
+        renderer.setVolumeViewMode(com.Hecate.puppet.volume.VolumeReferenceView.Mode.APPEARANCE);
+    }
+    void finishPixelTextureSettings(EditorBone bone,com.Hecate.puppet.volume.VolumeDefinition original,com.Hecate.puppet.volume.VolumeDefinition edit){
+        if(!isCurrentVolumeBone(bone)||bone.getVolumeDefinition()==null||bone.isModelEnabled())return;
+        var baseline=bone.getVolumeDefinition().copy();copyPixelTextureSettings(baseline,original);bone.setVolumeDefinition(baseline);
+        if(edit!=null){var after=baseline.copy();copyPixelTextureSettings(after,edit);after.getStrip3D().setEnabled(true);applyVolumeDefinition(bone,after);}
+        else{var part=puppetTestScene.getPuppetRenderer().getPartRenderer(bone.getName());if(part!=null)part.refreshVolumeAppearance();}
+    }
+    public void editStrip3DTextures(){
+        EditorBone bone=getVolumeSelectedBone();if(bone==null||bone.getVolumeDefinition()==null)return;
+        var snapshot=bone.getVolumeDefinition().copy();
+        java.awt.EventQueue.invokeLater(()->{
+            if(snapshot.isBakedPixelsEnabled()){
+                var result=PixelStripTextureDialog.show(snapshot,assetManager,edit->enqueue(()->previewPixelTextureSettings(bone,edit)));
+                enqueue(()->finishPixelTextureSettings(bone,snapshot,result));
+            }else{
+                var result=Strip3DTextureDialog.show(snapshot,assetManager);
+                if(result!=null)enqueue(()->{if(!isCurrentVolumeBone(bone)||bone.getVolumeDefinition()==null)return;var current=bone.getVolumeDefinition().copy();copyPixelTextureSettings(current,result);current.getStrip3D().setEnabled(true);applyVolumeDefinition(bone,current);});
+            }
+        });
+    }
+    public void importPixelWholeColor(){
+        EditorBone bone=getVolumeSelectedBone();if(bone==null||bone.getVolumeDefinition()==null||!bone.getVolumeDefinition().isBakedPixelsEnabled())return;
+        String title="导入整部件条带 PNG · "+getPixelTextureSize();
+        java.awt.EventQueue.invokeLater(()->textureImportDialogs.choose(title,path->enqueue(()->{
+            if(!isCurrentVolumeBone(bone)||bone.getVolumeDefinition()==null)return;
+            try{var d=bone.getVolumeDefinition().copy();var image=com.Hecate.puppet.pixel.PixelRingTexture.readImage(assetManager,path);
+                com.Hecate.puppet.pixel.PixelRingTexture.assign(d,com.Hecate.puppet.volume.Strip3DDefinition.Surface.SIDE,path,image);
+                for(var surface:com.Hecate.puppet.volume.Strip3DDefinition.Surface.values())d.getStrip3D().layer(surface).setColorPath(path);
+                applyVolumeDefinition(bone,d);puppetTestScene.getPuppetRenderer().setVolumeViewMode(com.Hecate.puppet.volume.VolumeReferenceView.Mode.APPEARANCE);
+            }catch(Exception error){java.awt.EventQueue.invokeLater(()->textureImportDialogs.error("无法导入："+error.getMessage()));}
+        })));
+    }
+    private final TextureImportDialogs textureImportDialogs=new TextureImportDialogs();
+    public void importStrip3DColor(com.Hecate.puppet.volume.Strip3DDefinition.Surface surface){
+        EditorBone bone=getVolumeSelectedBone();if(bone==null||bone.getVolumeDefinition()==null)return;
+        String title="导入"+new String[]{"顶面","侧面","底面"}[surface.ordinal()]+"条带 PNG · "+getPixelTextureSize();
+        java.awt.EventQueue.invokeLater(()->textureImportDialogs.choose(title,path->
+            enqueue(()->{if(!isCurrentVolumeBone(bone)||bone.getVolumeDefinition()==null)return;try{var d=bone.getVolumeDefinition().copy();d.getStrip3D().layer(surface).setColorPath(path);if(d.isBakedPixelsEnabled()){var image=com.Hecate.puppet.pixel.PixelRingTexture.readImage(assetManager,path);com.Hecate.puppet.pixel.PixelRingTexture.assign(d,surface,path,image);}else com.Hecate.puppet.volume.Strip3DTextures.validateSources(d.getStrip3D(),assetManager);d.getStrip3D().setEnabled(true);applyVolumeDefinition(bone,d);
+                if(isVolumeModelDisplay())toggleVolumeDisplay();
+            }catch(Exception e){java.awt.EventQueue.invokeLater(()->textureImportDialogs.error("无法导入："+e.getMessage()));}})));
+    }
+    public void volumeImageAction(String action) {
+        EditorBone bone=getVolumeSelectedBone();if(bone==null||bone.getVolumeDefinition()==null)return;
+        switch(action){
+            case "strip3d":var next=bone.getVolumeDefinition().copy();next.getStrip3D().setEnabled(!next.isStrip3DEnabled());applyVolumeDefinition(bone,next);break;
+            case "strip3dSettings":editStrip3DTextures();break;
+            case "surfaceContour":var contour=bone.getVolumeDefinition().copy();contour.setSurfaceContourSnapped(!contour.isSurfaceContourSnapped());applyVolumeDefinition(bone,contour);break;
+            case "surfaceDepth":var depth=bone.getVolumeDefinition().copy();depth.setSurfaceDepthEnabled(!depth.isSurfaceDepthEnabled());applyVolumeDefinition(bone,depth);break;
+            case "vertical":case "horizontal":case "importance":case "outline":
+                var options=bone.getVolumeDefinition().copy();var sampling=options.getStrip3D();
+                var slide=com.Hecate.puppet.volume.Strip3DDefinition.Sampling.SLIDE;var perspective=com.Hecate.puppet.volume.Strip3DDefinition.Sampling.PERSPECTIVE;
+                if(action.equals("vertical"))sampling.setVertical(sampling.getVertical()==slide?perspective:slide);
+                else if(action.equals("horizontal"))sampling.setHorizontal(sampling.getHorizontal()==slide?perspective:slide);
+                else if(action.equals("outline"))sampling.setOutlineEnabled(!sampling.isOutlineEnabled());
+                else sampling.setImportanceEnabled(!sampling.isImportanceEnabled());applyVolumeDefinition(bone,options);break;
+            case "status":String error=getVolumeImageError();boolean captured=bone.getVolumeDefinition().isBakedPixelsEnabled();java.awt.EventQueue.invokeLater(()->JOptionPane.showMessageDialog(null,error==null?(captured?"剪影和条带正常；未导入贴图的层显示浅色剪影。":"贴图正常；未导入图片的层保持透明。"):error));break;
+            case "strip":loadStripTexture();break;case "crop":editorUI.getSliderColumnPanel().openRotationStripSelector();break;
+            case "refresh":puppetTestScene.getPuppetRenderer().getPartRenderer(bone.getName()).refreshVolumeAppearance();break;
+            case "normal":java.awt.EventQueue.invokeLater(()->{JFileChooser picker=new JFileChooser();picker.setFileFilter(new FileNameExtensionFilter("法线 PNG","png"));
+                if(picker.showOpenDialog(null)==JFileChooser.APPROVE_OPTION){String path=picker.getSelectedFile().getAbsolutePath();enqueue(()->{if(isCurrentVolumeBone(bone)&&bone.getVolumeDefinition()!=null){var d=bone.getVolumeDefinition().copy();d.setNormalTexturePath(path);applyVolumeDefinition(bone,d);}});}});break;
+            default:var d=bone.getVolumeDefinition().copy();if(action.equals("lighting"))d.setLightingEnabled(!d.isLightingEnabled());else if(action.equals("clearNormal"))d.setNormalTexturePath(null);applyVolumeDefinition(bone,d);}
+    }
 }
+

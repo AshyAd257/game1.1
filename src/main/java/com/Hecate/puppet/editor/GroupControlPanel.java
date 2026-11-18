@@ -44,6 +44,7 @@ public class GroupControlPanel {
     private Button moveZMinusButton, moveZPlusButton;
     private static final float MOVE_STEP = 0.5f;
 
+    private final java.util.Map<BitmapText,Node> translatedLabels=new java.util.HashMap<>();
     private TextField groupNameField;
     private BitmapText groupListText;
     private BitmapText currentGroupText;
@@ -76,6 +77,7 @@ public class GroupControlPanel {
 
         initializeUI();
         initializeBoneSelectionDialog();
+        if(volumeMode())configureVolumePanel();
     }
 
     /**
@@ -120,7 +122,7 @@ public class GroupControlPanel {
 
         // 当前选中组显示
         currentGroupText = new BitmapText(guiFont);
-        currentGroupText.setText("当前组: 无");
+        setPanelText(currentGroupText,"当前组: 无");
         currentGroupText.setColor(ColorRGBA.Yellow);
         currentGroupText.setLocalTranslation(x + 10, y + height - 95, 0);
         rootNode.attachChild(currentGroupText);
@@ -229,10 +231,52 @@ public class GroupControlPanel {
 
         // 组列表显示
         groupListText = new BitmapText(guiFont);
-        groupListText.setText("组列表:\n(暂无)");
+        setPanelText(groupListText,"组列表:\n(暂无)");
         groupListText.setColor(ColorRGBA.LightGray);
         groupListText.setLocalTranslation(x + 10, y + height - 285, 0);
         rootNode.attachChild(groupListText);
+    }
+
+    private boolean volumeMode(){return app instanceof PuppetEditorApp && ((PuppetEditorApp)app).isVolumeMode();}
+    private void setPanelText(BitmapText label,String value){
+        if(!volumeMode()||ttfLoader==null){label.setText(value);return;}
+        Node old=translatedLabels.remove(label);if(old!=null)old.removeFromParent();label.setText("");
+        Node text=ttfLoader.createText(value,label.getColor());text.setLocalTranslation(label.getLocalTranslation());
+        rootNode.attachChild(text);translatedLabels.put(label,text);
+    }
+    private void configureVolumePanel(){
+        com.jme3.scene.Geometry bg=new com.jme3.scene.Geometry("GroupBackground",new com.jme3.scene.shape.Quad(width,height));
+        com.jme3.material.Material material=new com.jme3.material.Material(app.getAssetManager(),"Common/MatDefs/Misc/Unshaded.j3md");
+        material.setColor("Color",new ColorRGBA(.12f,.14f,.18f,1));bg.setMaterial(material);bg.setLocalTranslation(x,y,-1);rootNode.attachChild(bg);
+        createGroupButton.setText("创建组");deleteGroupButton.setText("删除组");addToGroupButton.setText("添加骨骼");removeFromGroupButton.setText("移除骨骼");
+        if(groupNameField!=null)groupNameField.getRootNode().removeFromParent();
+        int half=(width-30)/2,third=(width-40)/3;
+        addToGroupButton.setPosition(x+10,y+height-152);removeFromGroupButton.setPosition(x+15+half,y+height-152);
+        rotateLeft90Button.setPosition(x+10,y+height-223);rotate180Button.setPosition(x+15+third,y+height-223);rotateRight90Button.setPosition(x+20+2*third,y+height-223);
+        Button[] moves={moveXMinusButton,moveXPlusButton,moveYMinusButton,moveYPlusButton,moveZMinusButton,moveZPlusButton};
+        for(int i=0;i<moves.length;i++)moves[i].setPosition(x+10+(i/2)*(third+5)+(i%2)*third/2,y+height-292);
+        groupListText.setLocalTranslation(x+10,y+height-330,0);
+        for(var child:new ArrayList<>(rootNode.getChildren()))if(child instanceof BitmapText && child!=currentGroupText && child!=groupListText){
+            BitmapText label=(BitmapText)child;String text=label.getText();
+            if(text.contains("Rotation"))label.setLocalTranslation(x+10,y+height-180,0);
+            if(text.contains("Move All"))label.setLocalTranslation(x+10,y+height-245,0);
+            int cut=text.indexOf(" (");setPanelText(label,cut<0?text:text.substring(0,cut));
+        }
+        updateCurrentGroupDisplay();updateGroupList();
+    }
+    private void showVolumeGroupDialog(){
+        int nextGroup=groupManager.getGroupCount()+1;EditorSkeleton captured=skeleton;java.util.List<EditorBone> bones=new ArrayList<>(skeleton.getAllBones());
+        java.awt.EventQueue.invokeLater(()->{
+            javax.swing.JTextField name=new javax.swing.JTextField("Group_"+nextGroup);
+            javax.swing.JList<String> list=new javax.swing.JList<>(bones.stream().map(EditorBone::getName).toArray(String[]::new));
+            list.setSelectionMode(javax.swing.ListSelectionModel.MULTIPLE_INTERVAL_SELECTION);
+            javax.swing.JPanel panel=new javax.swing.JPanel(new java.awt.BorderLayout(8,8));panel.add(name,java.awt.BorderLayout.NORTH);
+            javax.swing.JScrollPane scroll=new javax.swing.JScrollPane(list);scroll.setPreferredSize(new java.awt.Dimension(320,360));panel.add(scroll,java.awt.BorderLayout.CENTER);
+            if(javax.swing.JOptionPane.showConfirmDialog(null,panel,"创建骨骼组：输入名称并选择骨骼",javax.swing.JOptionPane.OK_CANCEL_OPTION)!=javax.swing.JOptionPane.OK_OPTION)return;
+            String groupName=name.getText().trim();java.util.List<EditorBone> selected=new ArrayList<>();for(int index:list.getSelectedIndices())selected.add(bones.get(index));
+            app.enqueue(()->{if(skeleton!=captured)return;selected.removeIf(b->captured.findBone(b.getName())!=b);
+                if(groupNameField!=null)groupNameField.setText(groupName);createGroupWithBones(selected);});
+        });
     }
 
     /**
@@ -301,6 +345,8 @@ public class GroupControlPanel {
             showMessage("错误: Skeleton未初始化");
             return;
         }
+
+        if(volumeMode()){showVolumeGroupDialog();return;}
 
         // 设置骨骼系统到对话框
         boneSelectionDialog.setSkeleton(skeleton);
@@ -549,13 +595,13 @@ public class GroupControlPanel {
      */
     private void updateGroupList() {
         if (groupManager == null) {
-            groupListText.setText("组列表:\n(未初始化)");
+            setPanelText(groupListText,"组列表:\n(未初始化)");
             return;
         }
 
         List<EditorBoneGroup> groups = groupManager.getAllGroups();
         if (groups.isEmpty()) {
-            groupListText.setText("组列表:\n(暂无)");
+            setPanelText(groupListText,"组列表:\n(暂无)");
             return;
         }
 
@@ -564,7 +610,7 @@ public class GroupControlPanel {
             sb.append("• ").append(group.getName())
               .append(" (").append(group.getMemberCount()).append("骨骼)\n");
         }
-        groupListText.setText(sb.toString());
+        setPanelText(groupListText,sb.toString());
     }
 
     /**
@@ -572,18 +618,18 @@ public class GroupControlPanel {
      */
     private void updateCurrentGroupDisplay() {
         if (selectedGroupId == null) {
-            currentGroupText.setText("当前组: 无");
+            setPanelText(currentGroupText,"当前组: 无");
             return;
         }
 
         EditorBoneGroup group = groupManager.getGroup(selectedGroupId);
         if (group == null) {
-            currentGroupText.setText("当前组: 无");
+            setPanelText(currentGroupText,"当前组: 无");
             selectedGroupId = null;
             return;
         }
 
-        currentGroupText.setText("当前组: " + group.getName() +
+        setPanelText(currentGroupText,"当前组: " + group.getName() +
             " (" + group.getCurrentRotation() + "°)");
     }
 
@@ -688,6 +734,7 @@ public class GroupControlPanel {
      * @return true如果点击命中了本面板的某个按钮
      */
     public boolean handleMouseClick(int mouseX, int mouseY) {
+        if(rootNode.getLocalCullHint()==com.jme3.scene.Spatial.CullHint.Always)return false;
         if (createGroupButton.handleMouseClick(mouseX, mouseY)) return true;
         if (deleteGroupButton.handleMouseClick(mouseX, mouseY)) return true;
         if (addToGroupButton.handleMouseClick(mouseX, mouseY)) return true;

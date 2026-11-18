@@ -121,6 +121,25 @@ public class ButtonColumnPanel {
         void onSwingAxisChanged();  // 新增：摇摆轴切换回调
     }
     private ButtonCallbacks callbacks;
+    private java.util.List<Button> volumeButtons;
+    private int volumePage;
+    public void configureVolumeMode() { showVolumePage(volumePage); }
+    private void showVolumePage(int page) {
+        addPartButton.setText("导入 Blender");setParentButton.setText("设置父骨骼");clearParentButton.setText("解除父骨骼");
+        volumePage=page;rootNode.detachAllChildren();volumeButtons=new java.util.ArrayList<>();
+        Geometry bg=new Geometry("VolumeActionsBackground",new Quad(width,height));Material mat=new Material(app.getAssetManager(),"Common/MatDefs/Misc/Unshaded.j3md");
+        mat.setColor("Color",new ColorRGBA(.12f,.14f,.18f,1));bg.setMaterial(mat);bg.setLocalTranslation(x,y,-1);rootNode.attachChild(bg);
+        String[] names={"部件","动画","文件"};for(int i=0;i<3;i++){final int selected=i;
+            Button tab=ttfLoader!=null?new Button(app,ttfLoader,names[i],x+8+i*(width-16)/3,y+height-36,(width-22)/3,28):new Button(app,font,names[i],x+8+i*(width-16)/3,y+height-36,(width-22)/3,28);
+            tab.setActive(i==page);tab.setClickListener(()->showVolumePage(selected));rootNode.attachChild(tab.getRootNode());volumeButtons.add(tab);}
+        Button[][] pages={
+            {addPartButton,deletePartButton,setParentButton,clearParentButton,copyButton,pasteButton,pasteMirrorButton,showAllButton,hideModeButton,toggleBoneLinesButton,undoButton,redoButton},
+            {playPauseButton,resetButton,addKeyframeButton,addSnapshotButton,deleteKeyframeButton,copyKeyframeButton,pasteKeyframeButton,undoButton,redoButton,exportAnimButton,importAnimButton,togglePreviewButton},
+            {loadPuppetButton,savePuppetButton,addPuppetButton,exportAnimButton,importAnimButton,undoButton,redoButton}
+        };
+        Button[] shown=pages[page];int step=Math.min(39,(height-48)/6);
+        for(int i=0;i<shown.length;i++){Button b=shown[i];b.setPosition(x+10+(i%2)*(width-15)/2,y+height-78-(i/2)*step);rootNode.attachChild(b.getRootNode());volumeButtons.add(b);}
+    }
 
     // 原构造函数 - 只使用BitmapFont
     public ButtonColumnPanel(SimpleApplication app, BitmapFont font, int x, int y, int width, int height) {
@@ -276,6 +295,7 @@ public class ButtonColumnPanel {
         // Toggle EditorBone Lines
         toggleBoneLinesButton = createButtonWithChinese("骨线:开", "Lines: ON", leftColumnX, leftY - buttonHeight, buttonWidth, buttonHeight,
             () -> {
+                if(app instanceof PuppetEditorApp editor&&editor.isVolumeMode())boneLinesVisible=editor.isVolumeBonesVisible();
                 boneLinesVisible = !boneLinesVisible;
                 if (ttfLoader != null) {
                     toggleBoneLinesButton.setText(boneLinesVisible ? "骨线:开" : "骨线:关");
@@ -500,6 +520,7 @@ public class ButtonColumnPanel {
     }
 
     public void update(float tpf) {
+        if(volumeButtons!=null){if(app instanceof PuppetEditorApp editor){boneLinesVisible=editor.isVolumeBonesVisible();String text=boneLinesVisible?"骨骼：开":"骨骼：关";if(!text.equals(toggleBoneLinesButton.getText()))toggleBoneLinesButton.setText(text);}volumeButtons.forEach(b->b.update(tpf));return;}
         addPartButton.update(tpf);
         addPrismButton.update(tpf);
         hideModeButton.update(tpf);
@@ -542,6 +563,8 @@ public class ButtonColumnPanel {
     }
 
     public boolean handleMouseClick(int mouseX, int mouseY) {
+        if(rootNode.getLocalCullHint()==com.jme3.scene.Spatial.CullHint.Always)return false;
+        if(volumeButtons!=null){for(Button b:new java.util.ArrayList<>(volumeButtons))if(b.handleMouseClick(mouseX,mouseY))return true;return false;}
         if (addPartButton.handleMouseClick(mouseX, mouseY)) return true;
         if (addPrismButton.handleMouseClick(mouseX, mouseY)) return true;
         if (hideModeButton.handleMouseClick(mouseX, mouseY)) return true;
